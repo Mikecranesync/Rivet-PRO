@@ -28,6 +28,7 @@ from telegram.ext import (
 from rivet.config import config, TierLimits
 from rivet.workflows.ocr import analyze_image
 from rivet.workflows.troubleshoot import troubleshoot
+from rivet.workflows.print_analyzer import PrintAnalyzer
 from rivet.models.ocr import OCRResult
 from rivet.workflows.troubleshoot import TroubleshootResult
 from rivet.integrations.atlas import AtlasClient, AtlasNotFoundError, AtlasValidationError
@@ -80,11 +81,10 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 I'm your industrial maintenance AI assistant.
 
 **What I can do:**
-📸 **Photo Analysis** - Send me equipment photos and I'll identify:
-   • Manufacturer & model
-   • Serial numbers
-   • Fault codes
-   • Technical specs
+📸 **Photo Analysis** - Send me photos and I'll help with:
+   • Equipment nameplates (manufacturer, model, serial, fault codes)
+   • Schematics & diagrams (ladder logic, wiring, P&ID)
+   • Technical drawings analysis
 
 💬 **Troubleshooting** - Ask me questions about:
    • Siemens, Rockwell, ABB, Schneider, Mitsubishi, Fanuc
@@ -93,7 +93,7 @@ I'm your industrial maintenance AI assistant.
    • Equipment diagnostics
 
 **Get started:**
-1. Send a photo of equipment nameplate
+1. Send a photo of equipment nameplate OR schematic (add caption for diagrams)
 2. Or ask a troubleshooting question
 
 Type /help for more commands.
@@ -117,8 +117,15 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 **RIVET Pro - Commands**
 
 📸 **Photo Analysis**
-   Send a clear photo of equipment nameplate or display.
-   I'll extract manufacturer, model, serial, fault codes.
+   Send photos for equipment or schematic analysis:
+
+   **Equipment Nameplates:**
+   • Just send the photo
+   • I'll extract manufacturer, model, serial, fault codes
+
+   **Schematics/Diagrams:**
+   • Add caption with keywords: "schematic", "diagram", "wiring", "ladder"
+   • I'll analyze the technical drawing and identify components
 
 💬 **Ask Questions**
    Just type your question:
@@ -134,6 +141,7 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 **Tips:**
    ✓ Clear, well-lit photos work best
+   ✓ For schematics: add caption like "ladder logic diagram"
    ✓ Include manufacturer name in questions for better accuracy
    ✓ Mention fault codes if you see them
 
@@ -594,29 +602,48 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ============================================================================
-# PHOTO HANDLER - OCR WORKFLOW
+# PHOTO HANDLER - OCR WORKFLOW & PRINT ANALYZER
 # ============================================================================
+
+
+def is_schematic_photo(caption: Optional[str]) -> bool:
+    """
+    Detect if photo is a technical schematic/diagram based on caption.
+
+    Keywords: schematic, diagram, wiring, ladder, print, drawing, blueprint, P&ID
+    """
+    if not caption:
+        return False
+
+    caption_lower = caption.lower()
+    schematic_keywords = [
+        "schematic", "diagram", "wiring", "ladder", "print",
+        "drawing", "blueprint", "p&id", "electrical", "circuit",
+        "panel", "layout", "dwg"
+    ]
+
+    return any(keyword in caption_lower for keyword in schematic_keywords)
 
 
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    Handle photo messages - Equipment OCR analysis.
+    Handle photo messages - Equipment OCR OR Schematic analysis.
 
     Flow:
     1. Download photo from Telegram
-    2. Validate image quality
-    3. Call analyze_image()
+    2. Check caption for schematic keywords
+    3a. If schematic: Route to PrintAnalyzer
+    3b. If equipment: Route to OCR workflow
     4. Format and send results
 
-    TODO: Integrate harvest block from Harvester (Round 7)
-    - Photo download logic
-    - Response formatting
-    - Error handling
+    Schematic detection keywords:
+    - schematic, diagram, wiring, ladder, print, drawing, blueprint, P&ID
     """
     user_id = update.effective_user.id
     username = update.effective_user.username or "User"
+    caption = update.message.caption
 
-    logger.info(f"Photo received from user {user_id} (@{username})")
+    logger.info(f"Photo received from user {user_id} (@{username}), caption: {caption}")
 
     # Send typing indicator
     await update.message.chat.send_action(action="typing")
@@ -632,7 +659,25 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             extra={"user_id": user_id, "file_id": photo.file_id},
         )
 
-        # Call OCR workflow
+        # Route based on caption keywords
+        if is_schematic_photo(caption):
+            # SCHEMATIC ANALYSIS
+            logger.info(f"Routing to PrintAnalyzer (schematic detected)")
+            analyzer = PrintAnalyzer()
+            analysis = await analyzer.analyze(bytes(photo_bytes), caption=caption)
+
+            # Format and send schematic analysis
+            response = format_schematic_response(analysis, caption)
+            await update.message.reply_text(response, parse_mode="Markdown")
+
+            logger.info(
+                f"Schematic analysis sent to user {user_id}",
+                extra={"user_id": user_id, "caption": caption},
+            )
+            return
+
+        # EQUIPMENT OCR (default)
+        logger.info(f"Routing to OCR workflow (equipment nameplate)")
         result: OCRResult = await analyze_image(
             image_bytes=bytes(photo_bytes),
             user_id=str(user_id),
@@ -881,6 +926,36 @@ def format_troubleshoot_response(result: TroubleshootResult) -> str:
     return "\n".join(lines)
 
 
+def format_schematic_response(analysis: str, caption: Optional[str] = None) -> str:
+    """
+    Format schematic analysis result for Telegram display.
+
+    Args:
+        analysis: PrintAnalyzer analysis text
+        caption: Optional user caption
+
+    Returns:
+        Formatted Telegram message with schematic analysis
+    """
+    lines = ["📐 **Schematic Analysis**\n"]
+
+    if caption:
+        lines.append(f"_User context: {caption}_\n")
+
+    # Add the analysis (already formatted by PrintAnalyzer)
+    lines.append(analysis)
+
+    # Add footer
+    lines.append("\n" + "─" * 30)
+    lines.append("\n💡 **Need more details?**")
+    lines.append("Ask a question about this schematic:")
+    lines.append("• _\"What voltage is at terminal X1?\"_")
+    lines.append("• _\"Where should I check for motor overload?\"_")
+    lines.append("• _\"What does component M1 control?\"_")
+
+    return "\n".join(lines)
+
+
 # ============================================================================
 # ERROR HANDLER
 # ============================================================================
@@ -942,6 +1017,23 @@ def setup_bot() -> Application:
 
     # Register error handler
     application.add_error_handler(error_handler)
+
+    # Register bot commands with Telegram
+    from telegram import BotCommand
+
+    async def post_init(app: Application) -> None:
+        """Register commands with Telegram after bot starts."""
+        await app.bot.set_my_commands([
+            BotCommand("start", "Get started with Rivet"),
+            BotCommand("help", "Show available commands"),
+            BotCommand("status", "Check bot status"),
+            BotCommand("tier", "View subscription tier info"),
+            BotCommand("equip", "Equipment management (search, create, view)"),
+            BotCommand("wo", "Work order management (create, list, view)"),
+        ])
+        logger.info("Bot commands registered with Telegram")
+
+    application.post_init = post_init
 
     logger.info("Telegram bot configured successfully")
 

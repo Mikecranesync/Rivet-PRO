@@ -170,6 +170,22 @@ def setup_bot() -> Application:
     # Error handler
     application.add_error_handler(create_error_handler())
 
+    # Register bot commands with Telegram
+    from telegram import BotCommand
+
+    async def post_init(app: Application) -> None:
+        """Register commands with Telegram after bot starts."""
+        await app.bot.set_my_commands([
+            BotCommand("start", "Get started with Rivet CMMS"),
+            BotCommand("help", "Show available commands"),
+            BotCommand("status", "Check bot status"),
+            BotCommand("equip", "Equipment management (search, create, view)"),
+            BotCommand("wo", "Work order management (create, list, view)"),
+        ])
+        logger.info("Bot commands registered with Telegram")
+
+    application.post_init = post_init
+
     logger.info("Rivet CMMS bot configured successfully")
 
     return application

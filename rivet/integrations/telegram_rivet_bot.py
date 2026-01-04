@@ -217,6 +217,20 @@ def setup_bot() -> Application:
     # Register error handler
     application.add_error_handler(create_error_handler())
 
+    # Register bot commands with Telegram
+    from telegram import BotCommand
+
+    async def post_init(app: Application) -> None:
+        """Register commands with Telegram after bot starts."""
+        await app.bot.set_my_commands([
+            BotCommand("start", "Get started with Rivet AI assistant"),
+            BotCommand("help", "Show available commands"),
+            BotCommand("status", "Check bot status and available AI providers"),
+        ])
+        logger.info("Bot commands registered with Telegram")
+
+    application.post_init = post_init
+
     logger.info("Rivet (Main) bot configured successfully")
 
     return application
