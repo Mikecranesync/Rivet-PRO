@@ -10,12 +10,24 @@ dependencies = [
     "pillow>=10.0",
     # LLM Providers
     "groq>=0.4",
-    "google-generativeai>=0.3",
+    "google-genai>=0.2",
     "anthropic>=0.18",
     "openai>=1.12",
     # Async
     "asyncpg>=0.29",
     "aiohttp>=3.9",
+    "httpx>=0.27",  # Atlas CMMS HTTP client
+    # Database (HARVEST 7)
+    "psycopg[binary]>=3.1",
+    "psycopg-pool>=3.2",
+    "aiosqlite>=0.19",
+    # Memory Storage (HARVEST 8)
+    "supabase>=2.0",
+    # VPS KB Client (HARVEST 9)
+    "psycopg2-binary>=2.9",
+    "requests>=2.31",
+    # Response Gap Filler (HARVEST 13)
+    "langchain-openai>=0.1",
     # Observability
     "langsmith>=0.1",
 ]

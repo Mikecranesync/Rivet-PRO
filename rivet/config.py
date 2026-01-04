@@ -160,13 +160,13 @@ class Settings(BaseSettings):
         print(f"Debug: {self.debug}")
         print(f"\nOCR Providers Available:")
         for p in self.get_available_ocr_providers():
-            print(f"  ✓ {p}")
+            print(f"  [OK] {p}")
         if not self.get_available_ocr_providers():
-            print("  ✗ No providers configured!")
-        print(f"\nDatabase: {'✓' if self.database_url else '✗'}")
-        print(f"Telegram: {'✓' if self.telegram_bot_token else '✗'}")
-        print(f"Stripe: {'✓' if self.stripe_secret_key else '✗'}")
-        print(f"LangSmith: {'✓' if self.langsmith_api_key else '✗'}")
+            print("  [NONE] No providers configured!")
+        print(f"\nDatabase: {'[OK]' if self.database_url else '[NONE]'}")
+        print(f"Telegram: {'[OK]' if self.telegram_bot_token else '[NONE]'}")
+        print(f"Stripe: {'[OK]' if self.stripe_secret_key else '[NONE]'}")
+        print(f"LangSmith: {'[OK]' if self.langsmith_api_key else '[NONE]'}")
         print(f"{'='*50}\n")
 
 
