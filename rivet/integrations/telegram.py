@@ -243,7 +243,7 @@ async def equip_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             await update.message.chat.send_action(action="typing")
 
             async with AtlasClient() as client:
-                results = await client.search_assets(query, limit=10)
+                results = await client.search_equipment(user_id=str(user_id), query=query, limit=10)
 
             if not results:
                 await update.message.reply_text(f"No equipment found for '{query}'")
@@ -251,13 +251,13 @@ async def equip_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
             # Format results
             lines = ["**Equipment Search Results**\n"]
-            for asset in results[:10]:
-                name = asset.get("name", "Unnamed")
-                manufacturer = asset.get("manufacturer", "Unknown")
-                model = asset.get("model", "Unknown")
-                asset_id = asset.get("id")
-                lines.append(f"• **{name}** ({manufacturer} {model})")
-                lines.append(f"  ID: `{asset_id}`")
+            for equipment in results[:10]:
+                manufacturer = equipment.get("manufacturer", "Unknown")
+                model = equipment.get("model_number", "Unknown")
+                equipment_id = equipment.get("id")
+                equipment_number = equipment.get("equipment_number", "N/A")
+                lines.append(f"• **{equipment_number}** ({manufacturer} {model})")
+                lines.append(f"  ID: `{equipment_id}`")
 
             lines.append(f"\nType `/equip view <id>` to see details")
             await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
@@ -267,26 +267,29 @@ async def equip_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 await update.message.reply_text("Usage: `/equip view <id>`", parse_mode="Markdown")
                 return
 
-            asset_id = args[1]
+            equipment_id_str = args[1]
             await update.message.chat.send_action(action="typing")
 
+            from uuid import UUID
             async with AtlasClient() as client:
-                asset = await client.get_asset(asset_id)
+                equipment = await client.get_equipment(UUID(equipment_id_str))
 
             # Format details
             lines = ["**Equipment Details**\n"]
-            lines.append(f"**ID**: `{asset['id']}`")
-            lines.append(f"**Name**: {asset.get('name', 'N/A')}")
-            if asset.get('manufacturer'):
-                lines.append(f"**Manufacturer**: {asset['manufacturer']}")
-            if asset.get('model'):
-                lines.append(f"**Model**: {asset['model']}")
-            if asset.get('serialNumber'):
-                lines.append(f"**Serial**: {asset['serialNumber']}")
-            if asset.get('category'):
-                lines.append(f"**Type**: {asset['category']}")
+            lines.append(f"**ID**: `{equipment['id']}`")
+            lines.append(f"**Equipment Number**: {equipment.get('equipment_number', 'N/A')}")
+            if equipment.get('manufacturer'):
+                lines.append(f"**Manufacturer**: {equipment['manufacturer']}")
+            if equipment.get('model_number'):
+                lines.append(f"**Model**: {equipment['model_number']}")
+            if equipment.get('serial_number'):
+                lines.append(f"**Serial**: {equipment['serial_number']}")
+            if equipment.get('equipment_type'):
+                lines.append(f"**Type**: {equipment['equipment_type']}")
+            if equipment.get('location'):
+                lines.append(f"**Location**: {equipment['location']}")
 
-            lines.append(f"\nCreate work order: `/wo create {asset['id']}`")
+            lines.append(f"\nCreate work order: `/wo create {equipment['id']}`")
             await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
         elif action == 'create':
@@ -552,33 +555,37 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("Equipment data expired. Please send photo again.")
             return
 
-        # Create asset in Atlas
+        # Create equipment in Atlas
         try:
+            user_id = query.from_user.id
             async with AtlasClient() as client:
-                asset = await client.create_asset({
-                    "name": f"{ocr_data.get('manufacturer', 'Unknown')} {ocr_data.get('model', '')}".strip(),
-                    "manufacturer": ocr_data.get('manufacturer'),
-                    "model": ocr_data.get('model'),
-                    "serialNumber": ocr_data.get('serial'),
-                    "category": ocr_data.get('type'),
-                    "description": f"Voltage: {ocr_data.get('voltage', 'N/A')}, Current: {ocr_data.get('current', 'N/A')}"
-                })
+                equipment = await client.create_equipment(
+                    user_id=str(user_id),
+                    manufacturer=ocr_data.get('manufacturer') or 'Unknown',
+                    model_number=ocr_data.get('model'),
+                    serial_number=ocr_data.get('serial'),
+                    equipment_type=ocr_data.get('type'),
+                    photo_file_id=context.user_data.get('photo_file_id')
+                )
 
             context.user_data.pop('pending_equipment', None)
+            context.user_data.pop('photo_file_id', None)
 
             await query.edit_message_text(
                 f"✅ Equipment created in Atlas!\n\n"
-                f"**ID**: `{asset['id']}`\n"
-                f"**Name**: {asset.get('name')}\n"
-                f"**Manufacturer**: {asset.get('manufacturer', 'N/A')}\n"
-                f"**Model**: {asset.get('model', 'N/A')}\n\n"
-                f"Create work order: `/wo create {asset['id']}`",
+                f"**Equipment Number**: {equipment.get('equipment_number')}\n"
+                f"**ID**: `{equipment['id']}`\n"
+                f"**Manufacturer**: {equipment.get('manufacturer', 'N/A')}\n"
+                f"**Model**: {equipment.get('model_number', 'N/A')}\n"
+                f"**Serial**: {equipment.get('serial_number', 'N/A')}\n\n"
+                f"Create work order: `/wo create {equipment['id']}`",
                 parse_mode="Markdown"
             )
 
         except Exception as e:
             logger.error(f"Equipment creation from OCR error: {e}", exc_info=True)
             context.user_data.pop('pending_equipment', None)
+            context.user_data.pop('photo_file_id', None)
             await query.edit_message_text(f"❌ Error creating equipment: {str(e)}")
 
     elif query.data == "skip_equip":
@@ -647,6 +654,7 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 "voltage": result.voltage,
                 "current": result.current
             }
+            context.user_data['photo_file_id'] = photo.file_id
 
             # Add inline keyboard
             keyboard = [[
