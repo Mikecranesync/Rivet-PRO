@@ -7,7 +7,7 @@ Tier limits and API keys centralized here.
 
 import os
 from typing import Optional, Dict, Any
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, validator
 from functools import lru_cache
 
@@ -72,12 +72,33 @@ class Settings(BaseSettings):
     anthropic_api_key: Optional[str] = Field(default=None, env="ANTHROPIC_API_KEY")
     openai_api_key: Optional[str] = Field(default=None, env="OPENAI_API_KEY")
 
-    # Database
+    # Database (HARVEST 7 - Multi-provider with failover)
     database_url: str = Field(default="", env="DATABASE_URL")
     redis_url: Optional[str] = Field(default=None, env="REDIS_URL")
+    database_provider: str = Field(default="neon", env="DATABASE_PROVIDER")
+    database_failover_enabled: bool = Field(default=True, env="DATABASE_FAILOVER_ENABLED")
+    database_failover_order: str = Field(default="neon,vps,supabase", env="DATABASE_FAILOVER_ORDER")
 
-    # Telegram
-    telegram_bot_token: str = Field(default="", env="TELEGRAM_BOT_TOKEN")
+    # Neon
+    neon_db_url: Optional[str] = Field(default=None, env="NEON_DB_URL")
+
+    # Supabase (direct PostgreSQL access)
+    supabase_url: Optional[str] = Field(default=None, env="SUPABASE_URL")
+    supabase_service_role_key: Optional[str] = Field(default=None, env="SUPABASE_SERVICE_ROLE_KEY")
+    supabase_db_host: Optional[str] = Field(default=None, env="SUPABASE_DB_HOST")
+    supabase_db_password: Optional[str] = Field(default=None, env="SUPABASE_DB_PASSWORD")
+
+    # VPS KB
+    vps_kb_host: Optional[str] = Field(default=None, env="VPS_KB_HOST")
+    vps_kb_port: int = Field(default=5432, env="VPS_KB_PORT")
+    vps_kb_user: Optional[str] = Field(default=None, env="VPS_KB_USER")
+    vps_kb_password: Optional[str] = Field(default=None, env="VPS_KB_PASSWORD")
+    vps_kb_database: str = Field(default="rivet", env="VPS_KB_DATABASE")
+
+    # Telegram - Multiple bots
+    telegram_bot_token: str = Field(default="", env="TELEGRAM_BOT_TOKEN")  # RIVET Local Dev
+    orchestrator_bot_token: str = Field(default="", env="ORCHESTRATOR_BOT_TOKEN")  # Rivet (Main)
+    public_telegram_bot_token: str = Field(default="", env="PUBLIC_TELEGRAM_BOT_TOKEN")  # Rivet CMMS
     telegram_admin_ids: str = Field(default="", env="TELEGRAM_ADMIN_IDS")
 
     # Stripe
@@ -96,10 +117,19 @@ class Settings(BaseSettings):
     ocr_confidence_threshold: float = Field(default=0.7, env="OCR_CONFIDENCE_THRESHOLD")
     ocr_max_retries: int = Field(default=3, env="OCR_MAX_RETRIES")
 
+    # Memory Storage (HARVEST 8)
+    memory_backend: str = Field(default="postgres", env="MEMORY_BACKEND")
+    memory_sqlite_path: str = Field(default="./data/memory.db", env="MEMORY_SQLITE_PATH")
+
+    # Trace Logger (HARVEST 10)
+    trace_log_dir: str = Field(default="./logs/traces", env="TRACE_LOG_DIR")
+    trace_log_enabled: bool = Field(default=True, env="TRACE_LOG_ENABLED")
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = False
+        extra = 'ignore'  # Allow extra fields in .env that aren't defined in Settings
 
     @property
     def admin_ids(self) -> list[int]:

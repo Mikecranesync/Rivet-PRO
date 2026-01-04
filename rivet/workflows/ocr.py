@@ -19,6 +19,11 @@ from rivet.integrations.llm import (
     VISION_PROVIDER_CHAIN,
     ProviderConfig,
 )
+from rivet.atlas.equipment_taxonomy import (
+    identify_component,
+    extract_fault_code,
+    extract_model_number,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,9 +72,28 @@ CRITICAL RULES:
 """
 
 
-def validate_image_quality(image_bytes: bytes) -> Tuple[bool, str]:
+def validate_image_quality(
+    image_bytes: bytes,
+    min_width: int = 400,
+    min_height: int = 400,
+    max_dark_ratio: float = 0.90,      # Relaxed from 0.80
+    max_bright_ratio: float = 0.90,    # Relaxed from 0.80
+) -> Tuple[bool, str]:
     """
-    Check if image is suitable for OCR before API call.
+    Check if image is suitable for OCR.
+
+    Thresholds are lenient because:
+    - Real equipment photos often have reflective nameplates (highlights)
+    - Shop floor lighting varies (shadows, bright spots)
+    - OCR providers are robust to imperfect lighting
+    - False rejection costs more than false acceptance
+
+    Args:
+        image_bytes: Image data
+        min_width: Minimum width in pixels
+        min_height: Minimum height in pixels
+        max_dark_ratio: Maximum ratio of very dark pixels (0.0-1.0)
+        max_bright_ratio: Maximum ratio of very bright pixels (0.0-1.0)
 
     Returns:
         (is_valid, message) tuple
@@ -78,14 +102,18 @@ def validate_image_quality(image_bytes: bytes) -> Tuple[bool, str]:
         from PIL import Image
 
         img = Image.open(io.BytesIO(image_bytes))
+        logger.debug(f"Image validation: size={img.width}x{img.height}, mode={img.mode}")
 
         # Min resolution check
-        if img.width < 400 or img.height < 400:
-            return False, f"Image too small ({img.width}x{img.height}). Minimum 400x400 required."
+        if img.width < min_width or img.height < min_height:
+            return False, (
+                f"Image too small ({img.width}x{img.height}). "
+                f"Minimum {min_width}x{min_height} required."
+            )
 
-        # Max resolution (resize if needed)
+        # Max resolution warning only
         if img.width > 4096 or img.height > 4096:
-            logger.warning(f"Large image ({img.width}x{img.height}), may need resize")
+            logger.warning(f"Large image ({img.width}x{img.height}), may be slower")
 
         # Brightness check
         gray = img.convert("L")
@@ -93,18 +121,29 @@ def validate_image_quality(image_bytes: bytes) -> Tuple[bool, str]:
         total_pixels = sum(histogram)
 
         dark_pixels = sum(histogram[:77])
-        if dark_pixels / total_pixels > 0.8:
-            return False, "Image too dark. Please use better lighting."
+        dark_ratio = dark_pixels / total_pixels
+
+        if dark_ratio > max_dark_ratio:
+            return False, (
+                f"Image too dark ({dark_ratio:.0%} dark pixels). "
+                f"Please use better lighting."
+            )
 
         bright_pixels = sum(histogram[178:])
-        if bright_pixels / total_pixels > 0.8:
-            return False, "Image overexposed. Please reduce lighting."
+        bright_ratio = bright_pixels / total_pixels
 
+        if bright_ratio > max_bright_ratio:
+            return False, (
+                f"Image overexposed ({bright_ratio:.0%} bright pixels). "
+                f"Reduce lighting or avoid direct flash."
+            )
+
+        logger.debug(f"Validation passed: dark={dark_ratio:.1%}, bright={bright_ratio:.1%}")
         return True, "OK"
 
     except Exception as e:
-        logger.warning(f"Image validation error: {e}")
-        return True, "Validation skipped"
+        logger.warning(f"Validation error: {e}. Allowing image through.")
+        return True, "Validation skipped due to error"
 
 
 def parse_json_response(text: str) -> dict:
@@ -174,14 +213,22 @@ async def analyze_image(
 
     # Step 1: Quality check
     if not skip_quality_check:
+        logger.info(f"{user_log} Running image quality validation...")
         is_valid, quality_msg = validate_image_quality(image_bytes)
+        logger.info(f"{user_log} Quality check result: valid={is_valid}, msg={quality_msg}")
+
         if not is_valid:
-            logger.warning(f"{user_log} Quality check failed: {quality_msg}")
+            logger.warning(
+                f"{user_log} Image rejected by quality check: {quality_msg}",
+                extra={"user_id": user_id, "rejection_reason": quality_msg}
+            )
             return OCRResult(
                 error=quality_msg,
                 provider="quality_check",
                 confidence=0.0,
             )
+        else:
+            logger.info(f"{user_log} Quality check passed")
 
     # Step 2: Try providers in cost order
     available_providers = router.get_available_providers()
@@ -189,15 +236,23 @@ async def analyze_image(
     total_cost = 0.0
     providers_tried = []
 
+    logger.info(
+        f"{user_log} Starting provider chain. Available: {available_providers}. "
+        f"Min confidence required: {min_confidence:.0%}"
+    )
+
     for provider_config in VISION_PROVIDER_CHAIN:
         # Skip unavailable providers
         if provider_config.name not in available_providers:
+            logger.debug(f"{user_log} Skipping unavailable: {provider_config.name}")
             continue
 
         # Skip if we already tried this provider (e.g., multiple gemini models)
         provider_model_key = f"{provider_config.name}:{provider_config.model}"
 
-        logger.info(f"{user_log} Trying {provider_config.name}/{provider_config.model}")
+        logger.info(
+            f"{user_log} Trying {provider_config.name}/{provider_config.model}"
+        )
         providers_tried.append(provider_model_key)
 
         try:
@@ -210,6 +265,31 @@ async def analyze_image(
 
             # Parse response
             data = parse_json_response(response_text)
+
+            # Enhance with equipment taxonomy (fallback for missing data)
+            if data.get("raw_text"):
+                component = identify_component(data["raw_text"])
+
+                # Use taxonomy as fallback if LLM missed something
+                if component["manufacturer"] and not data.get("manufacturer"):
+                    data["manufacturer"] = component["manufacturer"]
+                    logger.info(f"{user_log} Taxonomy filled manufacturer: {component['manufacturer']}")
+
+                if component["family"] and not data.get("equipment_type"):
+                    data["equipment_type"] = component["family_key"]
+                    logger.info(f"{user_log} Taxonomy filled equipment_type: {component['family_key']}")
+
+                if not data.get("fault_code"):
+                    fault = extract_fault_code(data["raw_text"])
+                    if fault:
+                        data["fault_code"] = fault
+                        logger.info(f"{user_log} Taxonomy extracted fault_code: {fault}")
+
+                if not data.get("model_number"):
+                    model = extract_model_number(data["raw_text"])
+                    if model:
+                        data["model_number"] = model
+                        logger.info(f"{user_log} Taxonomy extracted model_number: {model}")
 
             # Calculate confidence if not provided
             llm_confidence = data.get("confidence", 0.0)
@@ -251,7 +331,12 @@ async def analyze_image(
                     (datetime.utcnow() - start_time).total_seconds() * 1000
                 )
                 result.cost_usd = total_cost
-                logger.info(f"{user_log} Accepted result from {provider_config.name}")
+                logger.info(
+                    f"{user_log} ✓ Accepted result from {provider_config.name}. "
+                    f"Confidence: {confidence:.0%} >= {min_confidence:.0%}. "
+                    f"Extracted: {result.manufacturer} {result.model_number}. "
+                    f"Total cost: ${total_cost:.4f}"
+                )
                 return result.normalize()
 
             # Keep best result so far
@@ -259,7 +344,15 @@ async def analyze_image(
                 best_result = result
 
         except Exception as e:
-            logger.warning(f"{user_log} {provider_config.name} failed: {e}")
+            logger.warning(
+                f"{user_log} {provider_config.name} failed: {type(e).__name__}: {e}",
+                exc_info=True,
+                extra={
+                    "user_id": user_id,
+                    "provider": provider_config.name,
+                    "error_type": type(e).__name__
+                }
+            )
             continue
 
     # Step 3: Return best result (even if below threshold)

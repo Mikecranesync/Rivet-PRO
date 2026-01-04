@@ -9,11 +9,30 @@ import os
 import base64
 import json
 import logging
+from enum import Enum
 from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+
+class ModelCapability(Enum):
+    """LLM capability tiers for cost optimization."""
+    SIMPLE = "simple"      # gpt-3.5-turbo, simple classification/routing
+    MODERATE = "moderate"  # gpt-4o-mini, claude-haiku - reasoning tasks
+    COMPLEX = "complex"    # gpt-4o, claude-sonnet - complex troubleshooting
+    CODING = "coding"      # Code generation/analysis
+    RESEARCH = "research"  # Deep research tasks
+
+
+@dataclass
+class LLMResponse:
+    """Structured response from text generation."""
+    text: str
+    cost_usd: float
+    model: str
+    provider: str
 
 
 @dataclass
@@ -31,7 +50,7 @@ class ProviderConfig:
 VISION_PROVIDER_CHAIN: List[ProviderConfig] = [
     ProviderConfig(
         name="groq",
-        model="llama-3.2-90b-vision-preview",
+        model="llama-3.2-11b-vision-preview",  # Updated: 90b deprecated
         cost_per_1k_input=0.0,  # Currently free
         cost_per_1k_output=0.0,
         max_image_size_mb=20,
@@ -74,6 +93,33 @@ VISION_PROVIDER_CHAIN: List[ProviderConfig] = [
 ]
 
 
+# Text generation model registry by capability tier
+# Each tier lists models from cheapest to most expensive
+TEXT_GENERATION_MODELS: Dict[ModelCapability, List[Tuple[str, str, float, float]]] = {
+    ModelCapability.SIMPLE: [
+        ("groq", "llama-3.3-70b-versatile", 0.0, 0.0),  # Free
+        ("openai", "gpt-3.5-turbo", 0.0005, 0.0015),
+    ],
+    ModelCapability.MODERATE: [
+        ("groq", "llama-3.3-70b-versatile", 0.0, 0.0),  # Free
+        ("openai", "gpt-4o-mini", 0.00015, 0.0006),
+        ("claude", "claude-3-haiku-20240307", 0.00025, 0.00125),
+    ],
+    ModelCapability.COMPLEX: [
+        ("claude", "claude-3-5-sonnet-20241022", 0.003, 0.015),
+        ("openai", "gpt-4o", 0.005, 0.015),
+    ],
+    ModelCapability.CODING: [
+        ("openai", "gpt-4o", 0.005, 0.015),
+        ("claude", "claude-3-5-sonnet-20241022", 0.003, 0.015),
+    ],
+    ModelCapability.RESEARCH: [
+        ("claude", "claude-3-5-sonnet-20241022", 0.003, 0.015),
+        ("openai", "gpt-4o", 0.005, 0.015),
+    ],
+}
+
+
 class LLMRouter:
     """
     Routes requests to appropriate LLM providers.
@@ -83,14 +129,16 @@ class LLMRouter:
 
     def __init__(self):
         """Initialize with available API keys."""
-        self.groq_key = os.getenv("GROQ_API_KEY")
-        self.gemini_key = os.getenv("GEMINI_API_KEY")
-        self.anthropic_key = os.getenv("ANTHROPIC_API_KEY")
-        self.openai_key = os.getenv("OPENAI_API_KEY")
+        from rivet.config import config
+
+        self.groq_key = config.groq_api_key
+        self.gemini_key = config.gemini_api_key
+        self.anthropic_key = config.anthropic_api_key
+        self.openai_key = config.openai_api_key
 
         # Lazy-loaded clients
         self._groq_client = None
-        self._gemini_model = None
+        self._gemini_client = None
         self._anthropic_client = None
         self._openai_client = None
 
@@ -114,13 +162,12 @@ class LLMRouter:
             self._groq_client = Groq(api_key=self.groq_key)
         return self._groq_client
 
-    def _get_gemini_model(self, model_name: str):
-        """Lazy-load Gemini model."""
-        if self.gemini_key:
-            import google.generativeai as genai
-            genai.configure(api_key=self.gemini_key)
-            return genai.GenerativeModel(model_name)
-        return None
+    def _get_gemini_client(self):
+        """Lazy-load Gemini client."""
+        if self._gemini_client is None and self.gemini_key:
+            from google import genai
+            self._gemini_client = genai.Client(api_key=self.gemini_key)
+        return self._gemini_client
 
     def _get_anthropic_client(self):
         """Lazy-load Anthropic client."""
@@ -179,14 +226,17 @@ class LLMRouter:
             cost = 0.0
 
         elif provider == "gemini":
-            genai_model = self._get_gemini_model(model)
-            if not genai_model:
-                raise ValueError("Gemini model not available")
+            client = self._get_gemini_client()
+            if not client:
+                raise ValueError("Gemini client not available")
 
-            response = await genai_model.generate_content_async([
-                prompt,
-                {"mime_type": "image/jpeg", "data": image_b64}
-            ])
+            response = await client.aio.models.generate_content(
+                model=model,
+                contents=[
+                    prompt,
+                    {"mime_type": "image/jpeg", "data": image_b64}
+                ]
+            )
             text = response.text
             # Estimate cost (rough)
             tokens_est = len(prompt.split()) + 500  # Input + output estimate
@@ -240,6 +290,137 @@ class LLMRouter:
             raise ValueError(f"Unknown provider: {provider}")
 
         return text, cost
+
+    async def generate(
+        self,
+        prompt: str,
+        capability: ModelCapability = ModelCapability.MODERATE,
+        max_tokens: int = 1500,
+        temperature: float = 0.7,
+    ) -> LLMResponse:
+        """
+        Generate text-only response (no vision).
+
+        Selects cheapest capable model based on capability tier.
+        Falls back through model chain if primary fails.
+
+        Args:
+            prompt: User prompt
+            capability: Required capability tier
+            max_tokens: Maximum tokens to generate
+            temperature: Sampling temperature (0.0-1.0)
+
+        Returns:
+            LLMResponse with text, cost, model, provider
+
+        Raises:
+            Exception: If all models in capability tier fail
+
+        Example:
+            >>> router = LLMRouter()
+            >>> response = await router.generate(
+            ...     "Explain F0002 fault on Siemens S7-1200",
+            ...     capability=ModelCapability.MODERATE
+            ... )
+            >>> print(f"Answer: {response.text}")
+            >>> print(f"Cost: ${response.cost_usd:.4f}")
+        """
+        # Get models for this capability tier
+        models = TEXT_GENERATION_MODELS.get(capability, [])
+
+        if not models:
+            raise ValueError(f"No models configured for capability {capability}")
+
+        # Try each model in order (cheapest first)
+        last_error = None
+
+        for provider, model, cost_in, cost_out in models:
+            try:
+                logger.info(f"[LLM Router] Trying {provider}/{model} for {capability.value}")
+
+                if provider == "groq":
+                    client = self._get_groq_client()
+                    if not client:
+                        logger.warning(f"[LLM Router] Groq client not available")
+                        continue
+
+                    response = client.chat.completions.create(
+                        model=model,
+                        messages=[{"role": "user", "content": prompt}],
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                    )
+
+                    text = response.choices[0].message.content
+                    cost = 0.0  # Groq is free
+
+                    logger.info(f"[LLM Router] Success: {provider}/{model}, cost=${cost:.4f}")
+                    return LLMResponse(
+                        text=text,
+                        cost_usd=cost,
+                        model=model,
+                        provider=provider
+                    )
+
+                elif provider == "openai":
+                    client = self._get_openai_client()
+                    if not client:
+                        logger.warning(f"[LLM Router] OpenAI client not available")
+                        continue
+
+                    response = client.chat.completions.create(
+                        model=model,
+                        messages=[{"role": "user", "content": prompt}],
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                    )
+
+                    text = response.choices[0].message.content
+                    cost = (response.usage.prompt_tokens / 1000) * cost_in
+                    cost += (response.usage.completion_tokens / 1000) * cost_out
+
+                    logger.info(f"[LLM Router] Success: {provider}/{model}, cost=${cost:.4f}")
+                    return LLMResponse(
+                        text=text,
+                        cost_usd=cost,
+                        model=model,
+                        provider=provider
+                    )
+
+                elif provider == "claude":
+                    client = self._get_anthropic_client()
+                    if not client:
+                        logger.warning(f"[LLM Router] Anthropic client not available")
+                        continue
+
+                    response = client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        messages=[{"role": "user", "content": prompt}]
+                    )
+
+                    text = response.content[0].text
+                    cost = (response.usage.input_tokens / 1000) * cost_in
+                    cost += (response.usage.output_tokens / 1000) * cost_out
+
+                    logger.info(f"[LLM Router] Success: {provider}/{model}, cost=${cost:.4f}")
+                    return LLMResponse(
+                        text=text,
+                        cost_usd=cost,
+                        model=model,
+                        provider=provider
+                    )
+
+            except Exception as e:
+                logger.warning(f"[LLM Router] {provider}/{model} failed: {e}")
+                last_error = e
+                continue  # Try next model
+
+        # All models failed
+        raise Exception(
+            f"All models failed for capability {capability}. Last error: {last_error}"
+        )
 
     def is_provider_available(self, provider_name: str) -> bool:
         """Check if a provider is configured."""
