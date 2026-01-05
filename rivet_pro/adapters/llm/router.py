@@ -52,7 +52,7 @@ class ProviderConfig:
 VISION_PROVIDER_CHAIN: List[ProviderConfig] = [
     ProviderConfig(
         name="gemini",
-        model="gemini-1.5-flash",
+        model="gemini-2.5-flash",  # Updated to Gemini 2.5 (1.5 deprecated)
         cost_per_1k_input=0.000075,  # $0.075 per 1M - CHEAPEST
         cost_per_1k_output=0.0003,
         max_image_size_mb=20,
@@ -87,7 +87,7 @@ VISION_PROVIDER_CHAIN: List[ProviderConfig] = [
     ),
     ProviderConfig(
         name="gemini",
-        model="gemini-1.5-pro",
+        model="gemini-2.5-pro",  # Updated to Gemini 2.5 (1.5 deprecated)
         cost_per_1k_input=0.00125,  # $1.25 per 1M
         cost_per_1k_output=0.005,
         max_image_size_mb=20,
