@@ -6,8 +6,8 @@ Usage:
 """
 
 import asyncio
-from adapters.telegram.bot import telegram_bot
-from infra.observability import get_logger
+from rivet_pro.adapters.telegram.bot import telegram_bot
+from rivet_pro.infra.observability import get_logger
 
 logger = get_logger(__name__)
 
