@@ -13,6 +13,8 @@ from telegram.ext import (
 )
 from rivet_pro.config.settings import settings
 from rivet_pro.infra.observability import get_logger
+from rivet_pro.infra.database import Database
+from rivet_pro.core.services.equipment_service import EquipmentService
 
 logger = get_logger(__name__)
 
@@ -25,6 +27,8 @@ class TelegramBot:
 
     def __init__(self):
         self.application: Application = None
+        self.db = Database()
+        self.equipment_service = None  # Initialized after db connects
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
@@ -114,6 +118,28 @@ class TelegramBot:
                 )
                 return
 
+            # Create or match equipment in CMMS
+            equipment_id = None
+            equipment_number = None
+            is_new = False
+
+            try:
+                equipment_id, equipment_number, is_new = await self.equipment_service.match_or_create_equipment(
+                    manufacturer=result.manufacturer,
+                    model_number=result.model_number,
+                    serial_number=result.serial_number,
+                    equipment_type=getattr(result, 'equipment_type', None),
+                    location=None,  # Can be added later via conversation
+                    user_id=f"telegram_{user_id}"
+                )
+                logger.info(
+                    f"Equipment {'created' if is_new else 'matched'} | "
+                    f"equipment_number={equipment_number} | user_id={user_id}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to create/match equipment: {e}", exc_info=True)
+                # Continue anyway - OCR succeeded even if CMMS failed
+
             # Format successful OCR result
             confidence_emoji = "✅" if result.confidence >= 0.85 else "⚠️"
 
@@ -125,6 +151,11 @@ class TelegramBot:
                 f"<b>Serial:</b> {result.serial_number or 'Not detected'}\n"
                 f"<b>Confidence:</b> {result.confidence:.0%}\n"
             )
+
+            # Add equipment number if created/matched
+            if equipment_number:
+                status = "🆕 Created" if is_new else "✓ Matched"
+                response += f"\n<b>Equipment:</b> {equipment_number} ({status})\n"
 
             # Add component type if detected
             if hasattr(result, 'component_type') and result.component_type:
@@ -237,6 +268,11 @@ class TelegramBot:
 
         logger.info("Starting Telegram bot with polling...")
 
+        # Connect to database
+        await self.db.connect()
+        self.equipment_service = EquipmentService(self.db)
+        logger.info("Database and equipment service initialized")
+
         # Initialize the application
         await self.application.initialize()
         await self.application.start()
@@ -261,6 +297,10 @@ class TelegramBot:
         await self.application.updater.stop()
         await self.application.stop()
         await self.application.shutdown()
+
+        # Disconnect database
+        if self.db:
+            await self.db.disconnect()
 
         logger.info("Telegram bot stopped")
 
