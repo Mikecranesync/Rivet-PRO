@@ -134,7 +134,7 @@ class LLMRouter:
         from rivet_pro.config.settings import settings
 
         self.groq_key = settings.groq_api_key
-        self.gemini_key = settings.gemini_api_key
+        self.gemini_key = settings.google_api_key  # Google API key for Gemini
         self.anthropic_key = settings.anthropic_api_key
         self.openai_key = settings.openai_api_key
 
