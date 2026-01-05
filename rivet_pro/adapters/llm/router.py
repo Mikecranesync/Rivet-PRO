@@ -51,44 +51,51 @@ class ProviderConfig:
 # Cost-optimized provider chain for vision tasks
 VISION_PROVIDER_CHAIN: List[ProviderConfig] = [
     ProviderConfig(
-        name="groq",
-        model="llama-3.2-90b-vision-preview",  # Groq's current vision model
-        cost_per_1k_input=0.0,  # Currently free
-        cost_per_1k_output=0.0,
-        max_image_size_mb=20,
-    ),
-    ProviderConfig(
         name="gemini",
         model="gemini-1.5-flash",
-        cost_per_1k_input=0.000075,  # $0.075 per 1M
+        cost_per_1k_input=0.000075,  # $0.075 per 1M - CHEAPEST
         cost_per_1k_output=0.0003,
         max_image_size_mb=20,
     ),
     ProviderConfig(
-        name="gemini",
-        model="gemini-1.5-pro",
-        cost_per_1k_input=0.00125,
-        cost_per_1k_output=0.005,
-        max_image_size_mb=20,
-    ),
-    ProviderConfig(
-        name="claude",
-        model="claude-3-haiku-20240307",
-        cost_per_1k_input=0.00025,
-        cost_per_1k_output=0.00125,
+        name="groq",
+        model="meta-llama/llama-4-scout-17b-16e-instruct",  # Llama 4 Scout - 460 tokens/s
+        cost_per_1k_input=0.00011,  # $0.11 per 1M
+        cost_per_1k_output=0.00034,
         max_image_size_mb=20,
     ),
     ProviderConfig(
         name="openai",
         model="gpt-4o-mini",
-        cost_per_1k_input=0.00015,
+        cost_per_1k_input=0.00015,  # $0.15 per 1M
         cost_per_1k_output=0.0006,
+        max_image_size_mb=20,
+    ),
+    ProviderConfig(
+        name="claude",
+        model="claude-3-haiku-20240307",
+        cost_per_1k_input=0.00025,  # $0.25 per 1M
+        cost_per_1k_output=0.00125,
+        max_image_size_mb=20,
+    ),
+    ProviderConfig(
+        name="groq",
+        model="meta-llama/llama-4-maverick-17b-128e-instruct",  # Llama 4 Maverick - better vision
+        cost_per_1k_input=0.00050,  # $0.50 per 1M
+        cost_per_1k_output=0.00077,
+        max_image_size_mb=20,
+    ),
+    ProviderConfig(
+        name="gemini",
+        model="gemini-1.5-pro",
+        cost_per_1k_input=0.00125,  # $1.25 per 1M
+        cost_per_1k_output=0.005,
         max_image_size_mb=20,
     ),
     ProviderConfig(
         name="openai",
         model="gpt-4o",
-        cost_per_1k_input=0.005,
+        cost_per_1k_input=0.005,  # $5.00 per 1M - MOST EXPENSIVE
         cost_per_1k_output=0.015,
         max_image_size_mb=20,
     ),
@@ -224,8 +231,9 @@ class LLMRouter:
                 max_tokens=max_tokens,
             )
             text = response.choices[0].message.content
-            # Groq is currently free
-            cost = 0.0
+            # Calculate cost (Groq doesn't return usage tokens, estimate from response)
+            tokens_est = len(prompt.split()) + len(text.split())
+            cost = (tokens_est / 1000) * provider_config.cost_per_1k_input
 
         elif provider == "gemini":
             client = self._get_gemini_client()
@@ -241,7 +249,7 @@ class LLMRouter:
                 contents=types.Content(
                     role="user",
                     parts=[
-                        types.Part.from_text(prompt),
+                        types.Part.from_text(text=prompt),  # Add text= parameter name
                         types.Part.from_bytes(
                             data=base64.b64decode(image_b64),
                             mime_type="image/jpeg"
