@@ -1,0 +1,267 @@
+"""
+Database connection management for Rivet Pro.
+Uses asyncpg for async PostgreSQL connections to Neon.
+"""
+
+import asyncpg
+from typing import Optional
+from contextlib import asynccontextmanager
+from pathlib import Path
+from rivet_pro.config.settings import settings
+from rivet_pro.infra.observability import get_logger
+
+logger = get_logger(__name__)
+
+
+class Database:
+    """
+    PostgreSQL database connection manager.
+    Manages connection pool and provides async context manager.
+    """
+
+    def __init__(self):
+        self.pool: Optional[asyncpg.Pool] = None
+
+    async def connect(self) -> None:
+        """
+        Create database connection pool.
+        Should be called on application startup.
+        """
+        if self.pool is not None:
+            logger.warning("Database pool already exists")
+            return
+
+        try:
+            logger.info(f"Connecting to database | Environment: {settings.environment}")
+
+            self.pool = await asyncpg.create_pool(
+                dsn=settings.database_url,
+                min_size=settings.database_pool_min_size,
+                max_size=settings.database_pool_max_size,
+                command_timeout=60,
+            )
+
+            # Test connection
+            async with self.pool.acquire() as conn:
+                version = await conn.fetchval("SELECT version()")
+                logger.info(f"Database connected successfully | PostgreSQL version: {version[:50]}...")
+
+        except Exception as e:
+            logger.error(f"Failed to connect to database: {e}")
+            raise
+
+    async def disconnect(self) -> None:
+        """
+        Close database connection pool.
+        Should be called on application shutdown.
+        """
+        if self.pool is None:
+            logger.warning("Database pool does not exist")
+            return
+
+        try:
+            await self.pool.close()
+            self.pool = None
+            logger.info("Database connection pool closed")
+        except Exception as e:
+            logger.error(f"Error closing database pool: {e}")
+            raise
+
+    @asynccontextmanager
+    async def acquire(self):
+        """
+        Async context manager for acquiring a database connection.
+
+        Usage:
+            async with db.acquire() as conn:
+                result = await conn.fetch("SELECT * FROM users")
+        """
+        if self.pool is None:
+            raise RuntimeError("Database pool not initialized. Call connect() first.")
+
+        async with self.pool.acquire() as connection:
+            yield connection
+
+    async def execute(self, query: str, *args) -> str:
+        """
+        Execute a query without returning results.
+
+        Args:
+            query: SQL query string
+            *args: Query parameters
+
+        Returns:
+            Status string from database
+        """
+        async with self.acquire() as conn:
+            return await conn.execute(query, *args)
+
+    async def fetch(self, query: str, *args) -> list:
+        """
+        Execute a query and return all results.
+
+        Args:
+            query: SQL query string
+            *args: Query parameters
+
+        Returns:
+            List of records
+        """
+        async with self.acquire() as conn:
+            return await conn.fetch(query, *args)
+
+    async def fetchrow(self, query: str, *args) -> Optional[asyncpg.Record]:
+        """
+        Execute a query and return a single row.
+
+        Args:
+            query: SQL query string
+            *args: Query parameters
+
+        Returns:
+            Single record or None
+        """
+        async with self.acquire() as conn:
+            return await conn.fetchrow(query, *args)
+
+    async def fetchval(self, query: str, *args):
+        """
+        Execute a query and return a single value.
+
+        Args:
+            query: SQL query string
+            *args: Query parameters
+
+        Returns:
+            Single value
+        """
+        async with self.acquire() as conn:
+            return await conn.fetchval(query, *args)
+
+    async def health_check(self) -> bool:
+        """
+        Check if database connection is healthy.
+
+        Returns:
+            True if database is accessible, False otherwise
+        """
+        try:
+            async with self.acquire() as conn:
+                await conn.fetchval("SELECT 1")
+            return True
+        except Exception as e:
+            logger.error(f"Database health check failed: {e}")
+            return False
+
+    async def run_migrations(self, migrations_dir: str = None) -> None:
+        """
+        Run all pending database migrations.
+
+        Args:
+            migrations_dir: Path to migrations directory (default: rivet_pro/migrations)
+        """
+        if migrations_dir is None:
+            migrations_dir = Path(__file__).parent.parent / "migrations"
+        else:
+            migrations_dir = Path(migrations_dir)
+
+        logger.info(f"Running migrations from: {migrations_dir}")
+
+        # Create migrations tracking table if it doesn't exist
+        await self._create_migrations_table()
+
+        # Get list of applied migrations
+        applied_migrations = await self._get_applied_migrations()
+
+        # Get all migration files
+        migration_files = sorted(migrations_dir.glob("*.sql"))
+
+        if not migration_files:
+            logger.warning(f"No migration files found in {migrations_dir}")
+            return
+
+        # Run pending migrations
+        for migration_file in migration_files:
+            migration_name = migration_file.name
+
+            if migration_name in applied_migrations:
+                logger.info(f"[SKIP] {migration_name} (already applied)")
+                continue
+
+            logger.info(f"[RUN] {migration_name}")
+
+            try:
+                # Read migration file
+                with open(migration_file, "r") as f:
+                    migration_sql = f.read()
+
+                # Execute migration
+                async with self.acquire() as conn:
+                    async with conn.transaction():
+                        await conn.execute(migration_sql)
+
+                        # Record migration
+                        await conn.execute(
+                            """
+                            INSERT INTO schema_migrations (migration_name)
+                            VALUES ($1)
+                            """,
+                            migration_name
+                        )
+
+                logger.info(f"[DONE] {migration_name}")
+
+            except Exception as e:
+                logger.error(f"[FAILED] {migration_name}: {e}")
+                raise
+
+        logger.info("All migrations complete")
+
+    async def _create_migrations_table(self) -> None:
+        """
+        Create the schema_migrations table if it doesn't exist.
+        """
+        async with self.acquire() as conn:
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS schema_migrations (
+                    id SERIAL PRIMARY KEY,
+                    migration_name VARCHAR(255) UNIQUE NOT NULL,
+                    applied_at TIMESTAMPTZ DEFAULT NOW()
+                )
+                """
+            )
+
+    async def _get_applied_migrations(self) -> set:
+        """
+        Get the set of applied migration names.
+
+        Returns:
+            Set of migration names that have been applied
+        """
+        async with self.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT migration_name FROM schema_migrations ORDER BY id"
+            )
+            return {row["migration_name"] for row in rows}
+
+    async def rollback_migration(self, migration_name: str) -> None:
+        """
+        Mark a migration as rolled back (does NOT execute rollback SQL).
+
+        Args:
+            migration_name: Name of the migration to rollback
+        """
+        logger.warning(f"Marking migration as rolled back: {migration_name}")
+
+        async with self.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM schema_migrations WHERE migration_name = $1",
+                migration_name
+            )
+
+        logger.info(f"Rolled back migration: {migration_name} | Result: {result}")
+
+
+# Singleton database instance
+db = Database()
