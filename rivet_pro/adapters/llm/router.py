@@ -52,7 +52,7 @@ class ProviderConfig:
 VISION_PROVIDER_CHAIN: List[ProviderConfig] = [
     ProviderConfig(
         name="groq",
-        model="llama-3.2-11b-vision-preview",  # Updated: 90b deprecated
+        model="llama-3.2-90b-vision-preview",  # Groq's current vision model
         cost_per_1k_input=0.0,  # Currently free
         cost_per_1k_output=0.0,
         max_image_size_mb=20,
@@ -232,12 +232,22 @@ class LLMRouter:
             if not client:
                 raise ValueError("Gemini client not available")
 
+            # Google GenAI SDK format
+            from google import genai
+            from google.genai import types
+
             response = await client.aio.models.generate_content(
                 model=model,
-                contents=[
-                    prompt,
-                    {"mime_type": "image/jpeg", "data": image_b64}
-                ]
+                contents=types.Content(
+                    role="user",
+                    parts=[
+                        types.Part.from_text(prompt),
+                        types.Part.from_bytes(
+                            data=base64.b64decode(image_b64),
+                            mime_type="image/jpeg"
+                        )
+                    ]
+                )
             )
             text = response.text
             # Estimate cost (rough)
