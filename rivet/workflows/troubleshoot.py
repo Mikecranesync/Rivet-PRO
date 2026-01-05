@@ -30,7 +30,7 @@ class TroubleshootResult:
     """Result from troubleshooting orchestrator."""
 
     answer: str                           # Final answer to user
-    route: str                            # Which route provided answer (kb/sme/general)
+    route: str                            # Which route provided answer (kb/sme/general/clarify)
     confidence: float                     # Confidence score (0.0-1.0)
 
     # Metadata
@@ -45,6 +45,7 @@ class TroubleshootResult:
     sme_confidence: Optional[float] = None
     sme_vendor: Optional[str] = None
     research_triggered: bool = False
+    clarification_prompt: Optional[str] = None  # Clarifying question if needed
 
     # Performance
     processing_time_ms: int = 0
@@ -76,6 +77,7 @@ class TroubleshootResult:
             "sme_confidence": self.sme_confidence,
             "sme_vendor": self.sme_vendor,
             "research_triggered": self.research_triggered,
+            "clarification_prompt": self.clarification_prompt,
             "processing_time_ms": self.processing_time_ms,
             "llm_calls": self.llm_calls,
             "cost_usd": self.cost_usd,
@@ -233,31 +235,69 @@ async def troubleshoot(
         )
 
     # ========================================================================
-    # ROUTE C: Research Trigger (KB gap detected)
+    # ROUTE C: Research Trigger (KB gap detected) / CLARIFY
     # ========================================================================
-    # SME confidence < threshold → log KB gap for async research
-    research_triggered = True
+    # SME confidence < threshold → check if clarification needed or log KB gap
 
-    log_kb_gap(
+    research_result = await trigger_research(
         query=query,
-        manufacturer=manufacturer or detected_vendor,
-        model_number=model_number,
-        fault_code=fault_code,
-    )
-
-    await trigger_research(
-        query=query,
-        manufacturer=manufacturer or detected_vendor,
-        model_number=model_number,
-        fault_code=fault_code,
         kb_confidence=kb_result["confidence"],
         sme_confidence=sme_result["confidence"],
+        ocr_result=ocr_result,
     )
 
-    logger.info(
-        f"{user_log} Route C (Research): KB gap logged "
-        f"(kb={kb_result['confidence']:.0%}, sme={sme_result['confidence']:.0%})"
-    )
+    # Check if clarification needed (confidence <0.4)
+    if research_result.get("clarification_needed"):
+        elapsed_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+        clarification_prompt = research_result["clarification_prompt"]
+
+        logger.info(
+            f"{user_log} Route C (CLARIFY): Requesting clarification "
+            f"(kb={kb_result['confidence']:.0%}, sme={sme_result['confidence']:.0%})"
+        )
+
+        return TroubleshootResult(
+            answer=clarification_prompt,
+            route="clarify",
+            confidence=max(kb_result["confidence"], sme_result["confidence"]),
+            manufacturer=manufacturer or detected_vendor,
+            model_number=model_number,
+            fault_code=fault_code,
+            kb_attempted=True,
+            kb_confidence=kb_result["confidence"],
+            sme_attempted=True,
+            sme_confidence=sme_result["confidence"],
+            sme_vendor=sme_result["vendor"],
+            research_triggered=False,
+            clarification_prompt=clarification_prompt,
+            processing_time_ms=elapsed_ms,
+            llm_calls=llm_calls,
+            cost_usd=total_cost,
+            safety_warnings=[],
+            sources=[],
+        )
+
+    # Knowledge gap logged for research
+    research_triggered = research_result.get("gap_logged", False)
+
+    if research_triggered:
+        # Legacy observability logging (still used for monitoring)
+        log_kb_gap(
+            query=query,
+            manufacturer=manufacturer or detected_vendor,
+            model_number=model_number,
+            fault_code=fault_code,
+        )
+
+        logger.info(
+            f"{user_log} Route C (RESEARCH): KB gap logged "
+            f"(kb={kb_result['confidence']:.0%}, sme={sme_result['confidence']:.0%})"
+        )
+    else:
+        logger.info(
+            f"{user_log} Route C (RESEARCH): Gap logging skipped "
+            f"(kb={kb_result['confidence']:.0%}, sme={sme_result['confidence']:.0%})"
+        )
 
     # ========================================================================
     # ROUTE D: General Claude Fallback
