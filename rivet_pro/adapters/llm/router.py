@@ -131,9 +131,7 @@ class LLMRouter:
 
     def __init__(self):
         """Initialize with available API keys."""
-        from rivet_pro.config.settings import get_settings
-
-        settings = get_settings()
+        from rivet_pro.config.settings import settings
 
         self.groq_key = settings.groq_api_key
         self.gemini_key = settings.gemini_api_key

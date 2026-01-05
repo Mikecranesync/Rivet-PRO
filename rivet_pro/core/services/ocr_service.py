@@ -14,7 +14,7 @@ import logging
 from typing import Optional, Tuple
 from datetime import datetime
 
-from rivet_pro.config.settings import get_settings
+from rivet_pro.config.settings import settings
 from rivet_pro.core.models.ocr import OCRResult, calculate_confidence
 from rivet_pro.adapters.llm import (
     get_llm_router,
