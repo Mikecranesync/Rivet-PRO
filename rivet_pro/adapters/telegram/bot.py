@@ -15,6 +15,7 @@ from rivet_pro.config.settings import settings
 from rivet_pro.infra.observability import get_logger
 from rivet_pro.infra.database import Database
 from rivet_pro.core.services.equipment_service import EquipmentService
+from rivet_pro.core.services.work_order_service import WorkOrderService
 
 logger = get_logger(__name__)
 
@@ -29,6 +30,7 @@ class TelegramBot:
         self.application: Application = None
         self.db = Database()
         self.equipment_service = None  # Initialized after db connects
+        self.work_order_service = None  # Initialized after db connects
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
@@ -212,6 +214,288 @@ class TelegramBot:
                 "Try asking about a specific equipment model or issue."
             )
 
+    async def equip_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Handle /equip command.
+
+        Usage:
+          /equip list - List your equipment
+          /equip search <query> - Search equipment
+          /equip view <equipment_number> - View equipment details
+        """
+        user_id = f"telegram_{update.effective_user.id}"
+        args = context.args or []
+
+        try:
+            if not args or args[0] == "list":
+                # List equipment
+                equipment_list = await self.db.execute_query_async(
+                    """
+                    SELECT
+                        equipment_number,
+                        manufacturer,
+                        model_number,
+                        work_order_count
+                    FROM cmms_equipment
+                    WHERE owned_by_user_id = $1
+                    ORDER BY created_at DESC
+                    LIMIT 10
+                    """,
+                    (user_id,)
+                )
+
+                if not equipment_list:
+                    await update.message.reply_text(
+                        "📦 *Your Equipment*\n\n"
+                        "No equipment found. Send me a photo of a nameplate to get started!",
+                        parse_mode="Markdown"
+                    )
+                    return
+
+                response = "📦 *Your Equipment* (most recent 10)\n\n"
+                for eq in equipment_list:
+                    wo_count = eq['work_order_count']
+                    response += f"• `{eq['equipment_number']}` - {eq['manufacturer']} {eq['model_number'] or ''}\n"
+                    response += f"  └─ {wo_count} work order{'s' if wo_count != 1 else ''}\n"
+
+                response += "\n💡 Use `/equip view <number>` to see details"
+                await update.message.reply_text(response, parse_mode="Markdown")
+
+            elif args[0] == "search":
+                if len(args) < 2:
+                    await update.message.reply_text(
+                        "Usage: `/equip search <query>`\nExample: `/equip search siemens`",
+                        parse_mode="Markdown"
+                    )
+                    return
+
+                query = " ".join(args[1:])
+                results = await self.db.execute_query_async(
+                    """
+                    SELECT
+                        equipment_number,
+                        manufacturer,
+                        model_number,
+                        serial_number
+                    FROM cmms_equipment
+                    WHERE owned_by_user_id = $1
+                      AND (
+                          manufacturer ILIKE $2
+                          OR model_number ILIKE $2
+                          OR serial_number ILIKE $2
+                      )
+                    LIMIT 10
+                    """,
+                    (user_id, f"%{query}%")
+                )
+
+                if not results:
+                    await update.message.reply_text(f"🔍 No equipment found matching: *{query}*", parse_mode="Markdown")
+                    return
+
+                response = f"🔍 *Search Results for: {query}*\n\n"
+                for eq in results:
+                    response += f"• `{eq['equipment_number']}` - {eq['manufacturer']} {eq['model_number'] or ''}\n"
+
+                await update.message.reply_text(response, parse_mode="Markdown")
+
+            elif args[0] == "view":
+                if len(args) < 2:
+                    await update.message.reply_text(
+                        "Usage: `/equip view <equipment_number>`\nExample: `/equip view EQ-2026-000001`",
+                        parse_mode="Markdown"
+                    )
+                    return
+
+                equipment_number = args[1]
+                equipment = await self.db.execute_query_async(
+                    """
+                    SELECT *
+                    FROM cmms_equipment
+                    WHERE owned_by_user_id = $1 AND equipment_number = $2
+                    """,
+                    (user_id, equipment_number),
+                    fetch_mode="one"
+                )
+
+                if not equipment:
+                    await update.message.reply_text(f"❌ Equipment `{equipment_number}` not found", parse_mode="Markdown")
+                    return
+
+                eq = equipment[0]
+                response = f"📦 *Equipment Details*\n\n"
+                response += f"*Number:* `{eq['equipment_number']}`\n"
+                response += f"*Manufacturer:* {eq['manufacturer']}\n"
+                response += f"*Model:* {eq['model_number'] or 'N/A'}\n"
+                response += f"*Serial:* {eq['serial_number'] or 'N/A'}\n"
+                response += f"*Type:* {eq['equipment_type'] or 'N/A'}\n"
+                response += f"*Location:* {eq['location'] or 'Not specified'}\n"
+                response += f"*Work Orders:* {eq['work_order_count']}\n"
+                response += f"*Last Fault:* {eq['last_reported_fault'] or 'None'}\n"
+
+                await update.message.reply_text(response, parse_mode="Markdown")
+
+            else:
+                await update.message.reply_text(
+                    "📦 *Equipment Commands*\n\n"
+                    "`/equip list` - List your equipment\n"
+                    "`/equip search <query>` - Search equipment\n"
+                    "`/equip view <number>` - View details",
+                    parse_mode="Markdown"
+                )
+
+        except Exception as e:
+            logger.error(f"Error in /equip command: {e}", exc_info=True)
+            await update.message.reply_text("❌ An error occurred. Please try again.")
+
+    async def wo_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Handle /wo command.
+
+        Usage:
+          /wo list - List your work orders
+          /wo view <work_order_number> - View work order details
+        """
+        user_id = f"telegram_{update.effective_user.id}"
+        args = context.args or []
+
+        try:
+            if not args or args[0] == "list":
+                # List work orders
+                work_orders = await self.work_order_service.list_work_orders_by_user(
+                    user_id=user_id,
+                    limit=10
+                )
+
+                if not work_orders:
+                    await update.message.reply_text(
+                        "🔧 *Your Work Orders*\n\n"
+                        "No work orders found.",
+                        parse_mode="Markdown"
+                    )
+                    return
+
+                response = "🔧 *Your Work Orders* (most recent 10)\n\n"
+                for wo in work_orders:
+                    status_emoji = {
+                        "open": "🟢",
+                        "in_progress": "🟡",
+                        "completed": "✅",
+                        "cancelled": "🔴"
+                    }.get(wo['status'], "⚪")
+
+                    priority_emoji = {
+                        "low": "🔵",
+                        "medium": "🟡",
+                        "high": "🟠",
+                        "critical": "🔴"
+                    }.get(wo['priority'], "⚪")
+
+                    response += f"{status_emoji} `{wo['work_order_number']}` {priority_emoji}\n"
+                    response += f"  {wo['title']}\n"
+                    response += f"  └─ Equipment: `{wo['equipment_number']}`\n"
+
+                response += "\n💡 Use `/wo view <number>` to see details"
+                await update.message.reply_text(response, parse_mode="Markdown")
+
+            elif args[0] == "view":
+                if len(args) < 2:
+                    await update.message.reply_text(
+                        "Usage: `/wo view <work_order_number>`\nExample: `/wo view WO-2026-000001`",
+                        parse_mode="Markdown"
+                    )
+                    return
+
+                work_order_number = args[1]
+                work_order = await self.db.execute_query_async(
+                    """
+                    SELECT *
+                    FROM work_orders
+                    WHERE user_id = $1 AND work_order_number = $2
+                    """,
+                    (user_id, work_order_number),
+                    fetch_mode="one"
+                )
+
+                if not work_order:
+                    await update.message.reply_text(f"❌ Work order `{work_order_number}` not found", parse_mode="Markdown")
+                    return
+
+                wo = work_order[0]
+                status_emoji = {
+                    "open": "🟢",
+                    "in_progress": "🟡",
+                    "completed": "✅",
+                    "cancelled": "🔴"
+                }.get(wo['status'], "⚪")
+
+                response = f"🔧 *Work Order Details*\n\n"
+                response += f"*Number:* `{wo['work_order_number']}`\n"
+                response += f"*Status:* {status_emoji} {wo['status'].title()}\n"
+                response += f"*Priority:* {wo['priority'].title()}\n"
+                response += f"*Equipment:* `{wo['equipment_number']}`\n"
+                response += f"*Title:* {wo['title']}\n"
+                response += f"*Description:*\n{wo['description']}\n"
+
+                if wo.get('fault_codes'):
+                    response += f"*Fault Codes:* {', '.join(wo['fault_codes'])}\n"
+
+                response += f"*Created:* {wo['created_at'].strftime('%Y-%m-%d %H:%M')}\n"
+
+                await update.message.reply_text(response, parse_mode="Markdown")
+
+            else:
+                await update.message.reply_text(
+                    "🔧 *Work Order Commands*\n\n"
+                    "`/wo list` - List your work orders\n"
+                    "`/wo view <number>` - View details",
+                    parse_mode="Markdown"
+                )
+
+        except Exception as e:
+            logger.error(f"Error in /wo command: {e}", exc_info=True)
+            await update.message.reply_text("❌ An error occurred. Please try again.")
+
+    async def stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Handle /stats command.
+        Show user statistics.
+        """
+        user_id = f"telegram_{update.effective_user.id}"
+
+        try:
+            # Get equipment count
+            equipment_count = await self.db.fetchval(
+                "SELECT COUNT(*) FROM cmms_equipment WHERE owned_by_user_id = $1",
+                user_id
+            )
+
+            # Get work order stats
+            wo_stats = await self.db.fetchrow(
+                """
+                SELECT
+                    COUNT(*) FILTER (WHERE status = 'open') as open,
+                    COUNT(*) FILTER (WHERE status = 'in_progress') as in_progress,
+                    COUNT(*) FILTER (WHERE status = 'completed') as completed
+                FROM work_orders
+                WHERE user_id = $1
+                """,
+                user_id
+            )
+
+            response = f"📊 *Your CMMS Stats*\n\n"
+            response += f"📦 *Equipment:* {equipment_count or 0}\n\n"
+            response += f"🔧 *Work Orders:*\n"
+            response += f"  └─ 🟢 Open: {wo_stats['open'] if wo_stats else 0}\n"
+            response += f"  └─ 🟡 In Progress: {wo_stats['in_progress'] if wo_stats else 0}\n"
+            response += f"  └─ ✅ Completed: {wo_stats['completed'] if wo_stats else 0}\n"
+
+            await update.message.reply_text(response, parse_mode="Markdown")
+
+        except Exception as e:
+            logger.error(f"Error in /stats command: {e}", exc_info=True)
+            await update.message.reply_text("❌ An error occurred. Please try again.")
+
     async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
         Handle errors in the bot.
@@ -240,11 +524,13 @@ class TelegramBot:
             .build()
         )
 
-        # Register handlers
-        self.application.add_handler(
-            CommandHandler("start", self.start_command)
-        )
+        # Register command handlers
+        self.application.add_handler(CommandHandler("start", self.start_command))
+        self.application.add_handler(CommandHandler("equip", self.equip_command))
+        self.application.add_handler(CommandHandler("wo", self.wo_command))
+        self.application.add_handler(CommandHandler("stats", self.stats_command))
 
+        # Register message handler (for non-command messages)
         self.application.add_handler(
             MessageHandler(
                 filters.ALL & ~filters.COMMAND,
@@ -271,7 +557,8 @@ class TelegramBot:
         # Connect to database
         await self.db.connect()
         self.equipment_service = EquipmentService(self.db)
-        logger.info("Database and equipment service initialized")
+        self.work_order_service = WorkOrderService(self.db)
+        logger.info("Database and services initialized")
 
         # Initialize the application
         await self.application.initialize()
