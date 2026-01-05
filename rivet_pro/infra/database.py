@@ -138,6 +138,41 @@ class Database:
         async with self.acquire() as conn:
             return await conn.fetchval(query, *args)
 
+    async def execute_query_async(self, query: str, params: tuple = (), fetch_mode: str = "all"):
+        """
+        Unified query execution matching equipment service expectations.
+
+        Wrapper method that adapts the existing fetch/fetchrow/execute API
+        to match the interface expected by EquipmentService.
+
+        Args:
+            query: SQL query string
+            params: Query parameters as tuple
+            fetch_mode: "all" (return list), "one" (return single record), or "none" (no return)
+
+        Returns:
+            List of dict records for "all", list with single dict for "one", None for "none"
+
+        Example:
+            # Fetch all results
+            results = await db.execute_query_async("SELECT * FROM users WHERE status = $1", ("active",))
+
+            # Fetch single result
+            result = await db.execute_query_async("SELECT * FROM users WHERE id = $1", (user_id,), fetch_mode="one")
+
+            # Execute without returning
+            await db.execute_query_async("DELETE FROM users WHERE id = $1", (user_id,), fetch_mode="none")
+        """
+        if fetch_mode == "none":
+            await self.execute(query, *params)
+            return None
+        elif fetch_mode == "one":
+            result = await self.fetchrow(query, *params)
+            return [dict(result)] if result else None
+        else:  # "all"
+            results = await self.fetch(query, *params)
+            return [dict(row) for row in results]
+
     async def health_check(self) -> bool:
         """
         Check if database connection is healthy.
