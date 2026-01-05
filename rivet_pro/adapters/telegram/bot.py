@@ -117,19 +117,20 @@ class TelegramBot:
             # Format successful OCR result
             confidence_emoji = "✅" if result.confidence >= 0.85 else "⚠️"
 
+            # Use HTML formatting (more robust than Markdown for special characters)
             response = (
-                f"{confidence_emoji} **Equipment Identified**\n\n"
-                f"**Manufacturer:** {result.manufacturer}\n"
-                f"**Model:** {result.model_number or 'Not detected'}\n"
-                f"**Serial:** {result.serial_number or 'Not detected'}\n"
-                f"**Confidence:** {result.confidence:.0%}\n"
+                f"{confidence_emoji} <b>Equipment Identified</b>\n\n"
+                f"<b>Manufacturer:</b> {result.manufacturer}\n"
+                f"<b>Model:</b> {result.model_number or 'Not detected'}\n"
+                f"<b>Serial:</b> {result.serial_number or 'Not detected'}\n"
+                f"<b>Confidence:</b> {result.confidence:.0%}\n"
             )
 
             # Add component type if detected
             if hasattr(result, 'component_type') and result.component_type:
-                response += f"**Type:** {result.component_type}\n"
+                response += f"<b>Type:</b> {result.component_type}\n"
 
-            await msg.edit_text(response, parse_mode="Markdown")
+            await msg.edit_text(response, parse_mode="HTML")
 
             logger.info(
                 f"OCR complete | user_id={user_id} | "
