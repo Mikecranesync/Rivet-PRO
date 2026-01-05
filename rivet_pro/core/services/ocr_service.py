@@ -207,7 +207,6 @@ async def analyze_image(
     Returns:
         OCRResult with best extraction
     """
-    settings = get_settings()
     router = get_llm_router()
 
     user_log = f"[{user_id}]" if user_id else "[OCR]"
