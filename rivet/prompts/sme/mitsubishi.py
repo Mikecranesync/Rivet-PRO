@@ -15,6 +15,7 @@ from typing import Optional, Dict, Any
 from rivet.models.ocr import OCRResult
 from rivet.integrations.llm import LLMRouter, ModelCapability
 from rivet.observability.tracer import traced
+from rivet.utils.response_formatter import synthesize_response
 
 logger = logging.getLogger(__name__)
 
@@ -171,8 +172,16 @@ async def troubleshoot(
 
     confidence = 0.80
 
+    # Format response with confidence badge, safety warnings, and citations
+    formatted_answer = synthesize_response(
+        answer=response.text,
+        confidence=confidence,
+        sources=[],
+        safety_warnings=safety_warnings
+    )
+
     result = {
-        "answer": response.text,
+        "answer": formatted_answer,  # Use formatted version
         "confidence": confidence,
         "sources": [],
         "safety_warnings": safety_warnings,

@@ -66,8 +66,8 @@ VENDOR_PATTERNS = {
         "ac500", "pm5", "ac800m", "symphony",
         # Software
         "control builder", "robotware",
-        # Motors
-        "m2", "m3", "ame", "amk",
+        # Motors (removed generic "m2", "m3" to avoid conflict with Schneider M340)
+        "abb motor", "ame", "amk",
     ],
     "schneider": [
         # PLCs

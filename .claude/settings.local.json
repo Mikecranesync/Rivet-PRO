@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "mcp__filesystem__list_directory",
+      "WebSearch",
+      "mcp__filesystem__directory_tree",
+      "Bash(mkdir:*)",
+      "mcp__filesystem__read_text_file",
+      "mcp__filesystem__write_file",
+      "Bash(pip install:*)",
+      "Bash(powershell -Command \"Get-Content ''C:\\Users\\hharp\\OneDrive\\Desktop\\Agent Factory\\agent_factory\\memory\\storage.py'' | ForEach-Object { $_-replace ''from agent_factory\\.'', ''from rivet.'' } | Set-Content ''rivet\\memory\\storage.py''\")",
+      "Bash(dir:*)",
+      "Bash(cat:*)",
+      "Bash(find:*)",
+      "Bash(curl -s \"https://api.telegram.org/bot8161680636:AAGF8eyldKWGF2I0qVSWXxveonRy02GH_nE/getMe\")",
+      "Bash(curl:*)",
+      "Bash(tasklist:*)",
+      "Bash(findstr:*)",
+      "Bash(timeout 5 python:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@72.60.175.144 \"cd Rivet-PRO && git pull && systemctl restart rivet-bots 2>&1 || echo ''Service restart method: systemctl not found. Checking for other methods...''\")",
+      "Bash(ssh root@72.60.175.144 \"ls -la && echo ''---'' && ps aux | grep -i bot | grep -v grep\")",
+      "Bash(ssh root@72.60.175.144 \"pkill -f ''orchestrator_bot'' && sleep 2 && ps aux | grep -i bot | grep -v grep\")",
+      "Bash(ssh -o ConnectTimeout=10 root@72.60.175.144 \"pkill -f ''orchestrator_bot''; sleep 2; echo ''Bots stopped''; ps aux | grep python | grep -v grep | head -5\")",
+      "Bash(ssh:*)",
+      "Bash(scp:*)",
+      "Bash(ls:*)",
+      "Bash(git ls-files:*)",
+      "Bash(timeout 30 python:*)",
+      "Bash(set PYTHONPATH=.)",
+      "Bash(poetry add:*)",
+      "Bash(python3:*)",
+      "mcp__filesystem__read_multiple_files"
+    ]
+  }
+}
