@@ -30,9 +30,9 @@ async def lifespan(app: FastAPI):
     await db.connect()
     logger.info("Database connected")
 
-    # Run migrations
-    await db.run_migrations()
-    logger.info("Migrations complete")
+    # Run migrations (commented out - migrations already applied manually)
+    # await db.run_migrations()
+    # logger.info("Migrations complete")
 
     yield
 
