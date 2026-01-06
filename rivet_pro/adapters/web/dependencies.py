@@ -83,7 +83,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 async def get_user_by_email(email: str) -> Optional[dict]:
     """Get user by email from database."""
     result = await db.fetchrow(
-        "SELECT id, email, full_name, role, telegram_user_id, password_hash, created_at FROM users WHERE email = $1",
+        "SELECT id, email, full_name, role, telegram_id::text as telegram_user_id, password_hash, created_at FROM users WHERE email = $1",
         email
     )
     return dict(result) if result else None
@@ -92,7 +92,7 @@ async def get_user_by_email(email: str) -> Optional[dict]:
 async def get_user_by_id(user_id: UUID) -> Optional[dict]:
     """Get user by ID from database."""
     result = await db.fetchrow(
-        "SELECT id, email, full_name, role, telegram_user_id, password_hash, created_at FROM users WHERE id = $1",
+        "SELECT id, email, full_name, role, telegram_id::text as telegram_user_id, password_hash, created_at FROM users WHERE id = $1",
         user_id
     )
     return dict(result) if result else None

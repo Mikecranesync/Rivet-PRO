@@ -80,7 +80,7 @@ async def register(
             """
             INSERT INTO users (email, full_name, password_hash, email_verified, role)
             VALUES ($1, $2, $3, $4, $5)
-            RETURNING id, email, full_name, role, telegram_user_id, created_at
+            RETURNING id, email, full_name, role, telegram_id::text as telegram_user_id, created_at
             """,
             request.email,
             request.full_name,
@@ -190,7 +190,7 @@ async def link_telegram(
     """
     # Check if Telegram ID is already linked to another user
     existing = await db.fetchrow(
-        "SELECT id, email FROM users WHERE telegram_user_id = $1 AND id != $2",
+        "SELECT id, email FROM users WHERE telegram_id = $1 AND id != $2",
         request.telegram_user_id,
         current_user.id
     )
@@ -203,7 +203,7 @@ async def link_telegram(
 
     # Link Telegram user ID
     await db.execute(
-        "UPDATE users SET telegram_user_id = $1 WHERE id = $2",
+        "UPDATE users SET telegram_id = $1 WHERE id = $2",
         request.telegram_user_id,
         current_user.id
     )
