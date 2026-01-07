@@ -1,39 +1,108 @@
 #!/bin/bash
-# Deploy Chat with Print-it to VPS
 
-set -e
+# Chat with Print - Complete Deployment Script
+# Automates database setup and verification
 
-VPS_IP="72.60.175.144"
-VPS_USER="root"
-REMOTE_DIR="/opt/rivet-pro/chat-with-print-it"
+set -e  # Exit on error
 
-echo "🚀 Deploying Chat with Print-it..."
+# Colors
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
 
-# Create remote directory
-ssh $VPS_USER@$VPS_IP "mkdir -p $REMOTE_DIR/{n8n-workflows,database,landing-page,scripts}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
-# Copy files
-echo "📦 Copying files..."
-scp -r n8n-workflows/* $VPS_USER@$VPS_IP:$REMOTE_DIR/n8n-workflows/
-scp -r database/* $VPS_USER@$VPS_IP:$REMOTE_DIR/database/
-scp -r landing-page/* $VPS_USER@$VPS_IP:$REMOTE_DIR/landing-page/
-scp .env.example $VPS_USER@$VPS_IP:$REMOTE_DIR/
+echo -e "${BLUE}=======================================${NC}"
+echo -e "${BLUE}  Chat with Print - Deployment${NC}"
+echo -e "${BLUE}=======================================${NC}"
+echo ""
 
-# Run database migration
-echo "🗄️ Running database migration..."
-ssh $VPS_USER@$VPS_IP "cd $REMOTE_DIR && psql \$DATABASE_URL -f database/schema.sql"
+# Check prerequisites
+echo -e "${YELLOW}=== Checking Prerequisites ===${NC}"
 
-# Setup nginx for landing page
-echo "🌐 Setting up nginx..."
-ssh $VPS_USER@$VPS_IP "cp $REMOTE_DIR/landing-page/index.html /var/www/html/rivetpro/"
+if [ -z "$DATABASE_URL" ]; then
+    echo -e "${RED}ERROR: DATABASE_URL not set${NC}"
+    echo "Set it with: export DATABASE_URL=postgresql://..."
+    exit 1
+fi
 
-# Import workflows to n8n
-echo "📊 Import workflows manually via n8n UI at http://$VPS_IP:5678"
+if ! command -v psql &> /dev/null; then
+    echo -e "${RED}ERROR: psql not found${NC}"
+    echo "Install PostgreSQL client"
+    exit 1
+fi
 
-echo "✅ Deployment complete!"
+echo -e "${GREEN}✅ Prerequisites OK${NC}"
+echo ""
+
+# Deploy database schema
+echo -e "${YELLOW}=== Deploying Database Schema ===${NC}"
+SCHEMA_FILE="${PROJECT_ROOT}/database/schema.sql"
+
+if [ ! -f "$SCHEMA_FILE" ]; then
+    echo -e "${RED}ERROR: Schema file not found at $SCHEMA_FILE${NC}"
+    exit 1
+fi
+
+echo "Running schema.sql..."
+if psql "$DATABASE_URL" -f "$SCHEMA_FILE"; then
+    echo -e "${GREEN}✅ Database schema deployed${NC}"
+else
+    echo -e "${RED}❌ Database deployment failed${NC}"
+    exit 1
+fi
+
+# Verify tables
+echo ""
+echo -e "${YELLOW}=== Verifying Tables ===${NC}"
+TABLES=$(psql "$DATABASE_URL" -t -c "SELECT tablename FROM pg_tables WHERE schemaname='public';" | tr -d ' ')
+EXPECTED_TABLES=("users" "lookups" "payments" "daily_stats")
+
+for table in "${EXPECTED_TABLES[@]}"; do
+    if echo "$TABLES" | grep -q "^$table$"; then
+        echo -e "${GREEN}✅ Table '$table' exists${NC}"
+    else
+        echo -e "${RED}❌ Table '$table' missing${NC}"
+        exit 1
+    fi
+done
+
+# Verify indexes
+echo ""
+echo -e "${YELLOW}=== Verifying Indexes ===${NC}"
+INDEX_COUNT=$(psql "$DATABASE_URL" -t -c "SELECT COUNT(*) FROM pg_indexes WHERE schemaname='public';" | tr -d ' ')
+if [ "$INDEX_COUNT" -ge 6 ]; then
+    echo -e "${GREEN}✅ $INDEX_COUNT indexes created${NC}"
+else
+    echo -e "${YELLOW}⚠️  Only $INDEX_COUNT indexes found (expected 6+)${NC}"
+fi
+
+# Verify function
+echo ""
+echo -e "${YELLOW}=== Verifying Database Functions ===${NC}"
+FUNCTION_EXISTS=$(psql "$DATABASE_URL" -t -c "SELECT EXISTS(SELECT 1 FROM pg_proc WHERE proname='update_daily_stats');" | tr -d ' ')
+if [ "$FUNCTION_EXISTS" = "t" ]; then
+    echo -e "${GREEN}✅ Function 'update_daily_stats' exists${NC}"
+else
+    echo -e "${RED}❌ Function 'update_daily_stats' missing${NC}"
+    exit 1
+fi
+
+# Summary
+echo ""
+echo -e "${BLUE}=======================================${NC}"
+echo -e "${GREEN}✅ Database deployment complete!${NC}"
+echo -e "${BLUE}=======================================${NC}"
 echo ""
 echo "Next steps:"
-echo "1. Copy .env.example to .env and fill in your values"
-echo "2. Import n8n workflows via the UI"
-echo "3. Configure Telegram webhook"
-echo "4. Setup Stripe webhook to point to your n8n URL"
+echo "1. Configure n8n environment variables (Settings > Variables)"
+echo "2. Import workflows from n8n-workflows/ directory"
+echo "3. Configure workflow credentials (Telegram, PostgreSQL)"
+echo "4. Run: ./scripts/set_telegram_webhook.sh"
+echo "5. Activate workflows in n8n UI"
+echo "6. Test with: ./scripts/test_checklist.md"
+echo ""
+echo "For full instructions, see: DEPLOYMENT.md"
