@@ -1,0 +1,269 @@
+{
+  "name": "Chat with Print-it - Stripe Webhook",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "stripe-webhook",
+        "options": {}
+      },
+      "id": "webhook_trigger",
+      "name": "Stripe Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 300],
+      "webhookId": "stripe-webhook-chat-print-it"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Verify Stripe webhook signature\nconst crypto = require('crypto');\nconst payload = JSON.stringify($input.item.json);\nconst sig = $input.item.headers['stripe-signature'];\nconst webhookSecret = $env.STRIPE_WEBHOOK_SECRET;\n\n// Parse signature components\nconst sigParts = sig.split(',').reduce((acc, part) => {\n  const [key, value] = part.split('=');\n  acc[key] = value;\n  return acc;\n}, {});\n\nconst signedPayload = `${sigParts.t}.${payload}`;\nconst expectedSig = crypto\n  .createHmac('sha256', webhookSecret)\n  .update(signedPayload)\n  .digest('hex');\n\nconst isValid = crypto.timingSafeEqual(\n  Buffer.from(expectedSig),\n  Buffer.from(sigParts.v1)\n);\n\nif (!isValid) {\n  throw new Error('Invalid webhook signature');\n}\n\nreturn { json: { ...$input.item.json, verified: true } };"
+      },
+      "id": "verify_signature",
+      "name": "Verify Signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "outputKey": "checkout_complete",
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.type }}",
+                    "rightValue": "checkout.session.completed",
+                    "operator": {"type": "string", "operation": "equals"}
+                  }
+                ]
+              }
+            },
+            {
+              "outputKey": "subscription_deleted",
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.type }}",
+                    "rightValue": "customer.subscription.deleted",
+                    "operator": {"type": "string", "operation": "equals"}
+                  }
+                ]
+              }
+            },
+            {
+              "outputKey": "payment_failed",
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.type }}",
+                    "rightValue": "invoice.payment_failed",
+                    "operator": {"type": "string", "operation": "equals"}
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "route_event",
+      "name": "Route Event",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE users SET is_pro = true, stripe_customer_id = $1, pro_expires_at = NOW() + INTERVAL '1 month' WHERE telegram_id = $2 RETURNING *",
+        "options": {
+          "queryParams": "={{ [$json.data.object.customer, parseInt($json.data.object.client_reference_id)] }}"
+        }
+      },
+      "id": "activate_pro",
+      "name": "Activate Pro",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [660, 200],
+      "credentials": {
+        "postgres": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Neon PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO payments (telegram_id, stripe_session_id, stripe_customer_id, amount_cents, status) VALUES ($1, $2, $3, $4, 'complete')",
+        "options": {
+          "queryParams": "={{ [parseInt($json.data.object.client_reference_id), $json.data.object.id, $json.data.object.customer, $json.data.object.amount_total] }}"
+        }
+      },
+      "id": "log_payment",
+      "name": "Log Payment",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [880, 200],
+      "credentials": {
+        "postgres": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Neon PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $('Stripe Webhook').item.json.data.object.client_reference_id }}",
+        "text": "🎉 Welcome to RIVET Pro!\n\nYour subscription is now active. You have unlimited panel analyses!\n\nSend me a photo to get started.",
+        "additionalFields": {}
+      },
+      "id": "notify_user_pro",
+      "name": "Notify User Pro",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1100, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": \"💰 New Pro subscriber! Telegram ID: {{ $('Stripe Webhook').item.json.data.object.client_reference_id }} - $29/month\"\n}",
+        "options": {}
+      },
+      "id": "slack_new_pro",
+      "name": "Slack: New Pro",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE users SET is_pro = false WHERE stripe_customer_id = $1",
+        "options": {
+          "queryParams": "={{ [$json.data.object.customer] }}"
+        }
+      },
+      "id": "deactivate_pro",
+      "name": "Deactivate Pro",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [660, 300],
+      "credentials": {
+        "postgres": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Neon PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT telegram_id FROM users WHERE stripe_customer_id = $1",
+        "options": {
+          "queryParams": "={{ [$json.data.object.customer] }}"
+        }
+      },
+      "id": "get_user_for_failed",
+      "name": "Get User",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [660, 400],
+      "credentials": {
+        "postgres": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Neon PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $json[0].telegram_id }}",
+        "text": "⚠️ Payment failed for your RIVET Pro subscription.\n\nPlease update your payment method to continue using Pro features.\n\n👉 /upgrade to update payment",
+        "additionalFields": {}
+      },
+      "id": "notify_payment_failed",
+      "name": "Notify Payment Failed",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [880, 400],
+      "credentials": {
+        "telegramApi": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "{\"received\": true}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond_ok",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1540, 300]
+    }
+  ],
+  "connections": {
+    "Stripe Webhook": {
+      "main": [[{"node": "Verify Signature", "type": "main", "index": 0}]]
+    },
+    "Verify Signature": {
+      "main": [[{"node": "Route Event", "type": "main", "index": 0}]]
+    },
+    "Route Event": {
+      "main": [
+        [{"node": "Activate Pro", "type": "main", "index": 0}],
+        [{"node": "Deactivate Pro", "type": "main", "index": 0}],
+        [{"node": "Get User", "type": "main", "index": 0}]
+      ]
+    },
+    "Activate Pro": {
+      "main": [[{"node": "Log Payment", "type": "main", "index": 0}]]
+    },
+    "Log Payment": {
+      "main": [[{"node": "Notify User Pro", "type": "main", "index": 0}]]
+    },
+    "Notify User Pro": {
+      "main": [[{"node": "Slack: New Pro", "type": "main", "index": 0}]]
+    },
+    "Slack: New Pro": {
+      "main": [[{"node": "Respond OK", "type": "main", "index": 0}]]
+    },
+    "Deactivate Pro": {
+      "main": [[{"node": "Respond OK", "type": "main", "index": 0}]]
+    },
+    "Get User": {
+      "main": [[{"node": "Notify Payment Failed", "type": "main", "index": 0}]]
+    },
+    "Notify Payment Failed": {
+      "main": [[{"node": "Respond OK", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {"executionOrder": "v1"},
+  "staticData": null,
+  "tags": ["chat-with-print-it", "stripe", "payments"]
+}

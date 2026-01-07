@@ -1,0 +1,625 @@
+{
+  "name": "Chat with Print-it - Core Bot",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"]
+      },
+      "id": "telegram_trigger",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Route incoming message\nconst msg = $input.item.json.message;\nconst text = msg.text || '';\nconst hasPhoto = !!msg.photo;\nconst chatId = msg.chat.id;\nconst userId = msg.from.id;\nconst username = msg.from.username || '';\nconst firstName = msg.from.first_name || '';\n\n// Command detection\nconst commands = ['/start', '/help', '/status', '/upgrade'];\nconst isCommand = commands.some(cmd => text.toLowerCase().startsWith(cmd));\nconst command = isCommand ? text.toLowerCase().split(' ')[0] : null;\n\nreturn {\n  json: {\n    chat_id: chatId,\n    user_id: userId,\n    username,\n    first_name: firstName,\n    text,\n    has_photo: hasPhoto,\n    is_command: isCommand,\n    command,\n    route: hasPhoto ? 'photo' : (isCommand ? 'command' : 'text')\n  }\n};"
+      },
+      "id": "parse_message",
+      "name": "Parse Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "outputKey": "photo",
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "photo",
+                    "operator": {"type": "string", "operation": "equals"}
+                  }
+                ]
+              }
+            },
+            {
+              "outputKey": "command",
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "command",
+                    "operator": {"type": "string", "operation": "equals"}
+                  }
+                ]
+              }
+            },
+            {
+              "outputKey": "text",
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "text",
+                    "operator": {"type": "string", "operation": "equals"}
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "route_message",
+      "name": "Route Message",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO users (telegram_id, telegram_username, first_name) VALUES ($1, $2, $3) ON CONFLICT (telegram_id) DO UPDATE SET telegram_username = $2, first_name = $3 RETURNING *",
+        "options": {
+          "queryParams": "={{ [$json.user_id, $json.username, $json.first_name] }}"
+        }
+      },
+      "id": "upsert_user",
+      "name": "Upsert User",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [660, 100],
+      "credentials": {
+        "postgres": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Neon PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict"},
+          "conditions": [
+            {
+              "id": "limit_check",
+              "leftValue": "={{ $json.is_pro === true || $json.lookup_count < 10 }}",
+              "rightValue": true,
+              "operator": {"type": "boolean", "operation": "equals"}
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check_limits",
+      "name": "Check Limits",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [880, 100]
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $('Parse Message').item.json.chat_id }}",
+        "text": "⚡ Analyzing your panel... give me 15-20 seconds",
+        "additionalFields": {}
+      },
+      "id": "send_processing",
+      "name": "Send Processing",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1100, 0],
+      "credentials": {
+        "telegramApi": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getFile",
+        "fileId": "={{ $('Telegram Trigger').item.json.message.photo.slice(-1)[0].file_id }}"
+      },
+      "id": "get_photo",
+      "name": "Get Photo File",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1320, 0],
+      "credentials": {
+        "telegramApi": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.telegram.org/file/bot{{ $credentials.telegramApi.accessToken }}/{{ $json.result.file_path }}",
+        "options": {
+          "response": {
+            "response": {"responseFormat": "file"}
+          }
+        }
+      },
+      "id": "download_photo",
+      "name": "Download Photo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "x-api-key", "value": "={{ $vars.ANTHROPIC_API_KEY }}"},
+            {"name": "anthropic-version", "value": "2023-06-01"},
+            {"name": "content-type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1500,\n  \"messages\": [{\n    \"role\": \"user\",\n    \"content\": [\n      {\n        \"type\": \"image\",\n        \"source\": {\n          \"type\": \"base64\",\n          \"media_type\": \"image/jpeg\",\n          \"data\": \"{{ $binary.data.toString('base64') }}\"\n        }\n      },\n      {\n        \"type\": \"text\",\n        \"text\": \"You are an expert industrial maintenance technician. Analyze this electrical panel photo. Provide: 1) What type of system/panel this is, 2) Key components you can identify with their designations, 3) Top 3 things a technician should check first if troubleshooting, 4) Any obvious issues or wear you can see. Be specific and practical - this is for a field tech who needs actionable guidance.\"\n      }\n    ]\n  }]\n}",
+        "options": {}
+      },
+      "id": "claude_vision",
+      "name": "Claude Vision Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1760, 0]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Format Claude response for Telegram\nconst response = $input.item.json;\nconst analysis = response.content?.[0]?.text || 'Analysis failed';\nconst chatId = $('Parse Message').item.json.chat_id;\nconst lookupCount = $('Upsert User').item.json[0]?.lookup_count || 0;\nconst isPro = $('Upsert User').item.json[0]?.is_pro || false;\nconst remaining = isPro ? '∞' : (10 - lookupCount - 1);\n\n// Format for Telegram (bold headers, proper line breaks)\nlet formatted = analysis\n  .replace(/\\*\\*([^*]+)\\*\\*/g, '<b>$1</b>')\n  .replace(/\\n\\n/g, '\\n\\n');\n\nconst footer = `\\n\\n━━━━━━━━━━━━━━━\\n📊 Analysis ${isPro ? '(Pro)' : `${lookupCount + 1} of 10`}${!isPro ? ` | ${remaining} free lookups remaining` : ''}`;\n\nreturn {\n  json: {\n    chat_id: chatId,\n    formatted_response: formatted + footer,\n    raw_analysis: analysis,\n    success: true\n  }\n};"
+      },
+      "id": "format_response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1980, 0]
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.formatted_response }}",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "send_analysis",
+      "name": "Send Analysis",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2200, 0],
+      "credentials": {
+        "telegramApi": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE users SET lookup_count = lookup_count + 1, last_lookup_at = NOW() WHERE telegram_id = $1",
+        "options": {
+          "queryParams": "={{ [$('Parse Message').item.json.user_id] }}"
+        }
+      },
+      "id": "increment_counter",
+      "name": "Increment Counter",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [2420, 0],
+      "credentials": {
+        "postgres": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Neon PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO lookups (telegram_id, analysis_text, processing_time_ms, success) VALUES ($1, $2, $3, $4)",
+        "options": {
+          "queryParams": "={{ [$('Parse Message').item.json.user_id, $('Format Response').item.json.raw_analysis, 15000, true] }}"
+        }
+      },
+      "id": "log_lookup",
+      "name": "Log Lookup",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [2640, 0],
+      "credentials": {
+        "postgres": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Neon PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $('Parse Message').item.json.chat_id }}",
+        "text": "⚠️ You've used all 10 free analyses!\n\nUpgrade to RIVET Pro for unlimited analyses:\n• Unlimited panel analyses\n• Priority processing\n• IEC→ANSI conversion (coming soon)\n\n👉 /upgrade to continue",
+        "additionalFields": {}
+      },
+      "id": "send_limit_reached",
+      "name": "Send Limit Reached",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1100, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chat_id }}",
+        "text": "📸 Send me a photo of an electrical panel and I'll analyze it for you!\n\nI'll identify:\n• System/panel type\n• Key components\n• What to check first\n• Visible issues",
+        "additionalFields": {}
+      },
+      "id": "send_photo_request",
+      "name": "Request Photo",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [660, 500],
+      "credentials": {
+        "telegramApi": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "outputKey": "start",
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "/start",
+                    "operator": {"type": "string", "operation": "equals"}
+                  }
+                ]
+              }
+            },
+            {
+              "outputKey": "help",
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "/help",
+                    "operator": {"type": "string", "operation": "equals"}
+                  }
+                ]
+              }
+            },
+            {
+              "outputKey": "status",
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "/status",
+                    "operator": {"type": "string", "operation": "equals"}
+                  }
+                ]
+              }
+            },
+            {
+              "outputKey": "upgrade",
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "/upgrade",
+                    "operator": {"type": "string", "operation": "equals"}
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "route_command",
+      "name": "Route Command",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chat_id }}",
+        "text": "Welcome to RIVET Pro! ⚡\n\nI help maintenance technicians troubleshoot electrical panels instantly.\n\nJust send me a photo of any electrical panel and I'll:\n• Identify the system and components\n• Tell you what to check first\n• Spot potential issues\n\nYou get 10 free analyses. Ready? Send a photo!",
+        "additionalFields": {}
+      },
+      "id": "cmd_start",
+      "name": "CMD: Start",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [880, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chat_id }}",
+        "text": "📖 How to use RIVET Pro:\n\n1. Take a clear photo of an electrical panel\n2. Send it to me\n3. Get instant analysis and troubleshooting guidance\n\nCommands:\n/status - Check your usage and subscription\n/upgrade - Get unlimited analyses for $29/month\n/help - Show this message\n\nTips for best results:\n• Good lighting\n• Straight-on angle\n• Include labels/nameplates if visible",
+        "additionalFields": {}
+      },
+      "id": "cmd_help",
+      "name": "CMD: Help",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [880, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM users WHERE telegram_id = $1",
+        "options": {
+          "queryParams": "={{ [$json.user_id] }}"
+        }
+      },
+      "id": "get_user_status",
+      "name": "Get User Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [880, 400],
+      "credentials": {
+        "postgres": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Neon PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const user = $input.item.json[0] || {};\nconst chatId = $('Parse Message').item.json.chat_id;\nconst isPro = user.is_pro || false;\nconst lookupCount = user.lookup_count || 0;\nconst createdAt = user.created_at ? new Date(user.created_at).toLocaleDateString() : 'Unknown';\nconst proExpires = user.pro_expires_at ? new Date(user.pro_expires_at).toLocaleDateString() : null;\n\nlet statusText = `📊 Your RIVET Pro Status\n\nLookups used: ${lookupCount} of 10\nAccount type: ${isPro ? 'Pro ⭐' : 'Free'}\nMember since: ${createdAt}`;\n\nif (!isPro && lookupCount >= 8) {\n  statusText += `\n\n⚠️ Running low! /upgrade for unlimited access`;\n}\nif (isPro && proExpires) {\n  statusText += `\n\nPro expires: ${proExpires}`;\n}\n\nreturn { json: { chat_id: chatId, status_text: statusText } };"
+      },
+      "id": "format_status",
+      "name": "Format Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 400]
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.status_text }}",
+        "additionalFields": {}
+      },
+      "id": "cmd_status",
+      "name": "CMD: Status",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1320, 400],
+      "credentials": {
+        "telegramApi": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chat_id }}",
+        "text": "⚡ Upgrade to RIVET Pro\n\n$29/month - Unlimited analyses\n\n✓ Unlimited panel analyses\n✓ Priority processing\n✓ IEC→ANSI conversion (coming soon)\n✓ Documentation generation (coming soon)\n\n👉 Click here to upgrade: {{ $vars.STRIPE_CHECKOUT_URL }}?client_reference_id={{ $json.user_id }}",
+        "additionalFields": {}
+      },
+      "id": "cmd_upgrade",
+      "name": "CMD: Upgrade",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [880, 500],
+      "credentials": {
+        "telegramApi": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": \"🆕 New user: @{{ $('Parse Message').item.json.username || 'unknown' }} ({{ $('Parse Message').item.json.user_id }})\"\n}",
+        "options": {}
+      },
+      "id": "slack_new_user",
+      "name": "Slack: New User",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 0]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {"name": "error_stage", "value": "{{ $node.name }}"}
+          ]
+        },
+        "options": {}
+      },
+      "id": "error_handler",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2200, 200]
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $('Parse Message').item.json.chat_id }}",
+        "text": "Sorry, analysis failed. Please try again.\n\nIf the problem persists, try:\n• A clearer photo\n• Better lighting\n• Different angle",
+        "additionalFields": {}
+      },
+      "id": "send_error",
+      "name": "Send Error",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2420, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": \"🚨 Error in RIVET Pro: {{ $json.error_stage }} | User: {{ $('Parse Message').item.json.user_id }}\"\n}",
+        "options": {}
+      },
+      "id": "slack_error",
+      "name": "Slack: Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2640, 200]
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [[{"node": "Parse Message", "type": "main", "index": 0}]]
+    },
+    "Parse Message": {
+      "main": [[{"node": "Route Message", "type": "main", "index": 0}]]
+    },
+    "Route Message": {
+      "main": [
+        [{"node": "Upsert User", "type": "main", "index": 0}],
+        [{"node": "Route Command", "type": "main", "index": 0}],
+        [{"node": "Request Photo", "type": "main", "index": 0}]
+      ]
+    },
+    "Upsert User": {
+      "main": [
+        [{"node": "Check Limits", "type": "main", "index": 0}, {"node": "Slack: New User", "type": "main", "index": 0}]
+      ]
+    },
+    "Check Limits": {
+      "main": [
+        [{"node": "Send Processing", "type": "main", "index": 0}],
+        [{"node": "Send Limit Reached", "type": "main", "index": 0}]
+      ]
+    },
+    "Send Processing": {
+      "main": [[{"node": "Get Photo File", "type": "main", "index": 0}]]
+    },
+    "Get Photo File": {
+      "main": [[{"node": "Download Photo", "type": "main", "index": 0}]]
+    },
+    "Download Photo": {
+      "main": [[{"node": "Claude Vision Analysis", "type": "main", "index": 0}]]
+    },
+    "Claude Vision Analysis": {
+      "main": [[{"node": "Format Response", "type": "main", "index": 0}]]
+    },
+    "Format Response": {
+      "main": [[{"node": "Send Analysis", "type": "main", "index": 0}]]
+    },
+    "Send Analysis": {
+      "main": [[{"node": "Increment Counter", "type": "main", "index": 0}]]
+    },
+    "Increment Counter": {
+      "main": [[{"node": "Log Lookup", "type": "main", "index": 0}]]
+    },
+    "Route Command": {
+      "main": [
+        [{"node": "CMD: Start", "type": "main", "index": 0}],
+        [{"node": "CMD: Help", "type": "main", "index": 0}],
+        [{"node": "Get User Status", "type": "main", "index": 0}],
+        [{"node": "CMD: Upgrade", "type": "main", "index": 0}]
+      ]
+    },
+    "Get User Status": {
+      "main": [[{"node": "Format Status", "type": "main", "index": 0}]]
+    },
+    "Format Status": {
+      "main": [[{"node": "CMD: Status", "type": "main", "index": 0}]]
+    },
+    "Error Handler": {
+      "main": [[{"node": "Send Error", "type": "main", "index": 0}]]
+    },
+    "Send Error": {
+      "main": [[{"node": "Slack: Error", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "Error Handler"
+  },
+  "staticData": null,
+  "tags": ["chat-with-print-it", "telegram", "claude-vision"],
+  "triggerCount": 1
+}
