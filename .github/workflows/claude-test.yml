@@ -1,0 +1,55 @@
+name: Test Claude Code Setup
+
+on:
+  workflow_dispatch:  # Manual trigger for testing
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  test-setup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify workflow file exists
+        run: |
+          if [ -f ".github/workflows/claude.yml" ]; then
+            echo "✅ Claude workflow file exists"
+          else
+            echo "❌ Claude workflow file not found"
+            exit 1
+          fi
+
+      - name: Check API key is configured
+        run: |
+          if [ -z "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
+            echo "❌ ANTHROPIC_API_KEY is not set in repository secrets"
+            echo "Please add it at: Settings → Secrets and variables → Actions → New repository secret"
+            exit 1
+          else
+            echo "✅ ANTHROPIC_API_KEY is configured"
+          fi
+
+      - name: Verify GitHub token
+        run: |
+          if [ -z "${{ secrets.GITHUB_TOKEN }}" ]; then
+            echo "❌ GITHUB_TOKEN is not available"
+            exit 1
+          else
+            echo "✅ GITHUB_TOKEN is available"
+          fi
+
+      - name: Test summary
+        run: |
+          echo "🎉 Claude Code setup verification complete!"
+          echo ""
+          echo "Next steps:"
+          echo "1. Create a test PR or issue"
+          echo "2. Comment with '@claude help' to test the integration"
+          echo "3. Check the Actions tab to see if Claude responds"
+          echo ""
+          echo "For full documentation, see .github/CLAUDE_SETUP.md"

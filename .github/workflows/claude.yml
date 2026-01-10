@@ -1,0 +1,56 @@
+name: Claude Code PR Integration
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened, edited]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  claude-assist:
+    runs-on: ubuntu-latest
+
+    # Only run if comment contains @claude
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'issues' && contains(github.event.issue.body, '@claude'))
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Fetch full history for better context
+          fetch-depth: 0
+          # Use GitHub token for authentication
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run Claude Code
+        uses: anthropics/claude-code-action@v1
+        with:
+          # Anthropic API key from repository secrets
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+          # GitHub token for API access
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+          # Model to use (Sonnet 4.5 recommended for code tasks)
+          model: claude-sonnet-4-5-20250929
+
+          # Maximum tokens for the response
+          max-tokens: 8192
+        env:
+          # Pass GitHub context
+          GITHUB_CONTEXT: ${{ toJson(github) }}
