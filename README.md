@@ -1,75 +1,50 @@
-# RIVET Pro 2.0
+# RIVET Debug Harness
 
-Industrial maintenance AI assistant for field technicians.
+**Agent 3 Deliverable** - Automated testing and monitoring infrastructure for RIVET
+
+## Overview
+
+The RIVET Debug Harness is a production-ready testing framework that monitors and validates RIVET infrastructure health. It provides:
+
+- **Health Checks** - Quick infrastructure status verification  
+- **Real-Time Dashboard** - Continuous monitoring with live updates
+- **Automated Test Suite** - Comprehensive tests with retry logic
+- **Test Fixtures** - Validation helpers and mock data
 
 ## Quick Start
 
-```bash
-# Clone and setup
-git clone https://github.com/Mikecranesync/Rivet-PRO.git
-cd Rivet-PRO
-python -m venv .venv
-source .venv/bin/activate  # or .venv\Scripts\activate on Windows
+### 1. Installation
 
-# Install
-pip install -e ".[dev]"
+\`\`\`bash
+# Navigate to the repository
+cd rivet-agent3-harness
 
-# Configure
-cp .env.example .env
-# Edit .env with your API keys
+# Install dependencies
+pip install -r harness/requirements.txt
+\`\`\`
 
-# Test
-pytest tests/ -v
+### 2. Configuration
 
-# Run bot (Phase 3)
-python -m rivet.integrations.telegram
-```
+Set environment variables:
 
-## Features
+\`\`\`bash
+export NEON_DATABASE_URL="postgresql://user:pass@host/rivet_pro"
+export TELEGRAM_BOT_TOKEN="your_bot_token"
+export TEST_CHAT_ID="your_telegram_chat_id"
+\`\`\`
 
-- **Multi-Provider OCR**: Cost-optimized photo analysis (Groq → Gemini → Claude → GPT-4o)
-- **4-Route Troubleshooting**: KB → SME → Research → General
-- **Subscription Tiers**: Beta (free) / Pro ($29) / Team ($200)
-- **Full Observability**: Phoenix + LangSmith tracing
+### 3. Run Health Check
 
-## Architecture
+\`\`\`bash
+python -m harness.health_check
+\`\`\`
 
-```
-Query → OCR (if photo) → Route Decision → KB/SME/Research/General → Response
-```
+## Components
 
-## Tiers
+- \`health_check.py\` - Infrastructure health checks
+- \`test_dashboard.py\` - Real-time monitoring
+- \`test_suite.py\` - Automated testing with retry logic
+- \`test_fixtures.py\` - Validation and helpers
+- \`n8n_test_client.py\` - MCP test tools
 
-| Tier | Price | Limits |
-|------|-------|--------|
-| Beta | Free | 50 queries/day, 7-day trial |
-| Pro | $29/mo | 1000 queries/day, unlimited prints |
-| Team | $200/mo | 10 users, shared library, API access |
-
-## Phase 1 Status
-
-✅ Repository structure
-✅ Multi-provider OCR workflow
-✅ Configuration system with tier limits
-✅ Equipment identification with normalization
-✅ Phoenix + LangSmith observability
-✅ Full test coverage
-
-**Next: Phase 2** - 4-route troubleshooting orchestrator + SME prompts
-
-## Development
-
-```bash
-# Run tests
-pytest tests/ -v
-
-# Check config
-python -c "from rivet.config import config; config.log_status()"
-
-# Test OCR
-python scripts/test_ocr_local.py
-```
-
-## License
-
-MIT
+See AGENT3_COMPLETE.md for complete documentation.
