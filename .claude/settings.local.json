@@ -1,6 +1,8 @@
 {
+  "enableAllProjectMcpServers": true,
   "permissions": {
     "allow": [
+      "mcp__n8n-mcp__*",
       "Bash(python:*)",
       "mcp__filesystem__list_directory",
       "WebSearch",
@@ -36,7 +38,39 @@
       "mcp__filesystem__read_multiple_files",
       "WebFetch(domain:docs.n8n.io)",
       "WebFetch(domain:github.com)",
-      "Bash(powershell -Command:*)"
+      "Bash(powershell -Command:*)",
+      "Bash(netstat:*)",
+      "Bash(npx n8n:*)",
+      "Bash(start cmd /k \"npx n8n\")",
+      "Bash(timeout /t 15)",
+      "Bash(where n8n)",
+      "Bash(taskkill:*)",
+      "Bash(timeout /t 5)",
+      "mcp__github__get_file_contents",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "mcp__github__fork_repository",
+      "mcp__github__search_repositories",
+      "Bash(if [ -f .env ])",
+      "Bash(then echo \"=== .env file exists ===\")",
+      "Bash(else echo \".env file not found\")",
+      "Bash(fi)",
+      "Bash(start http://localhost:5678)",
+      "Bash(http://localhost:5678/api/v1/workflows)",
+      "Bash(docker ps:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(timeout 30 bash:*)",
+      "Bash(docker-compose logs:*)",
+      "Bash(chmod:*)",
+      "Bash(./auto_configure_n8n.sh)",
+      "Bash(docker-compose ps:*)",
+      "Bash(timeout 60 bash:*)",
+      "Bash(docker logs:*)",
+      "Bash(docker container ls:*)",
+      "Bash(docker compose:*)",
+      "Bash(docker stop:*)",
+      "Bash(docker start:*)",
+      "Bash(cmd /c \"C:\\Users\\hharp\\OneDrive\\Desktop\\grashjs-cmms\\restart_cmms.bat\")",
+      "Bash(cmd /c \"docker-compose down && docker-compose up -d\")"
     ]
   }
 }

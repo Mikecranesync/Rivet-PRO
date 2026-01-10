@@ -1,0 +1,702 @@
+{
+  "name": "TEST - RIVET - Manual Hunter",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rivet-manual-hunter",
+        "options": {}
+      },
+      "id": "manual-hunter-webhook",
+      "name": "Manual Hunter Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "rivet-manual-hunter"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse incoming payload from Photo Bot V2\nconst body = $input.item.json.body;\n\nreturn {\n  json: {\n    chat_id: body.chat_id,\n    original_message_id: body.original_message_id,\n    manufacturer: body.manufacturer || '',\n    model_number: body.model_number || '',\n    product_family: body.product_family || null,\n    full_ocr_text: body.full_ocr_text || '',\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "extract-webhook-data",
+      "name": "Extract Webhook Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM manuals\nWHERE LOWER(manufacturer) = LOWER('{{ $json.manufacturer }}')\n  AND (\n    LOWER(model_number) = LOWER('{{ $json.model_number }}')\n    OR (\n      product_family IS NOT NULL\n      AND LOWER(product_family) = LOWER('{{ $json.product_family }}')\n    )\n  )\nLIMIT 1;"
+      },
+      "id": "check-cache",
+      "name": "Check Cache",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [680, 300],
+      "credentials": {
+        "postgres": {
+          "id": "CREATE_IN_N8N_UI",
+          "name": "Neon RIVET"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cache-exists",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "any",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "cache-hit",
+      "name": "Cache Hit?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE manuals\nSET search_count = search_count + 1,\n    last_accessed = NOW()\nWHERE id = {{ $('Check Cache').item.json.id }}\nRETURNING *;"
+      },
+      "id": "update-cache-count",
+      "name": "Update Cache Count",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1120, 100],
+      "credentials": {
+        "postgres": {
+          "id": "CREATE_IN_N8N_UI",
+          "name": "Neon RIVET"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Extract Webhook Data').item.json.chat_id }}",
+        "text": "✅ Found your manual!\n\n📖 {{ $('Extract Webhook Data').item.json.manufacturer }} {{ $('Extract Webhook Data').item.json.model_number }}\n🔗 [Download Manual]({{ $('Check Cache').item.json.pdf_url }})\n\n💾 Cached result - instant retrieval!\nManual will open directly. Save it offline for field use.",
+        "additionalFields": {
+          "parse_mode": "Markdown",
+          "reply_to_message_id": "={{ $('Extract Webhook Data').item.json.original_message_id }}"
+        }
+      },
+      "id": "send-cached-success",
+      "name": "Send Cached Success",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1340, 100],
+      "credentials": {
+        "telegramApi": {
+          "id": "if4EOJbvMirfWqCC",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.tavily.com/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "application/json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "api_key",
+              "value": "={{ $credentials.tavilyApi.apiKey }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $('Extract Webhook Data').item.json.manufacturer }} {{ $('Extract Webhook Data').item.json.model_number }} user manual PDF filetype:pdf"
+            },
+            {
+              "name": "max_results",
+              "value": "5"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "tier1-tavily-search",
+      "name": "Tier 1: Tavily Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 400],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CREATE_IN_N8N_UI",
+          "name": "Tavily API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "application/json",
+        "body": "={{ JSON.stringify({\n  model: 'llama-3.1-70b-versatile',\n  messages: [\n    {\n      role: 'system',\n      content: 'You are evaluating search results to find the correct user/service manual. Return ONLY valid JSON, no additional text.'\n    },\n    {\n      role: 'user',\n      content: `TARGET EQUIPMENT:\\n- Manufacturer: ${$('Extract Webhook Data').item.json.manufacturer}\\n- Model: ${$('Extract Webhook Data').item.json.model_number}\\n\\nSEARCH RESULTS:\\n${JSON.stringify($json.results || [])}\\n\\nScore each result 0-100 on likelihood this is the EXACT correct manual (not similar model, not brochure, not datasheet - the actual user/service manual). Return JSON:\\n{\\n  \"best_match\": {\\n    \"url\": \"...\",\\n    \"confidence\": 85,\\n    \"reasoning\": \"...\"\\n  },\\n  \"should_escalate\": false\\n}`\n    }\n  ],\n  temperature: 0.3\n}) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "tier1-groq-eval",
+      "name": "Tier 1: Groq Evaluation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 400],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CREATE_IN_N8N_UI",
+          "name": "Groq API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Groq response and extract match data\nconst response = $input.item.json;\nconst content = response.choices?.[0]?.message?.content || '{}';\n\ntry {\n  const parsed = JSON.parse(content);\n  const confidence = parsed.best_match?.confidence || 0;\n  \n  return {\n    json: {\n      pdf_url: parsed.best_match?.url || '',\n      confidence: confidence,\n      reasoning: parsed.best_match?.reasoning || '',\n      should_escalate: parsed.should_escalate || (confidence < 75),\n      tier: 'tier1',\n      search_engine: 'tavily'\n    }\n  };\n} catch (error) {\n  return {\n    json: {\n      pdf_url: '',\n      confidence: 0,\n      reasoning: 'Failed to parse Groq response',\n      should_escalate: true,\n      tier: 'tier1',\n      search_engine: 'tavily'\n    }\n  };\n}"
+      },
+      "id": "parse-tier1-result",
+      "name": "Parse Tier 1 Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "confidence-check",
+              "leftValue": "={{ $json.confidence }}",
+              "rightValue": "75",
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            },
+            {
+              "id": "url-exists",
+              "leftValue": "={{ $json.pdf_url }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "tier1-success",
+      "name": "Tier 1 Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1780, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://google.serper.dev/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "application/json",
+        "body": "={{ JSON.stringify({\n  q: `${$('Extract Webhook Data').item.json.model_number} manual PDF`,\n  num: 10\n}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "tier2-serper-search",
+      "name": "Tier 2: Serper Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2000, 600],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CREATE_IN_N8N_UI",
+          "name": "Serper API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.deepseek.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "application/json",
+        "body": "={{ JSON.stringify({\n  model: 'deepseek-chat',\n  messages: [\n    {\n      role: 'system',\n      content: 'You evaluate search results with deep reasoning. Consider generic vs specific models, partial matches, and manufacturer domains. Return ONLY valid JSON.'\n    },\n    {\n      role: 'user',\n      content: `EQUIPMENT: ${$('Extract Webhook Data').item.json.manufacturer} ${$('Extract Webhook Data').item.json.model_number}\\n\\nRESULTS: ${JSON.stringify($json.organic || [])}\\n\\nEvaluate if any result is the correct manual. Consider:\\n- Generic models (e.g., ACS580 manual may work for ACS580-01-12A5-4)\\n- Partial matches from official manufacturer sites\\n- Service manuals vs user manuals\\n\\nReturn JSON:\\n{\\n  \"best_match\": {\\n    \"url\": \"...\",\\n    \"confidence\": 85,\\n    \"reasoning\": \"...\"\\n  },\\n  \"found\": true\\n}`\n    }\n  ],\n  temperature: 0.4\n}) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "tier2-deepseek-eval",
+      "name": "Tier 2: DeepSeek Evaluation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2220, 600],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CREATE_IN_N8N_UI",
+          "name": "DeepSeek API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse DeepSeek response\nconst response = $input.item.json;\nconst content = response.choices?.[0]?.message?.content || '{}';\n\ntry {\n  const parsed = JSON.parse(content);\n  const confidence = parsed.best_match?.confidence || 0;\n  const found = parsed.found || false;\n  \n  return {\n    json: {\n      pdf_url: parsed.best_match?.url || '',\n      confidence: confidence,\n      reasoning: parsed.best_match?.reasoning || '',\n      found: found && confidence >= 70,\n      tier: 'tier2',\n      search_engine: 'serper'\n    }\n  };\n} catch (error) {\n  return {\n    json: {\n      pdf_url: '',\n      confidence: 0,\n      reasoning: 'Failed to parse DeepSeek response',\n      found: false,\n      tier: 'tier2',\n      search_engine: 'serper'\n    }\n  };\n}"
+      },
+      "id": "parse-tier2-result",
+      "name": "Parse Tier 2 Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2440, 600]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "found-check",
+              "leftValue": "={{ $json.found }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            },
+            {
+              "id": "url-exists",
+              "leftValue": "={{ $json.pdf_url }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "tier2-success",
+      "name": "Tier 2 Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2660, 600]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.perplexity.ai/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "application/json",
+        "body": "={{ JSON.stringify({\n  model: 'llama-3.1-sonar-large-128k-online',\n  messages: [\n    {\n      role: 'user',\n      content: `Find the official user manual PDF download link for ${$('Extract Webhook Data').item.json.manufacturer} ${$('Extract Webhook Data').item.json.model_number}. Return ONLY the direct PDF URL if found, or the word NOT_FOUND if no manual exists. No additional explanation.`\n    }\n  ],\n  temperature: 0.2\n}) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "tier3-perplexity-search",
+      "name": "Tier 3: Perplexity Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2880, 800],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CREATE_IN_N8N_UI",
+          "name": "Perplexity API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Perplexity response\nconst response = $input.item.json;\nconst content = response.choices?.[0]?.message?.content || 'NOT_FOUND';\n\nconst found = content.toLowerCase() !== 'not_found' && content.trim() !== '';\nconst url = found ? content.trim() : '';\n\nreturn {\n  json: {\n    pdf_url: url,\n    confidence: found ? 80 : 0,\n    reasoning: 'Perplexity research result',\n    found: found,\n    tier: 'tier3',\n    search_engine: 'perplexity'\n  }\n};"
+      },
+      "id": "parse-tier3-result",
+      "name": "Parse Tier 3 Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3100, 800]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "found-check",
+              "leftValue": "={{ $json.found }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "tier3-success",
+      "name": "Tier 3 Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [3320, 800]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO manuals (manufacturer, model_number, product_family, pdf_url, search_tier, confidence_score)\nVALUES (\n  '{{ $('Extract Webhook Data').item.json.manufacturer }}',\n  '{{ $('Extract Webhook Data').item.json.model_number }}',\n  {{ $('Extract Webhook Data').item.json.product_family ? `'${$('Extract Webhook Data').item.json.product_family}'` : 'NULL' }},\n  '{{ $json.pdf_url }}',\n  '{{ $json.tier }}',\n  {{ $json.confidence }}\n)\nON CONFLICT (manufacturer, model_number)\nDO UPDATE SET\n  search_count = manuals.search_count + 1,\n  last_accessed = NOW()\nRETURNING id;"
+      },
+      "id": "insert-to-cache",
+      "name": "Insert to Cache",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [2000, 200],
+      "credentials": {
+        "postgres": {
+          "id": "CREATE_IN_N8N_UI",
+          "name": "Neon RIVET"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Extract Webhook Data').item.json.chat_id }}",
+        "text": "✅ Found your manual!\n\n📖 {{ $('Extract Webhook Data').item.json.manufacturer }} {{ $('Extract Webhook Data').item.json.model_number }}\n🔗 [Download Manual]({{ $('Parse Tier 1 Result').item.json.pdf_url || $('Parse Tier 2 Result').item.json.pdf_url || $('Parse Tier 3 Result').item.json.pdf_url }})\n\n🔍 Search tier: {{ $('Parse Tier 1 Result').item.json.tier || $('Parse Tier 2 Result').item.json.tier || $('Parse Tier 3 Result').item.json.tier }}\n📊 Confidence: {{ $('Parse Tier 1 Result').item.json.confidence || $('Parse Tier 2 Result').item.json.confidence || $('Parse Tier 3 Result').item.json.confidence }}%\n\nManual will open directly. Save it offline for field use.",
+        "additionalFields": {
+          "parse_mode": "Markdown",
+          "reply_to_message_id": "={{ $('Extract Webhook Data').item.json.original_message_id }}"
+        }
+      },
+      "id": "send-found-success",
+      "name": "Send Found Success",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2220, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "if4EOJbvMirfWqCC",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO manual_requests (chat_id, telegram_id, manufacturer, model_number, product_family, full_ocr_text, status)\nVALUES (\n  {{ $('Extract Webhook Data').item.json.chat_id }},\n  {{ $('Extract Webhook Data').item.json.chat_id }},\n  '{{ $('Extract Webhook Data').item.json.manufacturer }}',\n  '{{ $('Extract Webhook Data').item.json.model_number }}',\n  {{ $('Extract Webhook Data').item.json.product_family ? `'${$('Extract Webhook Data').item.json.product_family}'` : 'NULL' }},\n  '{{ $('Extract Webhook Data').item.json.full_ocr_text }}',\n  'pending'\n)\nRETURNING id;"
+      },
+      "id": "insert-to-queue",
+      "name": "Insert to Human Queue",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [3540, 1000],
+      "credentials": {
+        "postgres": {
+          "id": "CREATE_IN_N8N_UI",
+          "name": "Neon RIVET"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Extract Webhook Data').item.json.chat_id }}",
+        "text": "⚠️ Manual not found in our system yet.\n\nI've queued {{ $('Extract Webhook Data').item.json.manufacturer }} {{ $('Extract Webhook Data').item.json.model_number }} for manual sourcing. You'll be notified when it's available.\n\nIn the meantime, try the manufacturer's support site:\n🔗 Search {{ $('Extract Webhook Data').item.json.manufacturer }} Support",
+        "additionalFields": {
+          "parse_mode": "Markdown",
+          "reply_to_message_id": "={{ $('Extract Webhook Data').item.json.original_message_id }}"
+        }
+      },
+      "id": "send-queue-message",
+      "name": "Send Queue Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [3760, 1000],
+      "credentials": {
+        "telegramApi": {
+          "id": "if4EOJbvMirfWqCC",
+          "name": "Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Manual Hunter Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract Webhook Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Webhook Data": {
+      "main": [
+        [
+          {
+            "node": "Check Cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Cache": {
+      "main": [
+        [
+          {
+            "node": "Cache Hit?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cache Hit?": {
+      "main": [
+        [
+          {
+            "node": "Update Cache Count",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tier 1: Tavily Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Cache Count": {
+      "main": [
+        [
+          {
+            "node": "Send Cached Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tier 1: Tavily Search": {
+      "main": [
+        [
+          {
+            "node": "Tier 1: Groq Evaluation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tier 1: Groq Evaluation": {
+      "main": [
+        [
+          {
+            "node": "Parse Tier 1 Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Tier 1 Result": {
+      "main": [
+        [
+          {
+            "node": "Tier 1 Success?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tier 1 Success?": {
+      "main": [
+        [
+          {
+            "node": "Insert to Cache",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tier 2: Serper Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tier 2: Serper Search": {
+      "main": [
+        [
+          {
+            "node": "Tier 2: DeepSeek Evaluation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tier 2: DeepSeek Evaluation": {
+      "main": [
+        [
+          {
+            "node": "Parse Tier 2 Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Tier 2 Result": {
+      "main": [
+        [
+          {
+            "node": "Tier 2 Success?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tier 2 Success?": {
+      "main": [
+        [
+          {
+            "node": "Insert to Cache",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tier 3: Perplexity Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tier 3: Perplexity Search": {
+      "main": [
+        [
+          {
+            "node": "Parse Tier 3 Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Tier 3 Result": {
+      "main": [
+        [
+          {
+            "node": "Tier 3 Success?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tier 3 Success?": {
+      "main": [
+        [
+          {
+            "node": "Insert to Cache",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Insert to Human Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert to Cache": {
+      "main": [
+        [
+          {
+            "node": "Send Found Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert to Human Queue": {
+      "main": [
+        [
+          {
+            "node": "Send Queue Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2026-01-09T08:20:00.000Z",
+  "versionId": "1"
+}

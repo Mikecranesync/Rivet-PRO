@@ -1,0 +1,72 @@
+{
+  "test_payload_example": {
+    "description": "Example webhook payload to test Manual Hunter workflow",
+    "usage": "POST to http://72.60.175.144:5678/webhook/rivet-manual-hunter OR https://[your-n8n].app.n8n.cloud/webhook-test/rivet-manual-hunter",
+    "payload": {
+      "chat_id": 123456789,
+      "original_message_id": 987654321,
+      "manufacturer": "ABB",
+      "model_number": "ACS580-01-12A5-4",
+      "product_family": "ACS580",
+      "full_ocr_text": "ABB DRIVES ACS580-01-12A5-4 Variable Frequency Drive 480V 3-Phase Input 12.5HP Output"
+    }
+  },
+  "curl_command": "curl -X POST http://72.60.175.144:5678/webhook/rivet-manual-hunter -H 'Content-Type: application/json' -d '{\"chat_id\": 123456789, \"original_message_id\": 987654321, \"manufacturer\": \"ABB\", \"model_number\": \"ACS580-01-12A5-4\", \"product_family\": \"ACS580\", \"full_ocr_text\": \"ABB DRIVES ACS580-01-12A5-4 Variable Frequency Drive 480V 3-Phase Input 12.5HP Output\"}'",
+  "test_scenarios": [
+    {
+      "name": "Common Equipment (should hit Tier 1)",
+      "manufacturer": "ABB",
+      "model_number": "ACS580-01-12A5-4",
+      "expected": "Tavily + Groq find manual immediately"
+    },
+    {
+      "name": "Generic Model (should try Tier 2)",
+      "manufacturer": "Siemens",
+      "model_number": "SINAMICS G120",
+      "expected": "Serper + DeepSeek find generic manual"
+    },
+    {
+      "name": "Rare Equipment (should reach Tier 3)",
+      "manufacturer": "Obscure Brand",
+      "model_number": "XYZ-2000-LEGACY",
+      "expected": "Perplexity deep search or queue for human"
+    },
+    {
+      "name": "Cache Hit Test",
+      "manufacturer": "ABB",
+      "model_number": "ACS580-01-12A5-4",
+      "expected": "Instant return from cache (run after first test)"
+    }
+  ],
+  "postman_collection": {
+    "info": {
+      "name": "RIVET Manual Hunter API",
+      "description": "Test collection for Manual Hunter workflow"
+    },
+    "item": [
+      {
+        "name": "Test Manual Hunter - ABB Drive",
+        "request": {
+          "method": "POST",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": {
+            "mode": "raw",
+            "raw": "{\n  \"chat_id\": 123456789,\n  \"original_message_id\": 987654321,\n  \"manufacturer\": \"ABB\",\n  \"model_number\": \"ACS580-01-12A5-4\",\n  \"product_family\": \"ACS580\",\n  \"full_ocr_text\": \"ABB DRIVES ACS580-01-12A5-4 Variable Frequency Drive 480V 3-Phase Input 12.5HP Output\"\n}"
+          },
+          "url": {
+            "raw": "http://72.60.175.144:5678/webhook/rivet-manual-hunter",
+            "protocol": "http",
+            "host": ["72", "60", "175", "144"],
+            "port": "5678",
+            "path": ["webhook", "rivet-manual-hunter"]
+          }
+        }
+      }
+    ]
+  }
+}
