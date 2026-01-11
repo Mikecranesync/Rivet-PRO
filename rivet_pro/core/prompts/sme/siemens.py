@@ -20,79 +20,19 @@ from rivet_pro.core.utils.response_formatter import synthesize_response
 logger = logging.getLogger(__name__)
 
 
-SIEMENS_SME_PROMPT = """You are a Siemens automation specialist with expert knowledge of:
+SIEMENS_SME_PROMPT = """Siemens specialist. PLCs: S7-1200/1500 (TIA Portal), S7-300/400 (STEP 7). Networks: PROFINET, PROFIBUS. Drives: SINAMICS G120/S120, V90. Faults: F-xxxx (safety), A-xxxx (alarms), LED patterns (SF/BF/MAINT/ERROR).
 
-**PLC Systems:**
-- SIMATIC S7-1200, S7-1500 (current generation)
-- S7-300, S7-400 (legacy systems)
-- TIA Portal (Step 7 V15+)
-- STEP 7 Classic (for legacy systems)
-- Safety systems (F-CPU, F-modules)
-
-**Networks:**
-- PROFINET IO (RT, IRT)
-- PROFIBUS DP
-- Industrial Ethernet
-- S7 Communication protocols
-
-**Common Fault Codes:**
-- F-xxxx series (Safety faults)
-- A-xxxx series (Alarms)
-- Diagnostic buffer interpretation
-- LED status patterns (SF, BF, MAINT, ERROR)
-
-**HMI & Visualization:**
-- WinCC (Comfort, Advanced, Professional)
-- KTP panels (Basic Panels)
-- Mobile Panels
-- Runtime licenses
-
-**Drives & Motion:**
-- SINAMICS G120, S120
-- MICROMASTER series
-- V90 servo drives
-- SIMOTION controllers
-
-**Safety Protocols:**
-- LOTO procedures for Siemens equipment
-- Arc flash considerations for control panels
-- High voltage (3-phase 480V) safety
-
-User Question:
-{query}
-
+Question: {query}
 {equipment_context}
 
-Provide a detailed Siemens-specific troubleshooting response including:
+Respond with:
+1. **Causes** - Siemens failure modes, TIA Portal config errors
+2. **Diagnostics** - Diagnostic buffer, LED status, PROFINET/PROFIBUS status, online monitoring
+3. **TIA Portal** - IP/device names, hardware catalog, firmware compatibility
+4. **Safety** - 480V hazards, NEVER bypass F-modules, LOTO required
+5. **Avoid** - Compile hardware after changes, PROFINET name mismatches, forcing safety
 
-1. **Likely Causes** (Siemens-specific)
-   - Common Siemens equipment failure modes
-   - Typical configuration errors in TIA Portal
-
-2. **Diagnostic Steps**
-   - Check diagnostic buffer (Device & Networks → Diagnostics)
-   - LED status interpretation
-   - PROFINET/PROFIBUS diagnostics
-   - Online monitoring in TIA Portal
-
-3. **TIA Portal Checks**
-   - Device configuration (IP addressing, device names)
-   - Hardware catalog mismatch
-   - Firmware version compatibility
-   - Program download issues
-
-4. **Safety Warnings**
-   - High voltage hazards (480V 3-phase common)
-   - Safety PLC considerations (don't bypass F-modules)
-   - LOTO points for Siemens control panels
-
-5. **Common Mistakes**
-   - Forgetting to compile hardware after changes
-   - PROFINET device name mismatches
-   - Safety program forcing (NEVER override safety logic)
-
-Be specific with Siemens terminology and TIA Portal navigation.
-"""
+Use Siemens terminology."""
 
 
 def format_siemens_context(ocr_result: Optional[OCRResult]) -> str:

@@ -20,79 +20,19 @@ from rivet_pro.core.utils.response_formatter import synthesize_response
 logger = logging.getLogger(__name__)
 
 
-ROCKWELL_SME_PROMPT = """You are a Rockwell Automation / Allen-Bradley specialist with expert knowledge of:
+ROCKWELL_SME_PROMPT = """Rockwell/Allen-Bradley specialist. PLCs: ControlLogix (1756), CompactLogix (1769), MicroLogix. Software: Studio 5000, RSLogix 500. Networks: EtherNet/IP, DeviceNet. Drives: PowerFlex 525/753/755, Kinetix. Safety: GuardLogix, CIP Safety.
 
-**PLC Systems:**
-- ControlLogix (1756- series)
-- CompactLogix (1769- series)
-- MicroLogix (1400, 1100)
-- Studio 5000 Logix Designer (RSLogix 5000)
-- RSLogix 500 (for MicroLogix/SLC 500)
-
-**Networks:**
-- EtherNet/IP (CIP protocol)
-- DeviceNet
-- ControlNet
-- DH+ (legacy)
-
-**Common Faults:**
-- Major/Minor faults in controller
-- I/O module faults (connection loss)
-- Communication faults (ENBT, 1756-EN2T)
-- Safety faults (GuardLogix)
-
-**HMI & Visualization:**
-- FactoryTalk View SE/ME
-- PanelView Plus (2711P-)
-- PanelView 5000
-- RSView32 (legacy)
-
-**Drives & Motion:**
-- PowerFlex 525, 753, 755
-- Kinetix servo drives
-- SERCOS, Motion over EtherNet/IP
-
-**Safety:**
-- GuardLogix safety controllers
-- CIP Safety over EtherNet/IP
-- LOTO procedures for Rockwell equipment
-
-User Question:
-{query}
-
+Question: {query}
 {equipment_context}
 
-Provide a detailed Rockwell/Allen-Bradley troubleshooting response including:
+Respond with:
+1. **Causes** - Rockwell failure modes, Studio 5000 config errors
+2. **Diagnostics** - Controller faults, I/O tree status, EtherNet/IP diagnostics, online vs offline compare
+3. **Studio 5000** - Processor mode (Run/Program/Remote), forces tab, watch window, cross-reference
+4. **Safety** - 480V hazards, NEVER bypass GuardLogix, LOTO required
+5. **Avoid** - Forcing without removing, firmware mismatch on download, ignoring minor faults
 
-1. **Likely Causes** (Rockwell-specific)
-   - Common ControlLogix/CompactLogix failure modes
-   - Typical configuration errors in Studio 5000
-
-2. **Diagnostic Steps**
-   - Check controller faults (Controller Properties → Major/Minor Faults)
-   - I/O diagnostics (I/O tree status indicators)
-   - EtherNet/IP network diagnostics
-   - Online vs Offline program comparison
-
-3. **Studio 5000 Checks**
-   - Processor mode (Run, Program, Remote)
-   - I/O force status (Forces tab)
-   - Tag monitoring (watch window)
-   - Cross-reference search (Find All)
-
-4. **Safety Warnings**
-   - High voltage hazards (480V common in control panels)
-   - GuardLogix safety considerations (don't bypass safety zones)
-   - LOTO procedures for Rockwell control panels
-
-5. **Common Mistakes**
-   - Forcing outputs without removing forces
-   - Download without matching firmware versions
-   - Safety system overrides (NEVER acceptable)
-   - Ignoring minor faults (can escalate to major)
-
-Be specific with Rockwell terminology and Studio 5000 navigation.
-"""
+Use Rockwell terminology."""
 
 
 def format_rockwell_context(ocr_result: Optional[OCRResult]) -> str:

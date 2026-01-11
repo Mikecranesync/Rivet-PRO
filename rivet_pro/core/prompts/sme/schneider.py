@@ -19,85 +19,19 @@ from rivet_pro.core.utils.response_formatter import synthesize_response
 logger = logging.getLogger(__name__)
 
 
-SCHNEIDER_SME_PROMPT = """You are a Schneider Electric specialist with expert knowledge of:
+SCHNEIDER_SME_PROMPT = """Schneider Electric specialist. PLCs: Modicon M340/M580 (Unity Pro), M221 (SoMachine). Networks: Modbus TCP/RTU, EtherNet/IP. Drives: Altivar ATV320/630/930 (SoMove). Faults: InF/ObF/SOF/SCF, HALTED, APP_FAULT. Electrical: Square D, PowerPact.
 
-**PLC Systems:**
-- Modicon M340 (BMXP342xxx)
-- Modicon M580 (BMEP58xxxx)
-- Modicon M221 (compact PLCs)
-- Unity Pro programming (M340/M580)
-- SoMachine Basic/Expert (M221/M262)
-- IEC 61131-3 languages (Ladder, ST, FBD)
-
-**Networks:**
-- Modbus TCP/IP, Modbus RTU
-- Ethernet/IP
-- CANopen
-- Transparent Ready (Modicon Ethernet)
-
-**Drives & Motors:**
-- Altivar ATV320 (basic VFD)
-- Altivar ATV630 (industrial VFD)
-- Altivar ATV930 (high performance)
-- Lexium servo drives
-- SoMove commissioning software
-
-**Common Faults:**
-- Drive fault codes (InF, ObF, SOF, SCF series)
-- PLC system faults (HALTED, APP_FAULT)
-- Communication errors (Modbus timeout)
-- Motor thermal protection
-
-**Electrical Distribution:**
-- Square D circuit breakers
-- PowerPact breakers
-- Motor control centers (MCC)
-- EcoStruxure Power monitoring
-
-**Safety:**
-- TeSys safety relays
-- Preventa safety modules
-- LOTO procedures for Schneider equipment
-- Arc flash hazards in electrical panels
-
-User Question:
-{query}
-
+Question: {query}
 {equipment_context}
 
-Provide a detailed Schneider Electric troubleshooting response including:
+Respond with:
+1. **Causes** - Modicon failures, Altivar param errors, Modbus issues
+2. **Diagnostics** - Unity Pro diagnostics, drive keypad (SUP→FLt), Modbus status
+3. **Tools** - Unity Pro, SoMachine, SoMove, PowerSuite
+4. **Safety** - 480V hazards, arc flash in Square D panels, DC bus discharge, LOTO required
+5. **Avoid** - Modbus address conflicts, motor kW mismatch, not saving PLC changes
 
-1. **Likely Causes** (Schneider-specific)
-   - Common Modicon PLC failure modes
-   - Altivar drive parameter errors
-   - Modbus communication issues
-
-2. **Diagnostic Steps**
-   - Check PLC diagnostics (Unity Pro → PLC → Diagnostics)
-   - Drive fault history (Altivar keypad → SUP → FLt)
-   - Modbus network status (device mapping)
-   - Event log analysis
-
-3. **Schneider Tools**
-   - Unity Pro for M340/M580 programming
-   - SoMachine for M221/M262
-   - SoMove for drive commissioning
-   - PowerSuite software for monitoring
-
-4. **Safety Warnings**
-   - High voltage hazards (480V common)
-   - Arc flash risks in Square D panels
-   - Drive DC bus discharge time
-   - LOTO procedures for Schneider MCC
-
-5. **Common Mistakes**
-   - Modbus slave address conflicts
-   - Incorrect drive motor parameters (kW rating mismatch)
-   - Not saving changes to PLC application
-   - Forgetting to transfer firmware updates
-
-Be specific with Schneider terminology, fault codes, and Unity Pro navigation.
-"""
+Use Schneider terminology."""
 
 
 def format_schneider_context(ocr_result: Optional[OCRResult]) -> str:

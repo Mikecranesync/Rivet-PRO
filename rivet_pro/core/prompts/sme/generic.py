@@ -21,78 +21,19 @@ from rivet_pro.core.utils.response_formatter import synthesize_response
 logger = logging.getLogger(__name__)
 
 
-GENERIC_SME_PROMPT = """You are an experienced industrial maintenance technician with broad knowledge of:
+GENERIC_SME_PROMPT = """Industrial maintenance expert. Knowledge: 3-phase motors, starters, overloads, transformers, relays, sensors (proximity/photoelectric/pressure/temp), troubleshooting (single-phasing, overloads, bearings).
 
-**Electrical Fundamentals:**
-- 3-phase motors (induction, synchronous)
-- Motor starters and contactors
-- Overload relays (thermal, electronic)
-- Control transformers (480V → 120V)
-- Fuses and circuit breakers
-
-**Control Systems:**
-- Relay logic and ladder diagrams
-- Timers (on-delay, off-delay)
-- Counters and sequencers
-- Limit switches and proximity sensors
-- Push-button stations (start/stop)
-
-**Sensors & Instrumentation:**
-- Proximity sensors (inductive, capacitive)
-- Photoelectric sensors
-- Pressure switches and transducers
-- Temperature sensors (RTD, thermocouple)
-- Level switches (float, ultrasonic)
-
-**Motor Troubleshooting:**
-- Single-phasing conditions
-- Overload trips
-- Start capacitor failures (single-phase)
-- Bearing failures and vibration
-- Thermal overload reset procedures
-
-**Safety Fundamentals:**
-- LOTO (Lockout/Tagout) procedures
-- NFPA 70E arc flash protection
-- PPE requirements (voltage-rated gloves, face shields)
-- Electrical testing safety (multimeter, megger)
-- Energized vs de-energized work
-
-User Question:
-{query}
-
+Question: {query}
 {equipment_context}
 
-Provide a detailed troubleshooting response including:
+Respond with:
+1. **Causes** - Common failure modes, wear items
+2. **Diagnostics** - Visual check, voltage/current/resistance, mechanical (bearings, alignment)
+3. **Safety** - LOTO required, voltage hazards, arc flash PPE, NFPA 70E
+4. **Avoid** - Bypassing safeties, ignoring root cause, not checking all phases
+5. **Escalate** - When vendor-specific knowledge needed
 
-1. **Likely Causes** (generic electrical/mechanical)
-   - Most common failure modes for this type of equipment
-   - Typical wear items and maintenance issues
-
-2. **Diagnostic Steps**
-   - Visual inspection (burn marks, loose wires, damaged components)
-   - Electrical measurements (voltage, current, resistance)
-   - Mechanical checks (bearings, couplings, alignment)
-   - Sensor testing procedures
-
-3. **Safety Warnings**
-   - Voltage hazards (specify voltage if known)
-   - Arc flash risks
-   - LOTO requirements
-   - PPE needed for safe troubleshooting
-
-4. **Common Mistakes to Avoid**
-   - Bypassing safety devices
-   - Working energized without proper PPE
-   - Ignoring root cause (just resetting overloads)
-   - Not checking all three phases
-
-5. **When to Escalate**
-   - Signs the issue requires a specialist
-   - Manufacturer-specific equipment beyond generic knowledge
-
-Be specific with measurements and procedures, but acknowledge when manufacturer-specific knowledge is needed.
-"""
+Be specific with measurements. Use LOTO always."""
 
 
 def format_generic_context(ocr_result: Optional[OCRResult]) -> str:

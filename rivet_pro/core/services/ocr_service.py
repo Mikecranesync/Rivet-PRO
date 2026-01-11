@@ -29,49 +29,26 @@ from rivet_pro.core.services.equipment_taxonomy import (
 
 logger = logging.getLogger(__name__)
 
-# Equipment extraction prompt (unified across providers)
-EXTRACTION_PROMPT = """You are an industrial maintenance expert analyzing equipment photos.
-
-Extract ALL relevant information from this industrial equipment nameplate/label.
-
-RESPOND IN THIS EXACT JSON FORMAT (no markdown, no code fences):
+# Equipment extraction prompt (unified across providers) - OPTIMIZED FOR SPEED
+EXTRACTION_PROMPT = """Extract equipment info from this photo. Return ONLY JSON (no markdown):
 {
-  "manufacturer": "company name or null",
-  "model_number": "exact model/catalog number or null",
-  "serial_number": "exact serial number or null",
-  "fault_code": "error code if visible on display or null",
-
-  "equipment_type": "vfd | motor | contactor | pump | plc | relay | breaker | sensor | valve | compressor | robot | conveyor | transformer | hmi | drive | starter | other | null",
-  "equipment_subtype": "more specific type if identifiable or null",
-
-  "condition": "new | good | worn | damaged | burnt | corroded | unknown",
-  "visible_issues": ["specific observable problems like 'burnt terminal on T1'"],
-
-  "voltage": "voltage rating with unit (e.g., '480V', '208-230/460V') or null",
-  "current": "current rating with unit (e.g., '15A') or null",
-  "horsepower": "HP rating (e.g., '5HP') or null",
-  "phase": "phase ('1' or '3') or null",
-  "frequency": "frequency (e.g., '60Hz') or null",
-
-  "additional_specs": {
-    "rpm": "speed if visible",
-    "frame": "frame size if visible",
-    "ip_rating": "IP rating if visible",
-    "enclosure": "enclosure type if visible"
-  },
-
-  "raw_text": "ALL visible text transcribed exactly as shown",
-  "confidence": 0.0 to 1.0
+  "manufacturer": "name or null",
+  "model_number": "exact as shown or null",
+  "serial_number": "exact or null",
+  "fault_code": "error code or null",
+  "equipment_type": "vfd|motor|plc|drive|pump|contactor|relay|breaker|sensor|other|null",
+  "condition": "new|good|worn|damaged|burnt|unknown",
+  "visible_issues": ["specific problems"],
+  "voltage": "with unit or null",
+  "current": "with unit or null",
+  "horsepower": "or null",
+  "phase": "1|3|null",
+  "frequency": "or null",
+  "additional_specs": {"rpm":"","frame":"","ip_rating":""},
+  "raw_text": "ALL visible text exactly",
+  "confidence": 0.0-1.0
 }
-
-CRITICAL RULES:
-- Extract model numbers EXACTLY as shown (preserve hyphens, spaces)
-- Include units with all electrical values (V, A, HP, Hz)
-- For VFDs/drives: prioritize voltage, HP, and phase
-- Describe visible damage specifically (which terminal, wire, component)
-- If unsure, use null (not empty string)
-- Confidence 0.9+ only if manufacturer AND model clearly visible
-"""
+RULES: Preserve exact model numbers. Include units. Use null not empty string. Confidence 0.9+ only if manufacturer+model clear."""
 
 
 def validate_image_quality(
