@@ -70,6 +70,11 @@ class Settings(BaseSettings):
     # Feature Flags
     beta_mode: bool = Field(True, description="Unlock all features during beta")
 
+    # Stripe Payment Configuration
+    stripe_api_key: Optional[str] = Field(None, description="Stripe secret API key")
+    stripe_webhook_secret: Optional[str] = Field(None, description="Stripe webhook endpoint secret")
+    stripe_price_id: Optional[str] = Field(None, description="Stripe price ID for Pro tier ($29/month)")
+
     # Web API Authentication
     jwt_secret_key: str = Field(..., description="JWT secret key for token signing")
     jwt_algorithm: str = Field("HS256", description="JWT algorithm")

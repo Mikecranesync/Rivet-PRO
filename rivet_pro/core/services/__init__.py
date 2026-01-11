@@ -10,6 +10,7 @@ from .equipment_taxonomy import (
     identify_urgency,
 )
 from .usage_service import UsageService, FREE_TIER_LIMIT
+from .stripe_service import StripeService, send_telegram_confirmation
 
 __all__ = [
     # OCR
@@ -27,4 +28,7 @@ __all__ = [
     # Usage Tracking
     "UsageService",
     "FREE_TIER_LIMIT",
+    # Stripe Payments
+    "StripeService",
+    "send_telegram_confirmation",
 ]

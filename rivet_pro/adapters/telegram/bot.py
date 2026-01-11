@@ -17,6 +17,7 @@ from rivet_pro.infra.database import Database
 from rivet_pro.core.services.equipment_service import EquipmentService
 from rivet_pro.core.services.work_order_service import WorkOrderService
 from rivet_pro.core.services.usage_service import UsageService, FREE_TIER_LIMIT
+from rivet_pro.core.services.stripe_service import StripeService
 
 logger = get_logger(__name__)
 
@@ -33,6 +34,7 @@ class TelegramBot:
         self.equipment_service = None  # Initialized after db connects
         self.work_order_service = None  # Initialized after db connects
         self.usage_service = None  # Initialized after db connects
+        self.stripe_service = None  # Initialized after db connects
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
@@ -532,6 +534,47 @@ class TelegramBot:
             logger.error(f"Error in /stats command: {e}", exc_info=True)
             await update.message.reply_text("❌ An error occurred. Please try again.")
 
+    async def upgrade_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Handle /upgrade command.
+        Generate Stripe checkout link for Pro subscription.
+        """
+        telegram_user_id = update.effective_user.id
+
+        try:
+            is_pro = await self.stripe_service.is_pro_user(telegram_user_id)
+            
+            if is_pro:
+                await update.message.reply_text(
+                    "✅ <b>You're already a RIVET Pro member!</b>\n\n"
+                    "You have unlimited equipment lookups and all Pro features.",
+                    parse_mode="HTML"
+                )
+                return
+
+            checkout_url = await self.stripe_service.create_checkout_session(telegram_user_id)
+
+            await update.message.reply_text(
+                "🚀 <b>Upgrade to RIVET Pro</b>\n\n"
+                "Get unlimited equipment lookups and more:\n"
+                "• ✅ Unlimited equipment lookups\n"
+                "• 📚 PDF manual chat\n"
+                "• 🔧 Work order management\n"
+                "• ⚡ Priority support\n\n"
+                f"💰 <b>$29/month</b>\n\n"
+                f"👉 <a href=\"{checkout_url}\">Click here to subscribe</a>",
+                parse_mode="HTML",
+                disable_web_page_preview=True
+            )
+
+            logger.info(f"Sent upgrade link | telegram_id={telegram_user_id}")
+
+        except Exception as e:
+            logger.error(f"Error in /upgrade command: {e}", exc_info=True)
+            await update.message.reply_text(
+                "❌ Could not generate upgrade link. Please try again later."
+            )
+
     async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
         Handle errors in the bot.
@@ -565,6 +608,7 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("equip", self.equip_command))
         self.application.add_handler(CommandHandler("wo", self.wo_command))
         self.application.add_handler(CommandHandler("stats", self.stats_command))
+        self.application.add_handler(CommandHandler("upgrade", self.upgrade_command))
 
         # Register message handler (for non-command messages)
         self.application.add_handler(
@@ -595,6 +639,7 @@ class TelegramBot:
         self.equipment_service = EquipmentService(self.db)
         self.work_order_service = WorkOrderService(self.db)
         self.usage_service = UsageService(self.db)
+        self.stripe_service = StripeService(self.db)
         logger.info("Database and services initialized")
 
         # Initialize the application
