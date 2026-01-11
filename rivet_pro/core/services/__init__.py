@@ -9,6 +9,7 @@ from .equipment_taxonomy import (
     identify_issue_type,
     identify_urgency,
 )
+from .usage_service import UsageService, FREE_TIER_LIMIT
 
 __all__ = [
     # OCR
@@ -23,4 +24,7 @@ __all__ = [
     "extract_model_number",
     "identify_issue_type",
     "identify_urgency",
+    # Usage Tracking
+    "UsageService",
+    "FREE_TIER_LIMIT",
 ]

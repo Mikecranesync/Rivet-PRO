@@ -16,6 +16,7 @@ from rivet_pro.infra.observability import get_logger
 from rivet_pro.infra.database import Database
 from rivet_pro.core.services.equipment_service import EquipmentService
 from rivet_pro.core.services.work_order_service import WorkOrderService
+from rivet_pro.core.services.usage_service import UsageService, FREE_TIER_LIMIT
 
 logger = get_logger(__name__)
 
@@ -31,6 +32,7 @@ class TelegramBot:
         self.db = Database()
         self.equipment_service = None  # Initialized after db connects
         self.work_order_service = None  # Initialized after db connects
+        self.usage_service = None  # Initialized after db connects
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
@@ -92,6 +94,25 @@ class TelegramBot:
         from rivet_pro.core.services import analyze_image
 
         user_id = str(update.effective_user.id)
+        telegram_user_id = update.effective_user.id
+
+        # Check usage limits before processing
+        allowed, count, reason = await self.usage_service.can_use_service(telegram_user_id)
+        
+        if not allowed:
+            await update.message.reply_text(
+                f"⚠️ <b>Free Limit Reached</b>\n\n"
+                f"You've used all {FREE_TIER_LIMIT} free equipment lookups.\n\n"
+                f"🚀 <b>Upgrade to RIVET Pro</b> for:\n"
+                f"• Unlimited equipment lookups\n"
+                f"• PDF manual chat\n"
+                f"• Work order management\n"
+                f"• Priority support\n\n"
+                f"💰 Just $29/month\n\n"
+                f"Reply /upgrade to get started!",
+                parse_mode="HTML"
+            )
+            return
 
         # Send initial message with streaming
         msg = await update.message.reply_text("🔍 Analyzing nameplate...")
@@ -162,6 +183,21 @@ class TelegramBot:
             # Add component type if detected
             if hasattr(result, 'component_type') and result.component_type:
                 response += f"<b>Type:</b> {result.component_type}\n"
+
+            # Record this lookup for usage tracking
+            await self.usage_service.record_lookup(
+                telegram_user_id=telegram_user_id,
+                equipment_id=equipment_id,
+                lookup_type="photo_ocr"
+            )
+            
+            # Show remaining lookups for free users
+            if reason == 'under_limit':
+                remaining = FREE_TIER_LIMIT - count - 1
+                if remaining > 0:
+                    response += f"\n📊 <i>{remaining} free lookups remaining</i>"
+                else:
+                    response += f"\n📊 <i>This was your last free lookup!</i>"
 
             await msg.edit_text(response, parse_mode="HTML")
 
@@ -558,6 +594,7 @@ class TelegramBot:
         await self.db.connect()
         self.equipment_service = EquipmentService(self.db)
         self.work_order_service = WorkOrderService(self.db)
+        self.usage_service = UsageService(self.db)
         logger.info("Database and services initialized")
 
         # Initialize the application
