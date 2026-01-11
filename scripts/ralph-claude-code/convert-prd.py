@@ -19,7 +19,7 @@ import sys
 from typing import Dict, List, Optional
 
 
-def convert_story(story: Dict, number: int) -> str:
+def convert_story(story: Dict, number: int, use_ascii: bool = False) -> str:
     """Convert single story to markdown section."""
     passes = story.get('passes', False)
     story_id = story.get('id', f'STORY-{number:03d}')
@@ -30,7 +30,11 @@ def convert_story(story: Dict, number: int) -> str:
 
     # Checkbox state
     checkbox = '[x]' if passes else '[ ]'
-    status_emoji = '✅' if passes else '❌'
+    # Use ASCII for Windows console compatibility
+    if use_ascii:
+        status_emoji = '[DONE]' if passes else '[TODO]'
+    else:
+        status_emoji = '✅' if passes else '❌'
 
     # Build section
     md = f"### {status_emoji} {story_id}: {title}\n\n"
@@ -53,7 +57,8 @@ def convert_story(story: Dict, number: int) -> str:
 def convert_prd(
     prd_path: str,
     include_complete: bool = False,
-    output_file: Optional[str] = None
+    output_file: Optional[str] = None,
+    use_ascii: bool = False
 ) -> str:
     """Convert entire PRD from JSON to markdown."""
     try:
@@ -88,14 +93,14 @@ def convert_prd(
         md += "## Completed Stories (Reference)\n\n"
         md += "_These stories are already done and should not be re-implemented._\n\n"
         for idx, story in enumerate(completed, 1):
-            md += convert_story(story, idx)
+            md += convert_story(story, idx, use_ascii)
 
     # Pending stories
     if pending:
         md += "## Current Tasks\n\n"
         md += "_Complete these tasks in order of priority._\n\n"
         for idx, story in enumerate(pending, len(completed) + 1):
-            md += convert_story(story, idx)
+            md += convert_story(story, idx, use_ascii)
     else:
         if not completed:
             md += "## No Tasks\n\n"
@@ -112,8 +117,12 @@ def convert_prd(
     md += "---\n\n"
     md += "## Summary\n\n"
     md += f"- **Total Stories**: {total}\n"
-    md += f"- **Completed**: {complete_count} ✅\n"
-    md += f"- **Pending**: {pending_count} ❌\n"
+    if use_ascii:
+        md += f"- **Completed**: {complete_count} [DONE]\n"
+        md += f"- **Pending**: {pending_count} [TODO]\n"
+    else:
+        md += f"- **Completed**: {complete_count} ✅\n"
+        md += f"- **Pending**: {pending_count} ❌\n"
 
     if pending_count > 0:
         md += f"\n**Next**: Work on {pending[0].get('id', 'first pending story')}\n"
@@ -153,8 +162,12 @@ def main():
     except ValueError:
         pass  # --output not specified
 
+    # Use ASCII for stdout on Windows (avoid Unicode encoding errors)
+    # Files always use Unicode (UTF-8)
+    use_ascii = output_file is None
+
     # Convert
-    markdown = convert_prd(prd_path, include_complete, output_file)
+    markdown = convert_prd(prd_path, include_complete, output_file, use_ascii)
 
     # Print to stdout if no output file
     if not output_file:
