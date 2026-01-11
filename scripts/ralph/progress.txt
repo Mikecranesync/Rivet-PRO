@@ -54,4 +54,20 @@ Files changed:
 - Stripe webhook signature must be verified with raw payload bytes
 - send_telegram_confirmation helper function allows webhook to notify user after payment
 - Settings uses pydantic-settings with Optional[str] for API keys that may not be configured initially
+- When generating Stripe checkout links inline, wrap in try/except and fallback to /upgrade command
+---
+
+## 2026-01-11 00:00 - RIVET-003
+Thread: https://ampcode.com/threads/T-019bab67-bcbf-77d2-a85f-1f78e3ca9f0c
+- Modified _handle_photo to generate inline Stripe checkout link when limit reached
+- Free users at 10 lookups now see clickable "Subscribe now" link instead of just "/upgrade"
+- Falls back to /upgrade command if Stripe service fails
+- Pro users already bypassed via can_use_service() -> is_pro_user()
+
+Files changed:
+- rivet_pro/adapters/telegram/bot.py (modified limit-reached block)
+
+**Learnings:**
+- can_use_service() already handles Pro user detection via is_pro_user()
+- stripe_service is available in TelegramBot context for inline checkout generation
 ---

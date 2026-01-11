@@ -49,8 +49,8 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Modified _handle_photo to generate inline Stripe checkout link when limit is reached. can_use_service() already checks is_pro_user() which checks subscription_tier. Pro users (subscription_tier='pro') get unlimited lookups. Free users blocked at 10 with direct checkout link."
     },
     {
       "id": "RIVET-004",
