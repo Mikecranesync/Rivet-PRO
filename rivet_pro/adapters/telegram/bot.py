@@ -102,6 +102,14 @@ class TelegramBot:
         allowed, count, reason = await self.usage_service.can_use_service(telegram_user_id)
         
         if not allowed:
+            # Generate Stripe checkout link inline for better conversion
+            try:
+                checkout_url = await self.stripe_service.create_checkout_session(telegram_user_id)
+                upgrade_cta = f'👉 <a href="{checkout_url}">Subscribe now</a>'
+            except Exception as e:
+                logger.warning(f"Could not generate checkout URL: {e}")
+                upgrade_cta = "Reply /upgrade to get started!"
+            
             await update.message.reply_text(
                 f"⚠️ <b>Free Limit Reached</b>\n\n"
                 f"You've used all {FREE_TIER_LIMIT} free equipment lookups.\n\n"
@@ -110,9 +118,10 @@ class TelegramBot:
                 f"• PDF manual chat\n"
                 f"• Work order management\n"
                 f"• Priority support\n\n"
-                f"💰 Just $29/month\n\n"
-                f"Reply /upgrade to get started!",
-                parse_mode="HTML"
+                f"💰 <b>Just $29/month</b>\n\n"
+                f"{upgrade_cta}",
+                parse_mode="HTML",
+                disable_web_page_preview=True
             )
             return
 
