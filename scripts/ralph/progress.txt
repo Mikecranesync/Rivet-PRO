@@ -1,0 +1,57 @@
+# Ralph Progress Log
+Started: Sat, Jan 10, 2026 11:32:17 PM
+
+## Codebase Patterns
+- Use `IF NOT EXISTS` for all CREATE TABLE/INDEX migrations
+- Bot services are initialized after `db.connect()` in the `start()` method
+- Telegram user ID is accessed via `update.effective_user.id` (integer, not string)
+- Use `PYTHONPATH=.` when testing imports from the workspace root
+- Use HTML parse_mode for Telegram messages with special characters
+
+---
+
+## 2026-01-10 23:48 - RIVET-001
+Thread: https://ampcode.com/threads/T-019bab5f-236e-766c-a30d-e23a4908c839
+- Created usage_tracking table migration (011_usage_tracking.sql)
+- Created UsageService with get_usage_count(), record_lookup(), check_limit(), can_use_service()
+- Modified photo handler in bot.py to check limits before OCR processing
+- Added upgrade message when free limit (10 lookups) is hit
+- Shows remaining lookups for free tier users
+
+Files changed:
+- rivet_pro/migrations/011_usage_tracking.sql (new)
+- rivet_pro/core/services/usage_service.py (new)
+- rivet_pro/core/services/__init__.py (added exports)
+- rivet_pro/adapters/telegram/bot.py (added usage checking/recording)
+
+**Learnings:**
+- The users table already has subscription_tier column from 001_saas_layer.sql
+- Bot uses asyncpg with positional $1 parameters, not named params
+- Services use the shared Database instance passed to constructor
+---
+
+## 2026-01-10 23:52 - RIVET-002
+Thread: https://ampcode.com/threads/T-019bab62-bc8b-701a-a770-1508b2cd7ed8
+- Created Stripe integration with StripeService class
+- Added stripe SDK to requirements.txt
+- Created migration 012_stripe_integration.sql (subscription_status, stripe_customer_id, stripe_subscription_id)
+- Added /upgrade command to Telegram bot
+- Created webhook endpoint at /api/stripe/webhook
+- Handles checkout.session.completed, subscription.updated, subscription.deleted, payment_failed events
+
+Files changed:
+- rivet_pro/requirements.txt (added stripe>=7.0.0)
+- rivet_pro/config/settings.py (added stripe_api_key, stripe_webhook_secret, stripe_price_id)
+- rivet_pro/migrations/012_stripe_integration.sql (new)
+- rivet_pro/core/services/stripe_service.py (new)
+- rivet_pro/core/services/__init__.py (exported StripeService)
+- rivet_pro/adapters/telegram/bot.py (added /upgrade command, stripe_service)
+- rivet_pro/adapters/web/routers/stripe.py (new webhook endpoint)
+- rivet_pro/adapters/web/main.py (included stripe router)
+
+**Learnings:**
+- Use IF NOT EXISTS for ALTER TABLE ADD COLUMN to make migrations idempotent
+- Stripe webhook signature must be verified with raw payload bytes
+- send_telegram_confirmation helper function allows webhook to notify user after payment
+- Settings uses pydantic-settings with Optional[str] for API keys that may not be configured initially
+---
