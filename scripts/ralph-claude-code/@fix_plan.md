@@ -34,7 +34,7 @@ _These stories were started but not completed with Amp-based Ralph. They have be
 
 ## Current Tasks
 
-### ❌ RIVET-006: API Version Endpoint
+### ✅ RIVET-006: API Version Endpoint
 
 Add a `/api/version` endpoint that returns API version, environment, and build information for production monitoring and debugging.
 
@@ -80,9 +80,9 @@ pkill -f "python -m adapters.web.main"
 
 ## Summary
 
-- **Total Stories**: 3 completed, 2 discarded
-- **Completed**: 3 ✅ (RIVET-001, RIVET-002, RIVET-003)
+- **Total Stories**: 4 completed, 2 discarded
+- **Completed**: 4 ✅ (RIVET-001, RIVET-002, RIVET-003, RIVET-006)
 - **Discarded**: 2 ❌ (RIVET-004, RIVET-005)
 - **Pending**: 0
 
-**Next**: Add RIVET-006 or later stories as needed
+**Next**: Add RIVET-007 or later stories as needed
