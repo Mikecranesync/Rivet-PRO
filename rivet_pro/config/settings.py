@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     google_api_key: Optional[str] = Field(None, description="Google API key for Gemini")
     anthropic_api_key: Optional[str] = Field(None, description="Anthropic API key for Claude")
     openai_api_key: Optional[str] = Field(None, description="OpenAI API key for GPT-4o")
+    deepseek_api_key: Optional[str] = Field(None, description="DeepSeek API key for LLM validation")
     tavily_api_key: Optional[str] = Field(None, description="Tavily API key for web search (manual lookup)")
 
     # Orchestrator Configuration

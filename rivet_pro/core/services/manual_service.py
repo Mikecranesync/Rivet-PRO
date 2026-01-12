@@ -37,8 +37,10 @@ class ManualService:
         # LLM configuration for URL validation
         self.anthropic_api_key = settings.anthropic_api_key
         self.openai_api_key = settings.openai_api_key
+        self.groq_api_key = settings.groq_api_key
+        self.deepseek_api_key = settings.deepseek_api_key
 
-        if not self.anthropic_api_key and not self.openai_api_key:
+        if not any([self.anthropic_api_key, self.openai_api_key, self.groq_api_key, self.deepseek_api_key]):
             logger.warning("No LLM API keys configured - URL validation will be disabled")
 
         if not self.use_tavily_direct:
@@ -207,11 +209,13 @@ class ManualService:
         logger.info(
             f"URL validation starting | url={url[:100]} | "
             f"has_claude_key={bool(self.anthropic_api_key)} | "
-            f"has_openai_key={bool(self.openai_api_key)}"
+            f"has_openai_key={bool(self.openai_api_key)} | "
+            f"has_groq_key={bool(self.groq_api_key)} | "
+            f"has_deepseek_key={bool(self.deepseek_api_key)}"
         )
 
         # Safety first: if no LLM configured, reject all URLs
-        if not self.anthropic_api_key and not self.openai_api_key:
+        if not any([self.anthropic_api_key, self.openai_api_key, self.groq_api_key, self.deepseek_api_key]):
             logger.warning(f"URL validation skipped (no LLM) | {url}")
             return {
                 'is_direct_pdf': False,
@@ -378,6 +382,134 @@ Be strict: only return is_direct_pdf=true if you're confident it's a real manual
                             exc_info=True
                         )
 
+                # Fallback to Groq
+                if self.groq_api_key:
+                    logger.info(f"Attempting Groq API validation | url={url[:80]}")
+                    try:
+                        response = await client.post(
+                            "https://api.groq.com/openai/v1/chat/completions",
+                            headers={
+                                "Authorization": f"Bearer {self.groq_api_key}",
+                                "Content-Type": "application/json"
+                            },
+                            json={
+                                "model": "llama-3.3-70b-versatile",
+                                "max_tokens": 200,
+                                "temperature": 0.1,
+                                "messages": [
+                                    {"role": "user", "content": prompt}
+                                ]
+                            }
+                        )
+
+                        logger.info(f"Groq API response | status={response.status_code}")
+
+                        if response.status_code == 200:
+                            data = response.json()
+                            logger.info(f"Groq response data keys: {list(data.keys())}")
+
+                            content = data.get('choices', [{}])[0].get('message', {}).get('content', '{}')
+                            logger.info(f"Groq content (first 200 chars): {content[:200]}")
+
+                            try:
+                                result = json.loads(content)
+                                logger.info(
+                                    f"URL validation (Groq) SUCCESS | {manufacturer} {model} | "
+                                    f"url={url} | is_direct_pdf={result.get('is_direct_pdf')} | "
+                                    f"confidence={result.get('confidence'):.2f} | "
+                                    f"reasoning={result.get('reasoning', 'N/A')[:100]}"
+                                )
+                                return result
+                            except json.JSONDecodeError as json_err:
+                                logger.error(
+                                    f"Groq JSON parse failed | content={content[:300]} | "
+                                    f"error={json_err}"
+                                )
+                                raise
+                        else:
+                            logger.error(
+                                f"Groq API failed | status={response.status_code} | "
+                                f"body={response.text[:500]}"
+                            )
+
+                    except httpx.HTTPStatusError as http_err:
+                        logger.error(
+                            f"Groq HTTP error | status={http_err.response.status_code} | "
+                            f"body={http_err.response.text[:500]}"
+                        )
+                    except json.JSONDecodeError as json_err:
+                        logger.error(f"Groq JSON decode error | error={json_err}")
+                    except Exception as e:
+                        logger.error(
+                            f"Groq validation error | type={type(e).__name__} | "
+                            f"error={e}",
+                            exc_info=True
+                        )
+
+                # Final fallback to DeepSeek
+                if self.deepseek_api_key:
+                    logger.info(f"Attempting DeepSeek API validation | url={url[:80]}")
+                    try:
+                        response = await client.post(
+                            "https://api.deepseek.com/v1/chat/completions",
+                            headers={
+                                "Authorization": f"Bearer {self.deepseek_api_key}",
+                                "Content-Type": "application/json"
+                            },
+                            json={
+                                "model": "deepseek-chat",
+                                "max_tokens": 200,
+                                "temperature": 0.1,
+                                "messages": [
+                                    {"role": "user", "content": prompt}
+                                ]
+                            }
+                        )
+
+                        logger.info(f"DeepSeek API response | status={response.status_code}")
+
+                        if response.status_code == 200:
+                            data = response.json()
+                            logger.info(f"DeepSeek response data keys: {list(data.keys())}")
+
+                            content = data.get('choices', [{}])[0].get('message', {}).get('content', '{}')
+                            logger.info(f"DeepSeek content (first 200 chars): {content[:200]}")
+
+                            try:
+                                result = json.loads(content)
+                                logger.info(
+                                    f"URL validation (DeepSeek) SUCCESS | {manufacturer} {model} | "
+                                    f"url={url} | is_direct_pdf={result.get('is_direct_pdf')} | "
+                                    f"confidence={result.get('confidence'):.2f} | "
+                                    f"reasoning={result.get('reasoning', 'N/A')[:100]}"
+                                )
+                                return result
+                            except json.JSONDecodeError as json_err:
+                                logger.error(
+                                    f"DeepSeek JSON parse failed | content={content[:300]} | "
+                                    f"error={json_err}"
+                                )
+                                raise
+                        else:
+                            logger.error(
+                                f"DeepSeek API failed | status={response.status_code} | "
+                                f"body={response.text[:500]}"
+                            )
+
+                    except httpx.HTTPStatusError as http_err:
+                        logger.error(
+                            f"DeepSeek HTTP error | status={http_err.response.status_code} | "
+                            f"body={http_err.response.text[:500]}"
+                        )
+                    except json.JSONDecodeError as json_err:
+                        logger.error(f"DeepSeek JSON decode error | error={json_err}")
+                    except Exception as e:
+                        logger.error(
+                            f"DeepSeek validation error | type={type(e).__name__} | "
+                            f"error={e}",
+                            exc_info=True
+                        )
+
         except httpx.TimeoutException as timeout_err:
             logger.error(
                 f"URL validation timeout | {url} | timeout={timeout}s | error={timeout_err}",
@@ -394,12 +526,14 @@ Be strict: only return is_direct_pdf=true if you're confident it's a real manual
         logger.warning(
             f"URL rejected (validation failed) | {url} | "
             f"claude_attempted={bool(self.anthropic_api_key)} | "
-            f"openai_attempted={bool(self.openai_api_key)}"
+            f"openai_attempted={bool(self.openai_api_key)} | "
+            f"groq_attempted={bool(self.groq_api_key)} | "
+            f"deepseek_attempted={bool(self.deepseek_api_key)}"
         )
         return {
             'is_direct_pdf': False,
             'confidence': 0.0,
-            'reasoning': 'LLM validation failed - rejecting for safety'
+            'reasoning': 'All LLM providers failed - rejecting for safety'
         }
 
     async def cache_manual(
