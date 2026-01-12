@@ -7,7 +7,7 @@ usage limits, and error handling.
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from telegram import Update, User, Message, Photo, PhotoSize
+from telegram import Update, User, Message, PhotoSize
 from telegram.ext import ContextTypes
 from rivet_pro.adapters.telegram.bot import TelegramBot
 
@@ -179,7 +179,7 @@ async def test_equip_view_shows_equipment_details(bot, mock_update, mock_context
     """Test /equip view shows equipment details."""
     bot.db = mock_db
     mock_context.args = ["view", "EQ-2026-000001"]
-    mock_db.execute_query_async.return_value = [[{
+    mock_db.execute_query_async.return_value = [{
         "equipment_number": "EQ-2026-000001",
         "manufacturer": "Siemens",
         "model_number": "G120C",
@@ -188,7 +188,7 @@ async def test_equip_view_shows_equipment_details(bot, mock_update, mock_context
         "location": "Building A",
         "work_order_count": 3,
         "last_reported_fault": "Overcurrent"
-    }]]
+    }]
 
     await bot.equip_command(mock_update, mock_context)
 
@@ -315,7 +315,7 @@ async def test_photo_handler_under_free_limit(bot, mock_update, mock_context, mo
     mock_ocr_result.confidence = 0.95
     mock_ocr_result.error = None
 
-    with patch("rivet_pro.adapters.telegram.bot.analyze_image", return_value=mock_ocr_result):
+    with patch("rivet_pro.core.services.analyze_image", return_value=mock_ocr_result):
         await bot._handle_photo(mock_update, mock_context)
 
     # Verify OCR was run
@@ -357,7 +357,7 @@ async def test_photo_handler_ocr_error(bot, mock_update, mock_context, mock_usag
     mock_msg = AsyncMock()
     mock_update.message.reply_text.return_value = mock_msg
 
-    with patch("rivet_pro.adapters.telegram.bot.analyze_image", return_value=mock_ocr_result):
+    with patch("rivet_pro.core.services.analyze_image", return_value=mock_ocr_result):
         await bot._handle_photo(mock_update, mock_context)
 
     # Verify error message sent
@@ -378,7 +378,7 @@ async def test_text_handler_routes_to_sme(bot, mock_update, mock_context):
     mock_msg = AsyncMock()
     mock_update.message.reply_text.return_value = mock_msg
 
-    with patch("rivet_pro.adapters.telegram.bot.route_to_sme", return_value="SME response here"):
+    with patch("rivet_pro.core.services.route_to_sme", return_value="SME response here"):
         await bot._handle_text(mock_update, mock_context)
 
     # Verify SME was called
@@ -395,6 +395,7 @@ async def test_text_handler_routes_to_sme(bot, mock_update, mock_context):
 async def test_error_handler_notifies_user(bot, mock_update, mock_context):
     """Test error handler sends error message to user."""
     mock_context.error = Exception("Test error")
+    mock_update.effective_message.reply_text = AsyncMock()
 
     await bot.error_handler(mock_update, mock_context)
 
