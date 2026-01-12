@@ -11,6 +11,7 @@ from .equipment_taxonomy import (
 )
 from .usage_service import UsageService, FREE_TIER_LIMIT
 from .stripe_service import StripeService, send_telegram_confirmation
+from .manual_service import ManualService
 
 __all__ = [
     # OCR
@@ -31,4 +32,6 @@ __all__ = [
     # Stripe Payments
     "StripeService",
     "send_telegram_confirmation",
+    # Manual Search
+    "ManualService",
 ]

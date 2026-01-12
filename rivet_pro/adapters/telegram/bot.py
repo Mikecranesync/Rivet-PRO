@@ -18,6 +18,8 @@ from rivet_pro.core.services.equipment_service import EquipmentService
 from rivet_pro.core.services.work_order_service import WorkOrderService
 from rivet_pro.core.services.usage_service import UsageService, FREE_TIER_LIMIT
 from rivet_pro.core.services.stripe_service import StripeService
+from rivet_pro.core.services.manual_service import ManualService
+from rivet_pro.core.utils import format_equipment_response
 
 logger = get_logger(__name__)
 
@@ -35,6 +37,7 @@ class TelegramBot:
         self.work_order_service = None  # Initialized after db connects
         self.usage_service = None  # Initialized after db connects
         self.stripe_service = None  # Initialized after db connects
+        self.manual_service = None  # Initialized after db connects
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
@@ -174,26 +177,56 @@ class TelegramBot:
                 logger.error(f"Failed to create/match equipment: {e}", exc_info=True)
                 # Continue anyway - OCR succeeded even if CMMS failed
 
-            # Format successful OCR result
-            confidence_emoji = "✅" if result.confidence >= 0.85 else "⚠️"
-
-            # Use HTML formatting (more robust than Markdown for special characters)
-            response = (
-                f"{confidence_emoji} <b>Equipment Identified</b>\n\n"
-                f"<b>Manufacturer:</b> {result.manufacturer}\n"
-                f"<b>Model:</b> {result.model_number or 'Not detected'}\n"
-                f"<b>Serial:</b> {result.serial_number or 'Not detected'}\n"
-                f"<b>Confidence:</b> {result.confidence:.0%}\n"
+            # Update message: Searching for manual
+            await msg.edit_text(
+                "🔍 Analyzing nameplate...\n"
+                "⏳ Reading text from image...\n"
+                "📖 Searching for manual..."
             )
+
+            # Search for equipment manual
+            manual_result = None
+            if result.manufacturer and result.model_number:
+                try:
+                    manual_result = await self.manual_service.search_manual(
+                        manufacturer=result.manufacturer,
+                        model=result.model_number,
+                        timeout=15
+                    )
+                    if manual_result:
+                        logger.info(
+                            f"Manual found | user_id={user_id} | "
+                            f"url={manual_result.get('url')} | "
+                            f"cached={manual_result.get('cached', False)}"
+                        )
+                    else:
+                        logger.info(f"Manual not found | user_id={user_id}")
+                except Exception as e:
+                    logger.error(f"Manual search failed: {e}", exc_info=True)
+                    # Continue without manual if search fails
+
+            # Format equipment response with manual link
+            equipment_data = {
+                'manufacturer': result.manufacturer,
+                'model': result.model_number or 'Unknown',
+                'serial': result.serial_number,
+                'confidence': result.confidence
+            }
+
+            # Add error code if detected
+            if hasattr(result, 'error_code') and result.error_code:
+                equipment_data['error_code'] = result.error_code
+
+            response = format_equipment_response(equipment_data, manual_result)
 
             # Add equipment number if created/matched
             if equipment_number:
                 status = "🆕 Created" if is_new else "✓ Matched"
-                response += f"\n<b>Equipment:</b> {equipment_number} ({status})\n"
+                response += f"\n\n<b>Equipment ID:</b> {equipment_number} ({status})"
 
             # Add component type if detected
             if hasattr(result, 'component_type') and result.component_type:
-                response += f"<b>Type:</b> {result.component_type}\n"
+                response += f"\n<b>Type:</b> {result.component_type}"
 
             # Record this lookup for usage tracking
             await self.usage_service.record_lookup(
@@ -206,11 +239,11 @@ class TelegramBot:
             if reason == 'under_limit':
                 remaining = FREE_TIER_LIMIT - count - 1
                 if remaining > 0:
-                    response += f"\n📊 <i>{remaining} free lookups remaining</i>"
+                    response += f"\n\n📊 _{remaining} free lookups remaining_"
                 else:
-                    response += f"\n📊 <i>This was your last free lookup!</i>"
+                    response += f"\n\n📊 _This was your last free lookup!_"
 
-            await msg.edit_text(response, parse_mode="HTML")
+            await msg.edit_text(response, parse_mode="Markdown")
 
             logger.info(
                 f"OCR complete | user_id={user_id} | "
@@ -648,6 +681,7 @@ class TelegramBot:
         self.work_order_service = WorkOrderService(self.db)
         self.usage_service = UsageService(self.db)
         self.stripe_service = StripeService(self.db)
+        self.manual_service = ManualService(self.db)
         logger.info("Database and services initialized")
 
         # Initialize the application

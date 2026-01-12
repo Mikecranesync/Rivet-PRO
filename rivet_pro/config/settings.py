@@ -37,6 +37,10 @@ class Settings(BaseSettings):
         "http://localhost:5678/webhook/photo-bot-v2",
         description="n8n webhook URL for photo processing"
     )
+    n8n_manual_hunter_url: str = Field(
+        "http://localhost:5678/webhook/manual-hunter",
+        description="n8n webhook URL for manual search (Manual Hunter workflow)"
+    )
 
     # WhatsApp Configuration (Future)
     whatsapp_phone_id: Optional[str] = None
