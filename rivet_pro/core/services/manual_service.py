@@ -30,11 +30,17 @@ class ManualService:
             db: Database connection pool
         """
         self.db = db
-        self.manual_hunter_url = getattr(
-            settings,
-            'n8n_manual_hunter_url',
-            'http://localhost:5678/webhook/manual-hunter'
-        )
+        self.tavily_api_key = settings.tavily_api_key
+        self.use_tavily_direct = bool(self.tavily_api_key)
+
+        if not self.use_tavily_direct:
+            # Fallback to n8n webhook if no Tavily key
+            self.manual_hunter_url = getattr(
+                settings,
+                'n8n_manual_hunter_url',
+                'http://localhost:5678/webhook/manual-hunter'
+            )
+            logger.warning("Tavily API key not configured - will use n8n Manual Hunter webhook")
 
     async def search_manual(
         self,
@@ -222,7 +228,105 @@ class ManualService:
         timeout: int
     ) -> Optional[Dict[str, Any]]:
         """
-        Call n8n Manual Hunter webhook to search for manual.
+        Search for manual using Tavily API directly or n8n webhook fallback.
+
+        Args:
+            manufacturer: Equipment manufacturer
+            model: Equipment model number
+            timeout: Request timeout in seconds
+
+        Returns:
+            Dict with manual info if found, None otherwise
+        """
+        if self.use_tavily_direct:
+            return await self._search_tavily_direct(manufacturer, model, timeout)
+        else:
+            return await self._search_via_n8n(manufacturer, model, timeout)
+
+    async def _search_tavily_direct(
+        self,
+        manufacturer: str,
+        model: str,
+        timeout: int
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Call Tavily API directly to search for equipment manual.
+
+        Args:
+            manufacturer: Equipment manufacturer
+            model: Equipment model number
+            timeout: Request timeout in seconds
+
+        Returns:
+            Dict with manual info if found, None otherwise
+        """
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                # Build search query optimized for PDF manuals
+                query = f"{manufacturer} {model} manual PDF filetype:pdf"
+
+                response = await client.post(
+                    "https://api.tavily.com/search",
+                    headers={"Content-Type": "application/json"},
+                    json={
+                        "api_key": self.tavily_api_key,
+                        "query": query,
+                        "search_depth": "advanced",
+                        "max_results": 5,
+                        "include_domains": [
+                            "manualslib.com",
+                            "siemens.com",
+                            "abb.com",
+                            "rockwellautomation.com",
+                            "schneider-electric.com",
+                            "emerson.com",
+                            "ge.com",
+                            "automation.com"
+                        ]
+                    }
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    results = data.get('results', [])
+
+                    # Find first PDF result
+                    for result in results:
+                        url = result.get('url', '')
+                        title = result.get('title', '')
+
+                        # Check if URL is a PDF or contains "manual"
+                        is_pdf = url.lower().endswith('.pdf') or 'manual' in url.lower()
+
+                        if is_pdf:
+                            logger.info(f"Tavily found manual | {manufacturer} {model} | url={url}")
+                            return {
+                                'url': url,
+                                'title': title or f"{manufacturer} {model} Manual",
+                                'source': 'tavily'
+                            }
+
+                    logger.info(f"Tavily search returned no PDF results | {manufacturer} {model}")
+                    return None
+
+                logger.warning(f"Tavily API returned {response.status_code} | {manufacturer} {model}")
+                return None
+
+        except httpx.TimeoutException:
+            logger.error(f"Tavily search timeout | {manufacturer} {model} | timeout={timeout}s")
+            return None
+        except Exception as e:
+            logger.error(f"Tavily search failed | {manufacturer} {model} | error={e}")
+            return None
+
+    async def _search_via_n8n(
+        self,
+        manufacturer: str,
+        model: str,
+        timeout: int
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Call n8n Manual Hunter webhook to search for manual (fallback).
 
         Args:
             manufacturer: Equipment manufacturer
@@ -258,7 +362,7 @@ class ManualService:
                         return {
                             'url': data['url'],
                             'title': data.get('title', f"{manufacturer} {model} Manual"),
-                            'source': data.get('source', 'tavily')
+                            'source': data.get('source', 'n8n')
                         }
 
                     return None
