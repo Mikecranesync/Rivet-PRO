@@ -23,8 +23,20 @@ class Settings(BaseSettings):
 
     # Telegram Configuration
     telegram_bot_token: str = Field(..., description="Telegram bot token from @BotFather")
-    telegram_webhook_url: Optional[str] = Field(None, description="Webhook URL for production")
-    telegram_webhook_secret: Optional[str] = Field(None, description="Webhook secret token")
+    telegram_bot_mode: Literal["polling", "webhook"] = Field(
+        "polling",
+        description="Bot mode: polling (dev) or webhook (production with HTTPS)"
+    )
+    telegram_webhook_url: Optional[str] = Field(
+        None,
+        description="Webhook URL for production (required when telegram_bot_mode=webhook)"
+    )
+    telegram_webhook_secret: Optional[str] = Field(None, description="Webhook secret token for security")
+    telegram_webhook_port: int = Field(8443, description="Port for webhook server")
+    n8n_webhook_url: str = Field(
+        "http://localhost:5678/webhook/photo-bot-v2",
+        description="n8n webhook URL for photo processing"
+    )
 
     # WhatsApp Configuration (Future)
     whatsapp_phone_id: Optional[str] = None

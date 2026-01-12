@@ -636,12 +636,11 @@ class TelegramBot:
 
     async def start(self) -> None:
         """
-        Start the bot using polling (for development).
+        Start the bot using either polling (development) or webhook (production).
+        Mode is controlled by settings.telegram_bot_mode.
         """
         if self.application is None:
             self.build()
-
-        logger.info("Starting Telegram bot with polling...")
 
         # Connect to database
         await self.db.connect()
@@ -655,13 +654,43 @@ class TelegramBot:
         await self.application.initialize()
         await self.application.start()
 
-        # Start polling
-        await self.application.updater.start_polling(
-            allowed_updates=Update.ALL_TYPES,
-            drop_pending_updates=True
-        )
+        # Start bot based on configured mode
+        if settings.telegram_bot_mode == "webhook":
+            # Webhook mode (production with HTTPS)
+            if not settings.telegram_webhook_url:
+                logger.error("Webhook mode requires TELEGRAM_WEBHOOK_URL to be set")
+                raise ValueError("TELEGRAM_WEBHOOK_URL must be set when using webhook mode")
 
-        logger.info("✅ Telegram bot is running and polling for updates")
+            logger.info(f"Starting Telegram bot in webhook mode | url={settings.telegram_webhook_url}")
+
+            # Start webhook
+            await self.application.updater.start_webhook(
+                listen="0.0.0.0",  # Listen on all interfaces
+                port=settings.telegram_webhook_port,
+                url_path="telegram-webhook",  # Path component of webhook URL
+                webhook_url=settings.telegram_webhook_url,
+                secret_token=settings.telegram_webhook_secret,  # Optional security token
+                allowed_updates=Update.ALL_TYPES,
+                drop_pending_updates=True
+            )
+
+            logger.info(
+                f"✅ Telegram bot is running in webhook mode | "
+                f"port={settings.telegram_webhook_port} | "
+                f"url={settings.telegram_webhook_url}"
+            )
+
+        else:
+            # Polling mode (development/default)
+            logger.info("Starting Telegram bot in polling mode...")
+
+            # Start polling
+            await self.application.updater.start_polling(
+                allowed_updates=Update.ALL_TYPES,
+                drop_pending_updates=True
+            )
+
+            logger.info("✅ Telegram bot is running and polling for updates")
 
     async def stop(self) -> None:
         """
