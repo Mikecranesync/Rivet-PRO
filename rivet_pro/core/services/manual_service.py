@@ -203,6 +203,13 @@ class ManualService:
         If LLM validation fails, returns safe default (reject URL):
             {'is_direct_pdf': False, 'confidence': 0.0, 'reasoning': 'LLM validation failed'}
         """
+        # Log API key availability (without exposing keys)
+        logger.info(
+            f"URL validation starting | url={url[:100]} | "
+            f"has_claude_key={bool(self.anthropic_api_key)} | "
+            f"has_openai_key={bool(self.openai_api_key)}"
+        )
+
         # Safety first: if no LLM configured, reject all URLs
         if not self.anthropic_api_key and not self.openai_api_key:
             logger.warning(f"URL validation skipped (no LLM) | {url}")
@@ -245,6 +252,7 @@ Be strict: only return is_direct_pdf=true if you're confident it's a real manual
             async with httpx.AsyncClient(timeout=timeout) as client:
                 # Try Anthropic Claude first (preferred)
                 if self.anthropic_api_key:
+                    logger.info(f"Attempting Claude API validation | url={url[:80]}")
                     try:
                         response = await client.post(
                             "https://api.anthropic.com/v1/messages",
@@ -262,24 +270,53 @@ Be strict: only return is_direct_pdf=true if you're confident it's a real manual
                             }
                         )
 
+                        logger.info(f"Claude API response | status={response.status_code}")
+
                         if response.status_code == 200:
                             data = response.json()
-                            content = data.get('content', [{}])[0].get('text', '{}')
-                            result = json.loads(content)
+                            logger.info(f"Claude response data keys: {list(data.keys())}")
 
-                            logger.info(
-                                f"URL validation (Claude) | {manufacturer} {model} | "
-                                f"url={url} | is_direct_pdf={result.get('is_direct_pdf')} | "
-                                f"confidence={result.get('confidence'):.2f}"
+                            content = data.get('content', [{}])[0].get('text', '{}')
+                            logger.info(f"Claude content (first 200 chars): {content[:200]}")
+
+                            try:
+                                result = json.loads(content)
+                                logger.info(
+                                    f"URL validation (Claude) SUCCESS | {manufacturer} {model} | "
+                                    f"url={url} | is_direct_pdf={result.get('is_direct_pdf')} | "
+                                    f"confidence={result.get('confidence'):.2f} | "
+                                    f"reasoning={result.get('reasoning', 'N/A')[:100]}"
+                                )
+                                return result
+                            except json.JSONDecodeError as json_err:
+                                logger.error(
+                                    f"Claude JSON parse failed | content={content[:300]} | "
+                                    f"error={json_err}"
+                                )
+                                raise
+                        else:
+                            logger.error(
+                                f"Claude API failed | status={response.status_code} | "
+                                f"body={response.text[:500]}"
                             )
 
-                            return result
-
+                    except httpx.HTTPStatusError as http_err:
+                        logger.error(
+                            f"Claude HTTP error | status={http_err.response.status_code} | "
+                            f"body={http_err.response.text[:500]}"
+                        )
+                    except json.JSONDecodeError as json_err:
+                        logger.error(f"Claude JSON decode error | error={json_err}")
                     except Exception as e:
-                        logger.warning(f"Claude URL validation failed | {url} | error={e}")
+                        logger.error(
+                            f"Claude validation error | type={type(e).__name__} | "
+                            f"error={e}",
+                            exc_info=True
+                        )
 
                 # Fallback to OpenAI GPT-4o-mini
                 if self.openai_api_key:
+                    logger.info(f"Attempting OpenAI API validation | url={url[:80]}")
                     try:
                         response = await client.post(
                             "https://api.openai.com/v1/chat/completions",
@@ -297,29 +334,68 @@ Be strict: only return is_direct_pdf=true if you're confident it's a real manual
                             }
                         )
 
+                        logger.info(f"OpenAI API response | status={response.status_code}")
+
                         if response.status_code == 200:
                             data = response.json()
-                            content = data.get('choices', [{}])[0].get('message', {}).get('content', '{}')
-                            result = json.loads(content)
+                            logger.info(f"OpenAI response data keys: {list(data.keys())}")
 
-                            logger.info(
-                                f"URL validation (GPT-4o-mini) | {manufacturer} {model} | "
-                                f"url={url} | is_direct_pdf={result.get('is_direct_pdf')} | "
-                                f"confidence={result.get('confidence'):.2f}"
+                            content = data.get('choices', [{}])[0].get('message', {}).get('content', '{}')
+                            logger.info(f"OpenAI content (first 200 chars): {content[:200]}")
+
+                            try:
+                                result = json.loads(content)
+                                logger.info(
+                                    f"URL validation (GPT-4o-mini) SUCCESS | {manufacturer} {model} | "
+                                    f"url={url} | is_direct_pdf={result.get('is_direct_pdf')} | "
+                                    f"confidence={result.get('confidence'):.2f} | "
+                                    f"reasoning={result.get('reasoning', 'N/A')[:100]}"
+                                )
+                                return result
+                            except json.JSONDecodeError as json_err:
+                                logger.error(
+                                    f"OpenAI JSON parse failed | content={content[:300]} | "
+                                    f"error={json_err}"
+                                )
+                                raise
+                        else:
+                            logger.error(
+                                f"OpenAI API failed | status={response.status_code} | "
+                                f"body={response.text[:500]}"
                             )
 
-                            return result
-
+                    except httpx.HTTPStatusError as http_err:
+                        logger.error(
+                            f"OpenAI HTTP error | status={http_err.response.status_code} | "
+                            f"body={http_err.response.text[:500]}"
+                        )
+                    except json.JSONDecodeError as json_err:
+                        logger.error(f"OpenAI JSON decode error | error={json_err}")
                     except Exception as e:
-                        logger.warning(f"OpenAI URL validation failed | {url} | error={e}")
+                        logger.error(
+                            f"OpenAI validation error | type={type(e).__name__} | "
+                            f"error={e}",
+                            exc_info=True
+                        )
 
-        except httpx.TimeoutException:
-            logger.error(f"URL validation timeout | {url} | timeout={timeout}s")
+        except httpx.TimeoutException as timeout_err:
+            logger.error(
+                f"URL validation timeout | {url} | timeout={timeout}s | error={timeout_err}",
+                exc_info=True
+            )
         except Exception as e:
-            logger.error(f"URL validation failed | {url} | error={e}")
+            logger.error(
+                f"URL validation outer exception | type={type(e).__name__} | "
+                f"{url} | error={e}",
+                exc_info=True
+            )
 
         # Safety default: reject URL if validation failed
-        logger.warning(f"URL rejected (validation failed) | {url}")
+        logger.warning(
+            f"URL rejected (validation failed) | {url} | "
+            f"claude_attempted={bool(self.anthropic_api_key)} | "
+            f"openai_attempted={bool(self.openai_api_key)}"
+        )
         return {
             'is_direct_pdf': False,
             'confidence': 0.0,
