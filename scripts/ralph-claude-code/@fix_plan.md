@@ -234,26 +234,36 @@ Create comprehensive pytest suite for Telegram bot handlers. Test all commands (
 
 **Priority:** P1 - Operational Readiness
 **Complexity:** Simple
-**Status:** ⬜ TODO
+**Status:** ✅ COMPLETE
 
 **Description:**
 Create comprehensive DEPLOYMENT.md guide for production VPS deployment. Include prerequisites, setup steps, n8n configuration, service management, and troubleshooting. Enable new developers to deploy from scratch in under 2 hours.
 
 **Acceptance Criteria:**
-- [ ] Create `DEPLOYMENT.md` in project root
-- [ ] Document VPS requirements (Ubuntu, 2GB RAM, 20GB disk)
-- [ ] List required accounts (Neon, Telegram, Gemini, Stripe)
-- [ ] Provide initial setup steps (clone, dependencies, .env)
-- [ ] Document database migration process
-- [ ] Explain n8n installation and workflow import
-- [ ] List all n8n credentials to configure
-- [ ] Provide systemd service configurations for bot and API
-- [ ] Document HTTPS webhook setup (refer to RIVET-008)
-- [ ] Include nginx reverse proxy configuration
-- [ ] Add monitoring and log file locations
-- [ ] Provide common troubleshooting steps
-- [ ] Create `.env.example` with all required variables
-- [ ] Commit with message: `docs(RIVET-011): create production deployment guide`
+- [x] Create `DEPLOYMENT.md` in project root - 804 lines, comprehensive
+- [x] Document VPS requirements (Ubuntu, 2GB RAM, 20GB disk) - Lines 24-40
+- [x] List required accounts (Neon, Telegram, Gemini, Stripe) - Lines 44-72
+- [x] Provide initial setup steps (clone, dependencies, .env) - Lines 75-240
+- [x] Document database migration process - Lines 124-163
+- [x] Explain n8n installation and workflow import - Lines 242-318
+- [x] List all n8n credentials to configure - Lines 287-310
+- [x] Provide systemd service configurations for bot and API - Lines 425-522
+- [x] Document HTTPS webhook setup (refer to RIVET-008) - Lines 321-422 (both ngrok and Let's Encrypt)
+- [x] Include nginx reverse proxy configuration - Lines 356-394
+- [x] Add monitoring and log file locations - Lines 525-608
+- [x] Provide common troubleshooting steps - Lines 610-756 (7 common issues)
+- [x] Create `.env.example` with all required variables - Already exists with full documentation
+- [x] Commit with message: `docs(RIVET-011): deployment guide already complete`
+
+**Documentation Quality:**
+- Comprehensive 804-line deployment guide
+- Step-by-step instructions for fresh VPS deployment
+- Estimated deployment time: 2 hours
+- Covers both quick MVP (ngrok) and production (Let's Encrypt) approaches
+- Includes security best practices and deployment checklist
+- 7 common issues with detailed troubleshooting steps
+- Complete systemd service configurations
+- Health monitoring and log management
 
 **Files to Create/Modify:**
 - `DEPLOYMENT.md` - New deployment guide
@@ -271,10 +281,10 @@ Create comprehensive DEPLOYMENT.md guide for production VPS deployment. Include 
 
 ## Summary
 
-- **Total Stories**: 9 total (6 completed, 2 discarded, 3 remaining)
-- **Completed**: 6 ✅ (RIVET-001, RIVET-002, RIVET-003, RIVET-006, RIVET-008, RIVET-010)
+- **Total Stories**: 9 total (7 completed, 2 discarded, 2 manual)
+- **Completed**: 7 ✅ (RIVET-001, RIVET-002, RIVET-003, RIVET-006, RIVET-008, RIVET-010, RIVET-011)
 - **Discarded**: 2 ❌ (RIVET-004, RIVET-005)
-- **Remaining**: 3 tasks (RIVET-007 🔧 Manual, RIVET-009 🔧 Manual, RIVET-011 ⬜ TODO)
+- **Manual Tasks**: 2 🔧 (RIVET-007 n8n credential config, RIVET-009 Ralph workflow credentials)
 
 **Next**: Run Ralph to implement DEPLOY-001 (deploy itself to VPS), then RIVET-007 through RIVET-011
 
@@ -380,3 +390,97 @@ ssh root@72.60.175.144 "curl http://localhost:8000/api/health/db"
 
 **Commit Message:**
 `feat(DEPLOY-001): deploy frankbria Ralph to VPS and complete RIVET-TEST-001`
+
+---
+
+## NEW AUDIT (2026-01-12) - Updated Sprint Based on Deep Codebase Analysis
+
+**Context:** Comprehensive 3-agent exploration revealed that Python Telegram bot has only `/start` command implemented. n8n Photo Bot V2 + Manual Hunter are active and working on VPS, but Python bot is NOT integrated with n8n workflows. Usage tracking table exists but enforcement logic needs wiring.
+
+**Architecture Decision:** Leverage n8n workflows (Photo Bot V2 working), integrate with Python bot.
+
+---
+
+### RIVET-007: Integrate n8n Photo Bot V2 with Python Bot
+**Priority:** P0 - MVP Blocker  
+**Complexity:** Medium  
+**Status:** ⬜ TODO
+
+**Description:**
+Connect the Python Telegram bot to n8n Photo Bot V2 webhook callbacks. Currently, n8n analyzes photos and sends messages directly to users. Python bot is not involved at all. Need to add webhook endpoint so n8n calls Python bot after analysis, Python bot saves equipment to CMMS and tracks usage.
+
+**Acceptance Criteria:**
+- [ ] Create new router: rivet_pro/adapters/web/routers/webhooks.py
+- [ ] Add endpoint: POST /api/webhook/n8n-photo-callback
+- [ ] Parse n8n payload
+- [ ] Call equipment_service.match_or_create_equipment()
+- [ ] Insert into usage_tracking table
+- [ ] Send final Telegram message
+- [ ] Committed: feat(RIVET-007): integrate n8n photo bot v2
+
+---
+
+### RIVET-008: Implement /equip search Command
+**Priority:** P0 - MVP Feature  
+**Complexity:** Simple  
+**Status:** ⬜ TODO
+
+**Description:**
+Add `/equip search <query>` command for fuzzy equipment search.
+
+**Files:** rivet_pro/adapters/telegram/bot.py, equipment_service.py
+
+---
+
+### RIVET-009: Implement /wo create Command (Optional)
+**Priority:** P1  
+**Complexity:** Medium  
+**Status:** ⬜ TODO
+
+**Description:**
+Add `/wo create` command. Optional for MVP.
+
+---
+
+### RIVET-010: Usage Tracking Enforcement
+**Priority:** P0 - MVP Business Logic  
+**Complexity:** Medium  
+**Status:** ⬜ TODO
+
+**Description:**
+Enforce 10 lookups/month free tier limit.
+
+---
+
+### RIVET-011: Error Handling & User Messages
+**Priority:** P1  
+**Complexity:** Simple  
+**Status:** ⬜ TODO
+
+**Description:**
+User-friendly error messages.
+
+---
+
+### RIVET-012: Database Migration Automation
+**Priority:** P1  
+**Complexity:** Simple  
+**Status:** ⬜ TODO
+
+**Description:**
+Auto-run migrations at startup.
+
+---
+
+### RIVET-013: Setup Documentation
+**Priority:** P1  
+**Complexity:** Simple  
+**Status:** ⬜ TODO
+
+**Description:**
+Create .env.example and complete README.
+
+---
+
+**Total:** 7 stories | 12-16 hours | $0.50-1.00
+**READY FOR RALPH** 🚀
