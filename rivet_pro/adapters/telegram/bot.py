@@ -3,11 +3,12 @@ Telegram bot adapter for Rivet Pro.
 Handles all Telegram-specific interaction logic.
 """
 
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
+    CallbackQueryHandler,
     filters,
     ContextTypes,
 )
@@ -19,6 +20,7 @@ from rivet_pro.core.services.work_order_service import WorkOrderService
 from rivet_pro.core.services.usage_service import UsageService, FREE_TIER_LIMIT
 from rivet_pro.core.services.stripe_service import StripeService
 from rivet_pro.core.services.manual_service import ManualService
+from rivet_pro.core.services.feedback_service import FeedbackService
 from rivet_pro.core.utils import format_equipment_response
 
 logger = get_logger(__name__)
@@ -38,6 +40,7 @@ class TelegramBot:
         self.usage_service = None  # Initialized after db connects
         self.stripe_service = None  # Initialized after db connects
         self.manual_service = None  # Initialized after db connects
+        self.feedback_service = None  # Initialized after db connects
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
@@ -617,6 +620,165 @@ class TelegramBot:
                 "❌ Could not generate upgrade link. Please try again later."
             )
 
+    async def handle_message_reply(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Route messages - detect feedback replies vs normal messages.
+
+        If user replies to bot's message → treat as feedback
+        Otherwise → normal message handling
+        """
+        message = update.message
+
+        # Check if this is a reply to the bot's own message
+        if message.reply_to_message and message.reply_to_message.from_user.id == context.bot.id:
+            await self._handle_feedback_reply(update, context)
+        else:
+            await self.handle_message(update, context)  # Existing handler
+
+    async def _handle_feedback_reply(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Process user feedback on bot's previous response.
+        User replied to bot message with issue description.
+        """
+        user = update.effective_user
+        feedback_text = update.message.text
+        original_message = update.message.reply_to_message.text
+
+        logger.info(
+            f"Feedback received | user_id={user.id} | "
+            f"feedback='{feedback_text[:50]}...'"
+        )
+
+        try:
+            # Extract context from original bot message
+            context_data = self.feedback_service.extract_context(original_message)
+
+            # Classify feedback type
+            feedback_type = self.feedback_service.classify_feedback(feedback_text, context_data)
+
+            # Get user from database
+            user_record = await self.db.fetchrow(
+                "SELECT id FROM users WHERE telegram_user_id = $1",
+                str(user.id)
+            )
+
+            if not user_record:
+                await update.message.reply_text(
+                    "❌ User not found. Please use /start first."
+                )
+                return
+
+            user_id = user_record['id']
+
+            # Send acknowledgment
+            await update.message.reply_text(
+                "🔍 <b>Analyzing your feedback...</b>\n\n"
+                "I'll generate a fix proposal and send it to you for approval shortly.",
+                parse_mode="HTML"
+            )
+
+            # Create feedback interaction and trigger workflow
+            interaction_id = await self.feedback_service.create_feedback(
+                user_id=user_id,
+                feedback_text=feedback_text,
+                feedback_type=feedback_type,
+                context_data=context_data,
+                telegram_user_id=str(user.id)
+            )
+
+            logger.info(
+                f"Feedback stored | interaction_id={interaction_id} | "
+                f"type={feedback_type} | user_id={user.id}"
+            )
+
+        except ValueError as e:
+            # Rate limit or validation error
+            await update.message.reply_text(
+                f"⚠️ {str(e)}"
+            )
+        except Exception as e:
+            logger.error(f"Error handling feedback: {e}", exc_info=True)
+            await update.message.reply_text(
+                "❌ Failed to process feedback. Please try again."
+            )
+
+    async def handle_proposal_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Handle user approval/rejection of fix proposals.
+        Called when user clicks 👍 or 👎 button.
+        """
+        query = update.callback_query
+        user = update.effective_user
+
+        await query.answer()  # Acknowledge button click
+
+        try:
+            # Parse callback data: "approve_fix:FEEDBACK-001" or "reject_fix:FEEDBACK-001"
+            action, story_id = query.data.split(':', 1)
+
+            logger.info(
+                f"Proposal callback | action={action} | "
+                f"story_id={story_id} | user_id={user.id}"
+            )
+
+            if action == 'approve_fix':
+                # Approve the fix
+                success = await self.feedback_service.approve_proposal(
+                    story_id=story_id,
+                    telegram_user_id=str(user.id)
+                )
+
+                if success:
+                    # Edit message to show approval
+                    await query.edit_message_text(
+                        query.message.text + "\n\n"
+                        "✅ <b>APPROVED</b>\n"
+                        "⚙️ Implementing fix now... "
+                        "I'll send you real-time updates as I work on it.",
+                        parse_mode="HTML"
+                    )
+
+                    logger.info(f"Proposal approved | story_id={story_id} | by={user.id}")
+                else:
+                    await query.edit_message_text(
+                        query.message.text + "\n\n"
+                        "❌ <b>Failed to approve proposal.</b> Please try again.",
+                        parse_mode="HTML"
+                    )
+
+            elif action == 'reject_fix':
+                # Reject the fix
+                success = await self.feedback_service.reject_proposal(
+                    story_id=story_id,
+                    telegram_user_id=str(user.id),
+                    rejection_reason="User rejected via Telegram"
+                )
+
+                if success:
+                    # Edit message to show rejection
+                    await query.edit_message_text(
+                        query.message.text + "\n\n"
+                        "❌ <b>REJECTED</b>\n"
+                        "Thanks for the feedback! I won't implement this fix.",
+                        parse_mode="HTML"
+                    )
+
+                    logger.info(f"Proposal rejected | story_id={story_id} | by={user.id}")
+                else:
+                    await query.edit_message_text(
+                        query.message.text + "\n\n"
+                        "❌ <b>Failed to reject proposal.</b> Please try again.",
+                        parse_mode="HTML"
+                    )
+
+        except Exception as e:
+            logger.error(f"Error handling proposal callback: {e}", exc_info=True)
+            await query.edit_message_text(
+                query.message.text + "\n\n"
+                "❌ <b>Error processing your response.</b> Please try again.",
+                parse_mode="HTML"
+            )
+
     async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
         Handle errors in the bot.
@@ -652,11 +814,21 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("stats", self.stats_command))
         self.application.add_handler(CommandHandler("upgrade", self.upgrade_command))
 
+        # Register callback handler for inline keyboard buttons (approve/reject)
+        # IMPORTANT: Must be registered BEFORE message handler
+        self.application.add_handler(
+            CallbackQueryHandler(
+                self.handle_proposal_callback,
+                pattern=r'^(approve_fix|reject_fix):'
+            )
+        )
+
         # Register message handler (for non-command messages)
+        # Now routes through handle_message_reply to detect feedback
         self.application.add_handler(
             MessageHandler(
                 filters.ALL & ~filters.COMMAND,
-                self.handle_message
+                self.handle_message_reply  # Changed from handle_message
             )
         )
 
@@ -682,6 +854,7 @@ class TelegramBot:
         self.usage_service = UsageService(self.db)
         self.stripe_service = StripeService(self.db)
         self.manual_service = ManualService(self.db)
+        self.feedback_service = FeedbackService(self.db.pool)
         logger.info("Database and services initialized")
 
         # Initialize the application

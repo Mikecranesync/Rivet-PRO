@@ -1,0 +1,337 @@
+{
+  "name": "Rivet-PRO Startup Orchestrator",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Initialize variables for workflow\nconst config = {\n  CMMS_URL: 'http://localhost:8081',\n  CMMS_EMAIL: 'mike@cranesync.com',\n  CMMS_PASSWORD: 'Bo1ws2er@12',\n  GRASHJS_PATH: 'C:\\\\Users\\\\hharp\\\\OneDrive\\\\Desktop\\\\grashjs-cmms',\n  BOT_PATH: 'C:\\\\Users\\\\hharp\\\\OneDrive\\\\Desktop\\\\Rivet-PRO',\n  TELEGRAM_BOT_TOKEN: '8161680636:AAGF8eyldKWGF2I0qVSWXxveonRy02GH_nE',\n  TELEGRAM_ADMIN_CHAT_ID: '8445149012',\n  MAX_HEALTH_ATTEMPTS: 30,\n  HEALTH_CHECK_INTERVAL: 5\n};\n\nreturn { json: config };"
+      },
+      "id": "init-variables",
+      "name": "Initialize Variables",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "command": "docker info",
+        "options": {}
+      },
+      "id": "check-docker",
+      "name": "Check Docker Running",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [640, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.exitCode }}",
+              "operation": "equals",
+              "value2": "0"
+            }
+          ]
+        }
+      },
+      "id": "docker-ok",
+      "name": "Docker OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $node['Initialize Variables'].json.CMMS_URL }}/actuator/health",
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "id": "check-cmms-running",
+      "name": "Check CMMS Already Running",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1040, 200],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.statusCode }}",
+              "operation": "equals",
+              "value2": "403"
+            },
+            {
+              "value1": "={{ $json.statusCode }}",
+              "operation": "equals",
+              "value2": "200"
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "cmms-already-running",
+      "name": "CMMS Already Running?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1240, 200]
+    },
+    {
+      "parameters": {
+        "command": "cd {{ $node['Initialize Variables'].json.GRASHJS_PATH }} && docker-compose up -d",
+        "options": {}
+      },
+      "id": "start-cmms-containers",
+      "name": "Start CMMS Containers",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [1440, 300]
+    },
+    {
+      "parameters": {
+        "mode": "webhook",
+        "webhook": {
+          "method": "GET",
+          "path": "health-check",
+          "responseMode": "onReceived"
+        },
+        "options": {
+          "maxAttempts": "={{ $node['Initialize Variables'].json.MAX_HEALTH_ATTEMPTS }}",
+          "intervalBetweenAttempts": "={{ $node['Initialize Variables'].json.HEALTH_CHECK_INTERVAL }}"
+        }
+      },
+      "id": "wait-for-cmms",
+      "name": "Wait for CMMS Health",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1640, 250],
+      "webhookId": "cmms-health-check"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $node['Initialize Variables'].json.CMMS_URL }}/actuator/health",
+        "options": {
+          "timeout": 3000
+        }
+      },
+      "id": "check-cmms-health",
+      "name": "Check CMMS Health",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1840, 250],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $node['Initialize Variables'].json.CMMS_URL }}/auth/login",
+        "authentication": "none",
+        "jsonParameters": true,
+        "options": {
+          "timeout": 10000
+        },
+        "bodyParametersJson": "={\n  \"email\": \"{{ $node['Initialize Variables'].json.CMMS_EMAIL }}\",\n  \"password\": \"{{ $node['Initialize Variables'].json.CMMS_PASSWORD }}\"\n}"
+      },
+      "id": "test-cmms-login",
+      "name": "Test CMMS Login",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [2040, 250],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.statusCode }}",
+              "operation": "equals",
+              "value2": "200"
+            }
+          ]
+        }
+      },
+      "id": "login-successful",
+      "name": "Login Successful?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [2240, 250]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $node['Initialize Variables'].json.CMMS_URL }}/api/users/me",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 5000
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $node['Test CMMS Login'].json.token }}"
+            }
+          ]
+        }
+      },
+      "id": "get-user-info",
+      "name": "Get User Info",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [2440, 150],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "command": "cd {{ $node['Initialize Variables'].json.BOT_PATH }} && start /B python bot_launcher.py",
+        "options": {}
+      },
+      "id": "start-telegram-bot",
+      "name": "Start Telegram Bot",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [2640, 150]
+    },
+    {
+      "parameters": {
+        "amount": 5,
+        "unit": "seconds"
+      },
+      "id": "wait-for-bot",
+      "name": "Wait for Bot",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [2840, 150]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare success notification message\nconst userInfo = $node['Get User Info'].json;\nconst config = $node['Initialize Variables'].json;\n\nconst message = `✅ Rivet-PRO Started Successfully!\\n\\n` +\n  `🌐 CMMS: ${config.CMMS_URL}\\n` +\n  `📧 User: ${userInfo.email || config.CMMS_EMAIL}\\n` +\n  `🏢 Organization: ${userInfo.organizationName || 'N/A'}\\n` +\n  `🤖 Bot: Active\\n\\n` +\n  `Send /start to your Telegram bot to begin!`;\n\nreturn [{\n  json: {\n    chat_id: config.TELEGRAM_ADMIN_CHAT_ID,\n    text: message,\n    parse_mode: 'HTML'\n  }\n}];"
+      },
+      "id": "prepare-success-message",
+      "name": "Prepare Success Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3040, 150]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $node['Initialize Variables'].json.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "jsonParameters": true,
+        "options": {
+          "timeout": 5000
+        },
+        "bodyParametersJson": "={{ JSON.stringify($json) }}"
+      },
+      "id": "send-telegram-notification",
+      "name": "Send Telegram Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [3240, 150]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare error notification\nconst config = $node['Initialize Variables'].json;\nconst error = $json.error || 'Unknown error';\n\nconst message = `❌ Rivet-PRO Startup Failed!\\n\\n` +\n  `Error: ${error}\\n\\n` +\n  `Please check Docker and CMMS containers.`;\n\nreturn [{\n  json: {\n    chat_id: config.TELEGRAM_ADMIN_CHAT_ID,\n    text: message\n  }\n}];"
+      },
+      "id": "prepare-error-message",
+      "name": "Prepare Error Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1040, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $node['Initialize Variables'].json.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "jsonParameters": true,
+        "options": {
+          "timeout": 5000
+        },
+        "bodyParametersJson": "={{ JSON.stringify($json) }}"
+      },
+      "id": "send-error-notification",
+      "name": "Send Error Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1240, 400]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [[{"node": "Initialize Variables", "type": "main", "index": 0}]]
+    },
+    "Initialize Variables": {
+      "main": [[{"node": "Check Docker Running", "type": "main", "index": 0}]]
+    },
+    "Check Docker Running": {
+      "main": [[{"node": "Docker OK?", "type": "main", "index": 0}]]
+    },
+    "Docker OK?": {
+      "main": [
+        [{"node": "Check CMMS Already Running", "type": "main", "index": 0}],
+        [{"node": "Prepare Error Message", "type": "main", "index": 0}]
+      ]
+    },
+    "Check CMMS Already Running": {
+      "main": [[{"node": "CMMS Already Running?", "type": "main", "index": 0}]]
+    },
+    "CMMS Already Running?": {
+      "main": [
+        [{"node": "Test CMMS Login", "type": "main", "index": 0}],
+        [{"node": "Start CMMS Containers", "type": "main", "index": 0}]
+      ]
+    },
+    "Start CMMS Containers": {
+      "main": [[{"node": "Wait for CMMS Health", "type": "main", "index": 0}]]
+    },
+    "Wait for CMMS Health": {
+      "main": [[{"node": "Check CMMS Health", "type": "main", "index": 0}]]
+    },
+    "Check CMMS Health": {
+      "main": [[{"node": "Test CMMS Login", "type": "main", "index": 0}]]
+    },
+    "Test CMMS Login": {
+      "main": [[{"node": "Login Successful?", "type": "main", "index": 0}]]
+    },
+    "Login Successful?": {
+      "main": [
+        [{"node": "Get User Info", "type": "main", "index": 0}],
+        [{"node": "Prepare Error Message", "type": "main", "index": 0}]
+      ]
+    },
+    "Get User Info": {
+      "main": [[{"node": "Start Telegram Bot", "type": "main", "index": 0}]]
+    },
+    "Start Telegram Bot": {
+      "main": [[{"node": "Wait for Bot", "type": "main", "index": 0}]]
+    },
+    "Wait for Bot": {
+      "main": [[{"node": "Prepare Success Message", "type": "main", "index": 0}]]
+    },
+    "Prepare Success Message": {
+      "main": [[{"node": "Send Telegram Notification", "type": "main", "index": 0}]]
+    },
+    "Prepare Error Message": {
+      "main": [[{"node": "Send Error Notification", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "tags": [],
+  "pinData": {},
+  "versionId": "1.0.0"
+}

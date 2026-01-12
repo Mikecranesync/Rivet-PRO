@@ -1,0 +1,703 @@
+{
+  "updatedAt": "2026-01-10T00:23:55.366Z",
+  "createdAt": "2026-01-09T20:24:08.231Z",
+  "id": "QaFV6k14mQroMfat",
+  "name": "RIVET LLM Judge",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rivet-llm-judge",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        400
+      ],
+      "webhookId": "rivet-llm-judge-webhook"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const data = $input.item.json;\n\n// Extract data from webhook body or root\nconst url = data.body?.url || data.url || '';\nconst manual_text = data.body?.manual_text || data.manual_text || '';\nconst equipment_type = data.body?.equipment_type || data.equipment_type || '';\nconst manufacturer = data.body?.manufacturer || data.manufacturer || '';\n\n// Validate\nlet error = null;\nlet needsFetch = false;\n\nif (!url && !manual_text) {\n  error = 'Either url or manual_text is required';\n} else if (!manual_text && url) {\n  needsFetch = true;\n}\n\nreturn {\n  json: {\n    url,\n    manual_text,\n    equipment_type,\n    manufacturer,\n    needsFetch,\n    error\n  }\n};"
+      },
+      "id": "extract-request-data",
+      "name": "Extract Request Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.needsFetch}}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-needs-fetch",
+      "name": "Needs Fetch?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        680,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$json.url}}",
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "RIVET-Test-Bot/1.0"
+            }
+          ]
+        }
+      },
+      "id": "fetch-manual-content",
+      "name": "Fetch Manual Content",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        300
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const fetchResponse = $input.item.json;\n\n// Get data from Extract Request Data node\nconst extractedData = $('Extract Request Data').item.json;\nlet manual_text = extractedData.manual_text;\n\n// If we fetched content, use it\nif (extractedData.needsFetch && fetchResponse.data) {\n  const data = fetchResponse.data || fetchResponse.body || '';\n  // Take first 50KB for analysis\n  manual_text = data.substring(0, 50000);\n}\n\nreturn {\n  json: {\n    manual_text,\n    equipment_type: extractedData.equipment_type,\n    manufacturer: extractedData.manufacturer,\n    url: extractedData.url\n  }\n};"
+      },
+      "id": "merge-content",
+      "name": "Merge Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const data = $input.item.json;\n\n// Build LLM prompt\nconst system_prompt = `You are an expert industrial equipment manual evaluator. Your task is to score manual quality on 5 criteria (each 0-10):\n\n1. Completeness: Does it cover all necessary topics?\n2. Technical accuracy: Is the information correct and precise?\n3. Clarity: Is it easy to understand?\n4. Troubleshooting usefulness: Does it help solve problems?\n5. Metadata quality: Are specs, models, parts clearly identified?\n\nRespond ONLY with valid JSON in this format:\n{\n  \"completeness\": <0-10>,\n  \"technical_accuracy\": <0-10>,\n  \"clarity\": <0-10>,\n  \"troubleshooting_usefulness\": <0-10>,\n  \"metadata_quality\": <0-10>,\n  \"feedback\": \"<Brief explanation of scores>\"\n}`;\n\nconst context = [];\nif (data.equipment_type) context.push(`Equipment type: ${data.equipment_type}`);\nif (data.manufacturer) context.push(`Manufacturer: ${data.manufacturer}`);\n\nconst user_prompt = `${context.length > 0 ? context.join('\\n') + '\\n\\n' : ''}Evaluate this manual:\\n\\n${data.manual_text}`;\n\n// Build Gemini request body\nconst gemini_request = {\n  contents: [{\n    parts: [{\n      text: system_prompt + '\\n\\n' + user_prompt\n    }]\n  }],\n  generationConfig: {\n    temperature: 0.1,\n    maxOutputTokens: 800\n  }\n};\n\nreturn {\n  json: {\n    gemini_request,\n    url: data.url,\n    equipment_type: data.equipment_type,\n    manufacturer: data.manufacturer\n  }\n};"
+      },
+      "id": "prepare-llm-prompt",
+      "name": "Prepare LLM Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={{ $env.GOOGLE_API_KEY }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.gemini_request) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "llm-analysis",
+      "name": "LLM Analysis (Gemini)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        300
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const llmResponse = $input.item.json;\n\n// Get URL from Prepare LLM Prompt node\nconst promptData = $('Prepare LLM Prompt').item.json;\nconst url = promptData.url;\n\n// Parse LLM response\nlet criteria = {\n  completeness: 0,\n  technical_accuracy: 0,\n  clarity: 0,\n  troubleshooting_usefulness: 0,\n  metadata_quality: 0\n};\nlet feedback = 'Failed to get LLM response';\nlet quality_score = 0;\nlet error = null;\n\ntry {\n  // Gemini response format: candidates[0].content.parts[0].text\n  const candidate = llmResponse.candidates?.[0];\n  const content = candidate?.content?.parts?.[0]?.text || '{}';\n  const parsed = JSON.parse(content);\n  \n  // Extract scores\n  criteria.completeness = parsed.completeness || 0;\n  criteria.technical_accuracy = parsed.technical_accuracy || 0;\n  criteria.clarity = parsed.clarity || 0;\n  criteria.troubleshooting_usefulness = parsed.troubleshooting_usefulness || 0;\n  criteria.metadata_quality = parsed.metadata_quality || 0;\n  \n  feedback = parsed.feedback || 'No feedback provided';\n  \n  // Calculate average quality score\n  quality_score = (\n    criteria.completeness + \n    criteria.technical_accuracy + \n    criteria.clarity + \n    criteria.troubleshooting_usefulness + \n    criteria.metadata_quality\n  ) / 5;\n  quality_score = Math.round(quality_score * 10) / 10; // Round to 1 decimal\n  \n} catch (e) {\n  error = `Failed to parse LLM response: ${e.message}`;\n}\n\nreturn {\n  json: {\n    quality_score,\n    criteria,\n    feedback,\n    llm_model_used: 'gemini-1.5-flash',\n    error,\n    url\n  }\n};"
+      },
+      "id": "parse-llm-response",
+      "name": "Parse LLM Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1780,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Pass through if manual_text already provided\nreturn { json: $input.item.json };"
+      },
+      "id": "passthrough",
+      "name": "Pass Through",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        500
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Request Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Request Data": {
+      "main": [
+        [
+          {
+            "node": "Needs Fetch?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Fetch?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Manual Content",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pass Through",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Manual Content": {
+      "main": [
+        [
+          {
+            "node": "Merge Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pass Through": {
+      "main": [
+        [
+          {
+            "node": "Merge Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Content": {
+      "main": [
+        [
+          {
+            "node": "Prepare LLM Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare LLM Prompt": {
+      "main": [
+        [
+          {
+            "node": "LLM Analysis (Gemini)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Analysis (Gemini)": {
+      "main": [
+        [
+          {
+            "node": "Parse LLM Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse LLM Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "b015c219-5d60-4625-87f8-395f22a49272",
+  "activeVersionId": "b015c219-5d60-4625-87f8-395f22a49272",
+  "versionCounter": 63,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-01-09T20:24:08.233Z",
+      "createdAt": "2026-01-09T20:24:08.233Z",
+      "role": "workflow:owner",
+      "workflowId": "QaFV6k14mQroMfat",
+      "projectId": "LeroM2c3daethFFW",
+      "project": {
+        "updatedAt": "2025-08-25T02:01:30.700Z",
+        "createdAt": "2025-08-25T02:01:28.242Z",
+        "id": "LeroM2c3daethFFW",
+        "name": "Mike Harper <mike@cranesync.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "2cf5d340-a1c7-4bc6-a403-629cd1ef7433",
+        "projectRelations": [
+          {
+            "updatedAt": "2025-08-25T02:01:28.242Z",
+            "createdAt": "2025-08-25T02:01:28.242Z",
+            "userId": "2cf5d340-a1c7-4bc6-a403-629cd1ef7433",
+            "projectId": "LeroM2c3daethFFW",
+            "user": {
+              "updatedAt": "2026-01-10T05:31:45.000Z",
+              "createdAt": "2025-08-25T02:01:26.748Z",
+              "id": "2cf5d340-a1c7-4bc6-a403-629cd1ef7433",
+              "email": "mike@cranesync.com",
+              "firstName": "Mike",
+              "lastName": "Harper",
+              "personalizationAnswers": null,
+              "settings": {
+                "userActivated": true,
+                "easyAIWorkflowOnboarded": true,
+                "userClaimedAiCredits": true,
+                "firstSuccessfulWorkflowId": "VHOxsRQD9VanhuKC",
+                "userActivatedAt": 1759215503709,
+                "npsSurvey": {
+                  "responded": true,
+                  "lastShownAt": 1759960688435
+                }
+              },
+              "disabled": false,
+              "mfaEnabled": false,
+              "lastActiveAt": "2026-01-10",
+              "isPending": false
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-01-10T00:08:04.116Z",
+    "createdAt": "2026-01-10T00:08:04.116Z",
+    "versionId": "b015c219-5d60-4625-87f8-395f22a49272",
+    "workflowId": "QaFV6k14mQroMfat",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "rivet-llm-judge",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "id": "webhook-trigger",
+        "name": "Webhook Trigger",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          240,
+          400
+        ],
+        "webhookId": "rivet-llm-judge-webhook"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const data = $input.item.json;\n\n// Extract data from webhook body or root\nconst url = data.body?.url || data.url || '';\nconst manual_text = data.body?.manual_text || data.manual_text || '';\nconst equipment_type = data.body?.equipment_type || data.equipment_type || '';\nconst manufacturer = data.body?.manufacturer || data.manufacturer || '';\n\n// Validate\nlet error = null;\nlet needsFetch = false;\n\nif (!url && !manual_text) {\n  error = 'Either url or manual_text is required';\n} else if (!manual_text && url) {\n  needsFetch = true;\n}\n\nreturn {\n  json: {\n    url,\n    manual_text,\n    equipment_type,\n    manufacturer,\n    needsFetch,\n    error\n  }\n};"
+        },
+        "id": "extract-request-data",
+        "name": "Extract Request Data",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          460,
+          400
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "boolean": [
+              {
+                "value1": "={{$json.needsFetch}}",
+                "value2": true
+              }
+            ]
+          }
+        },
+        "id": "check-needs-fetch",
+        "name": "Needs Fetch?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 1,
+        "position": [
+          680,
+          400
+        ]
+      },
+      {
+        "parameters": {
+          "url": "={{$json.url}}",
+          "options": {
+            "timeout": 15000,
+            "response": {
+              "response": {
+                "responseFormat": "text"
+              }
+            }
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "User-Agent",
+                "value": "RIVET-Test-Bot/1.0"
+              }
+            ]
+          }
+        },
+        "id": "fetch-manual-content",
+        "name": "Fetch Manual Content",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          900,
+          300
+        ],
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const fetchResponse = $input.item.json;\n\n// Get data from Extract Request Data node\nconst extractedData = $('Extract Request Data').item.json;\nlet manual_text = extractedData.manual_text;\n\n// If we fetched content, use it\nif (extractedData.needsFetch && fetchResponse.data) {\n  const data = fetchResponse.data || fetchResponse.body || '';\n  // Take first 50KB for analysis\n  manual_text = data.substring(0, 50000);\n}\n\nreturn {\n  json: {\n    manual_text,\n    equipment_type: extractedData.equipment_type,\n    manufacturer: extractedData.manufacturer,\n    url: extractedData.url\n  }\n};"
+        },
+        "id": "merge-content",
+        "name": "Merge Content",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1120,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const data = $input.item.json;\n\n// Build LLM prompt\nconst system_prompt = `You are an expert industrial equipment manual evaluator. Your task is to score manual quality on 5 criteria (each 0-10):\n\n1. Completeness: Does it cover all necessary topics?\n2. Technical accuracy: Is the information correct and precise?\n3. Clarity: Is it easy to understand?\n4. Troubleshooting usefulness: Does it help solve problems?\n5. Metadata quality: Are specs, models, parts clearly identified?\n\nRespond ONLY with valid JSON in this format:\n{\n  \"completeness\": <0-10>,\n  \"technical_accuracy\": <0-10>,\n  \"clarity\": <0-10>,\n  \"troubleshooting_usefulness\": <0-10>,\n  \"metadata_quality\": <0-10>,\n  \"feedback\": \"<Brief explanation of scores>\"\n}`;\n\nconst context = [];\nif (data.equipment_type) context.push(`Equipment type: ${data.equipment_type}`);\nif (data.manufacturer) context.push(`Manufacturer: ${data.manufacturer}`);\n\nconst user_prompt = `${context.length > 0 ? context.join('\\n') + '\\n\\n' : ''}Evaluate this manual:\\n\\n${data.manual_text}`;\n\n// Build Gemini request body\nconst gemini_request = {\n  contents: [{\n    parts: [{\n      text: system_prompt + '\\n\\n' + user_prompt\n    }]\n  }],\n  generationConfig: {\n    temperature: 0.1,\n    maxOutputTokens: 800\n  }\n};\n\nreturn {\n  json: {\n    gemini_request,\n    url: data.url,\n    equipment_type: data.equipment_type,\n    manufacturer: data.manufacturer\n  }\n};"
+        },
+        "id": "prepare-llm-prompt",
+        "name": "Prepare LLM Prompt",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1340,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={{ $env.GOOGLE_API_KEY }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.gemini_request) }}",
+          "options": {
+            "timeout": 30000
+          }
+        },
+        "id": "llm-analysis",
+        "name": "LLM Analysis (Gemini)",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1560,
+          300
+        ],
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const llmResponse = $input.item.json;\n\n// Get URL from Prepare LLM Prompt node\nconst promptData = $('Prepare LLM Prompt').item.json;\nconst url = promptData.url;\n\n// Parse LLM response\nlet criteria = {\n  completeness: 0,\n  technical_accuracy: 0,\n  clarity: 0,\n  troubleshooting_usefulness: 0,\n  metadata_quality: 0\n};\nlet feedback = 'Failed to get LLM response';\nlet quality_score = 0;\nlet error = null;\n\ntry {\n  // Gemini response format: candidates[0].content.parts[0].text\n  const candidate = llmResponse.candidates?.[0];\n  const content = candidate?.content?.parts?.[0]?.text || '{}';\n  const parsed = JSON.parse(content);\n  \n  // Extract scores\n  criteria.completeness = parsed.completeness || 0;\n  criteria.technical_accuracy = parsed.technical_accuracy || 0;\n  criteria.clarity = parsed.clarity || 0;\n  criteria.troubleshooting_usefulness = parsed.troubleshooting_usefulness || 0;\n  criteria.metadata_quality = parsed.metadata_quality || 0;\n  \n  feedback = parsed.feedback || 'No feedback provided';\n  \n  // Calculate average quality score\n  quality_score = (\n    criteria.completeness + \n    criteria.technical_accuracy + \n    criteria.clarity + \n    criteria.troubleshooting_usefulness + \n    criteria.metadata_quality\n  ) / 5;\n  quality_score = Math.round(quality_score * 10) / 10; // Round to 1 decimal\n  \n} catch (e) {\n  error = `Failed to parse LLM response: ${e.message}`;\n}\n\nreturn {\n  json: {\n    quality_score,\n    criteria,\n    feedback,\n    llm_model_used: 'gemini-1.5-flash',\n    error,\n    url\n  }\n};"
+        },
+        "id": "parse-llm-response",
+        "name": "Parse LLM Response",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1780,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ JSON.stringify($json) }}",
+          "options": {}
+        },
+        "id": "respond-webhook",
+        "name": "Respond to Webhook",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.1,
+        "position": [
+          2000,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "// Pass through if manual_text already provided\nreturn { json: $input.item.json };"
+        },
+        "id": "passthrough",
+        "name": "Pass Through",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          900,
+          500
+        ]
+      }
+    ],
+    "connections": {
+      "Webhook Trigger": {
+        "main": [
+          [
+            {
+              "node": "Extract Request Data",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Extract Request Data": {
+        "main": [
+          [
+            {
+              "node": "Needs Fetch?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Needs Fetch?": {
+        "main": [
+          [
+            {
+              "node": "Fetch Manual Content",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Pass Through",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Fetch Manual Content": {
+        "main": [
+          [
+            {
+              "node": "Merge Content",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Pass Through": {
+        "main": [
+          [
+            {
+              "node": "Merge Content",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Merge Content": {
+        "main": [
+          [
+            {
+              "node": "Prepare LLM Prompt",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare LLM Prompt": {
+        "main": [
+          [
+            {
+              "node": "LLM Analysis (Gemini)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "LLM Analysis (Gemini)": {
+        "main": [
+          [
+            {
+              "node": "Parse LLM Response",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Parse LLM Response": {
+        "main": [
+          [
+            {
+              "node": "Respond to Webhook",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "Mike Harper",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-01-10T00:08:04.395Z",
+        "id": 75,
+        "workflowId": "QaFV6k14mQroMfat",
+        "versionId": "b015c219-5d60-4625-87f8-395f22a49272",
+        "event": "activated",
+        "userId": "2cf5d340-a1c7-4bc6-a403-629cd1ef7433"
+      },
+      {
+        "createdAt": "2026-01-10T00:08:05.077Z",
+        "id": 76,
+        "workflowId": "QaFV6k14mQroMfat",
+        "versionId": "b015c219-5d60-4625-87f8-395f22a49272",
+        "event": "activated",
+        "userId": "2cf5d340-a1c7-4bc6-a403-629cd1ef7433"
+      },
+      {
+        "createdAt": "2026-01-10T00:23:55.541Z",
+        "id": 80,
+        "workflowId": "QaFV6k14mQroMfat",
+        "versionId": "b015c219-5d60-4625-87f8-395f22a49272",
+        "event": "activated",
+        "userId": "2cf5d340-a1c7-4bc6-a403-629cd1ef7433"
+      },
+      {
+        "createdAt": "2026-01-10T00:23:56.236Z",
+        "id": 81,
+        "workflowId": "QaFV6k14mQroMfat",
+        "versionId": "b015c219-5d60-4625-87f8-395f22a49272",
+        "event": "activated",
+        "userId": "2cf5d340-a1c7-4bc6-a403-629cd1ef7433"
+      }
+    ]
+  }
+}

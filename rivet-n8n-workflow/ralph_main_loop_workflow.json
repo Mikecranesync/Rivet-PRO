@@ -1,0 +1,367 @@
+{
+  "name": "Ralph - Main Loop",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "ralph-main-loop",
+        "options": {
+          "responseMode": "lastNode"
+        }
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "ralph-main-loop"
+    },
+    {
+      "parameters": {
+        "chatId": "8445149012",
+        "text": "🚀 RALPH STARTING\\nProject: RIVET Pro\\nTime: {{ $now.format('yyyy-MM-dd HH:mm:ss') }}",
+        "additionalFields": {}
+      },
+      "id": "send-start",
+      "name": "Send Start",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-ralph",
+          "name": "Telegram - RALPH"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO ralph_executions (project_id, status)\\nVALUES (1, 'running')\\nRETURNING id"
+      },
+      "id": "create-execution",
+      "name": "Create Execution",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [650, 300],
+      "credentials": {
+        "postgres": {
+          "id": "neon-ralph",
+          "name": "Neon - RALPH"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM ralph_stories\\nWHERE project_id = 1\\nAND status = 'todo'\\nAND retry_count < 3\\nORDER BY priority ASC\\nLIMIT 1"
+      },
+      "id": "get-next-story",
+      "name": "Get Next Story",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [850, 300],
+      "credentials": {
+        "postgres": {
+          "id": "neon-ralph",
+          "name": "Neon - RALPH"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.first().json;\\nconst story = Array.isArray(rows) ? rows[0] : rows;\\nconst execution = $('Create Execution').first().json;\\nconst execId = Array.isArray(execution) ? execution[0].id : execution.id;\\n\\nif (!story || !story.id) {\\n  return [{\\n    json: {\\n      continue_loop: false,\\n      reason: 'All stories completed!',\\n      execution_id: execId\\n    }\\n  }];\\n}\\n\\nreturn [{\\n  json: {\\n    continue_loop: true,\\n    story: story,\\n    iteration: 1,\\n    execution_id: execId\\n  }\\n}];"
+      },
+      "id": "check-stories",
+      "name": "Check Stories Remain",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.continue_loop }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "should-continue",
+      "name": "Should Continue",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE ralph_stories\\nSET status = 'in_progress', status_emoji = '🟡', started_at = NOW()\\nWHERE id = {{ $json.story.id }}"
+      },
+      "id": "mark-in-progress",
+      "name": "Mark In Progress",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1450, 200],
+      "credentials": {
+        "postgres": {
+          "id": "neon-ralph",
+          "name": "Neon - RALPH"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const story = $json.story;\\nconst iteration = $json.iteration;\\n\\nconst criteriaList = story.acceptance_criteria.map((c, i) => (i+1) + '. ' + c).join('\\\\n');\\n\\nconst prompt = `# IMPLEMENT THIS STORY\\n\\n## ${story.story_id}: ${story.title}\\n\\n${story.description}\\n\\n## Acceptance Criteria\\n${criteriaList}\\n\\n## RIVET Pro Context\\n- Repository: C:\\\\\\\\Users\\\\\\\\hharp\\\\\\\\OneDrive\\\\\\\\Desktop\\\\\\\\Rivet-PRO\\n- Branch: feat/github-actions-claude-integration\\n- n8n Cloud: mikecranesync.app.n8n.cloud:5678\\n- Neon PostgreSQL database\\n- Telegram bot: 8161680636:AAGF8eyldKWGF2I0qVSWXxveonRy02GH_nE\\n- Keep code SIMPLE - field techs need FAST responses\\n\\n## Instructions\\n1. Implement completely using existing rivet_pro/ infrastructure\\n2. Keep it simple - CRAWL before RUN\\n3. Commit: \\"feat(${story.story_id}): ${story.title}\\"\\n\\nReturn ONLY JSON:\\n\\\\`\\\\`\\\\`json\\n{\\n  \\"success\\": true,\\n  \\"commit_hash\\": \\"abc123\\",\\n  \\"files_changed\\": [\\"file1.py\\"],\\n  \\"notes\\": \\"What was done\\"\\n}\\n\\\\`\\\\`\\\\`\\n\\nOr if blocked:\\n\\\\`\\\\`\\\\`json\\n{\\n  \\"success\\": false,\\n  \\"error_message\\": \\"What went wrong\\"\\n}\\n\\\\`\\\\`\\\\`\\n`;\\n\\nreturn [{\\n  json: {\\n    prompt_text: prompt,\\n    story_id: story.id,\\n    story_code: story.story_id,\\n    story_title: story.title,\\n    ai_model: story.ai_model,\\n    iteration: iteration,\\n    execution_id: $json.execution_id\\n  }\\n}];"
+      },
+      "id": "build-prompt",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1650, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "8445149012",
+        "text": "🟡 STARTING: {{ $json.story_code }}\\n{{ $json.story_title }}\\nModel: {{ $json.ai_model.includes('sonnet-4') ? '🧠 Sonnet 4' : '⚡ Haiku' }}",
+        "additionalFields": {}
+      },
+      "id": "story-start",
+      "name": "Story Start",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1850, 200],
+      "credentials": {
+        "telegram Api": {
+          "id": "telegram-ralph",
+          "name": "Telegram - RALPH"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $workflow.id }}",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "call-worker",
+      "name": "Call Worker",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [2050, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $input.first().json;\\nconst newStatus = r.success ? 'done' : 'failed';\\nconst emoji = r.success ? '✅' : '🔴';\\n\\nreturn [{\\n  json: {\\n    ...r,\\n    new_status: newStatus,\\n    status_emoji: emoji\\n  }\\n}];"
+      },
+      "id": "process-result",
+      "name": "Process Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2250, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE ralph_stories SET\\n  status = '{{ $json.new_status }}',\\n  status_emoji = '{{ $json.status_emoji }}',\\n  commit_hash = {{ $json.commit_hash ? \"'\" + $json.commit_hash + \"'\" : 'NULL' }},\\n  error_message = {{ $json.error_message ? \"'\" + $json.error_message.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\\n  completed_at = CASE WHEN '{{ $json.new_status }}' = 'done' THEN NOW() ELSE NULL END,\\n  retry_count = CASE WHEN '{{ $json.new_status }}' = 'failed' THEN retry_count + 1 ELSE retry_count END\\nWHERE id = {{ $json.story_id }}"
+      },
+      "id": "update-story",
+      "name": "Update Story",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [2450, 200],
+      "credentials": {
+        "postgres": {
+          "id": "neon-ralph",
+          "name": "Neon - RALPH"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE ralph_executions SET\\n  total_iterations = total_iterations + 1,\\n  total_tokens = total_tokens + {{ $json.tokens_used || 0 }},\\n  stories_completed = stories_completed + {{ $json.success ? 1 : 0 }},\\n  stories_failed = stories_failed + {{ $json.success ? 0 : 1 }}\\nWHERE id = {{ $json.execution_id }}"
+      },
+      "id": "update-execution",
+      "name": "Update Execution",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [2650, 200],
+      "credentials": {
+        "postgres": {
+          "id": "neon-ralph",
+          "name": "Neon - RALPH"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "8445149012",
+        "text": "{{ $json.status_emoji }} {{ $json.new_status.toUpperCase() }}: {{ $json.story_code }}\\n{{ $json.commit_hash ? 'Commit: ' + $json.commit_hash.substring(0,8) : '' }}\\n{{ $json.error_message ? '⚠️ ' + $json.error_message.substring(0,200) : '' }}\\nTokens: {{ $json.tokens_used || 0 }}",
+        "additionalFields": {}
+      },
+      "id": "send-result",
+      "name": "Send Result",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2850, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-ralph",
+          "name": "Telegram - RALPH"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COUNT(*) as remaining FROM ralph_stories\\nWHERE project_id = 1 AND status = 'todo' AND retry_count < 3"
+      },
+      "id": "check-more",
+      "name": "Check More Stories",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [3050, 200],
+      "credentials": {
+        "postgres": {
+          "id": "neon-ralph",
+          "name": "Neon - RALPH"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $input.first().json;\\nconst remaining = Array.isArray(result) ? result[0].remaining : result.remaining;\\n\\nreturn [{\\n  json: {\\n    has_more: parseInt(remaining) > 0,\\n    execution_id: $('Process Result').first().json.execution_id\\n  }\\n}];"
+      },
+      "id": "should-loop",
+      "name": "Should Loop",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3250, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.has_more }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "loop-back",
+      "name": "Loop Back?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [3450, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "8445149012",
+        "text": "🏁 RALPH COMPLETE\\n\\nCheck results:\\nSELECT story_id, status_emoji, status, commit_hash\\nFROM ralph_stories\\nORDER BY priority;",
+        "additionalFields": {}
+      },
+      "id": "send-summary",
+      "name": "Send Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [3650, 400],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-ralph",
+          "name": "Telegram - RALPH"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE ralph_executions SET\\n  status = 'completed',\\n  completed_at = NOW()\\nWHERE id = {{ $json.execution_id }}"
+      },
+      "id": "finalize",
+      "name": "Finalize Execution",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [3850, 400],
+      "credentials": {
+        "postgres": {
+          "id": "neon-ralph",
+          "name": "Neon - RALPH"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Send Start", "type": "main", "index": 0 }]]
+    },
+    "Send Start": {
+      "main": [[{ "node": "Create Execution", "type": "main", "index": 0 }]]
+    },
+    "Create Execution": {
+      "main": [[{ "node": "Get Next Story", "type": "main", "index": 0 }]]
+    },
+    "Get Next Story": {
+      "main": [[{ "node": "Check Stories Remain", "type": "main", "index": 0 }]]
+    },
+    "Check Stories Remain": {
+      "main": [[{ "node": "Should Continue", "type": "main", "index": 0 }]]
+    },
+    "Should Continue": {
+      "main": [
+        [{ "node": "Mark In Progress", "type": "main", "index": 0 }],
+        [{ "node": "Send Summary", "type": "main", "index": 0 }]
+      ]
+    },
+    "Mark In Progress": {
+      "main": [[{ "node": "Build Prompt", "type": "main", "index": 0 }]]
+    },
+    "Build Prompt": {
+      "main": [[{ "node": "Story Start", "type": "main", "index": 0 }]]
+    },
+    "Story Start": {
+      "main": [[{ "node": "Call Worker", "type": "main", "index": 0 }]]
+    },
+    "Call Worker": {
+      "main": [[{ "node": "Process Result", "type": "main", "index": 0 }]]
+    },
+    "Process Result": {
+      "main": [[{ "node": "Update Story", "type": "main", "index": 0 }]]
+    },
+    "Update Story": {
+      "main": [[{ "node": "Update Execution", "type": "main", "index": 0 }]]
+    },
+    "Update Execution": {
+      "main": [[{ "node": "Send Result", "type": "main", "index": 0 }]]
+    },
+    "Send Result": {
+      "main": [[{ "node": "Check More Stories", "type": "main", "index": 0 }]]
+    },
+    "Check More Stories": {
+      "main": [[{ "node": "Should Loop", "type": "main", "index": 0 }]]
+    },
+    "Should Loop": {
+      "main": [[{ "node": "Loop Back?", "type": "main", "index": 0 }]]
+    },
+    "Loop Back?": {
+      "main": [
+        [{ "node": "Get Next Story", "type": "main", "index": 0 }],
+        [{ "node": "Send Summary", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send Summary": {
+      "main": [[{ "node": "Finalize Execution", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-10T00:00:00.000Z",
+  "versionId": "1"
+}

@@ -1,0 +1,288 @@
+{
+  "test_run": {
+    "timestamp": "2026-01-10T00:55:13.080445",
+    "webhook_url": "https://mikecranesync.app.n8n.cloud/webhook/rivet-url-validator",
+    "total_tests": 10,
+    "passed": 8,
+    "failed": 2,
+    "success_rate": 80.0
+  },
+  "results": [
+    {
+      "test_name": "Valid HTTPS - Google",
+      "input_url": "https://www.google.com",
+      "expected": "valid",
+      "http_status": 200,
+      "response_time_ms": 2423.72,
+      "timestamp": "2026-01-10T00:54:54.573414",
+      "valid": true,
+      "status_code": 200,
+      "content_type": "text/html; charset=ISO-8859-1",
+      "file_size_bytes": 0,
+      "score": 6,
+      "warnings": [
+        "HTML format may require additional parsing"
+      ],
+      "error": null,
+      "full_response": {
+        "valid": true,
+        "status_code": 200,
+        "content_type": "text/html; charset=ISO-8859-1",
+        "file_size_bytes": 0,
+        "score": 6,
+        "warnings": [
+          "HTML format may require additional parsing"
+        ],
+        "error": null
+      },
+      "pass": true,
+      "reason": "Valid=True, Score=6"
+    },
+    {
+      "test_name": "Valid HTTPS - HTTPBin",
+      "input_url": "https://httpbin.org/get",
+      "expected": "valid",
+      "http_status": 200,
+      "response_time_ms": 1248.04,
+      "timestamp": "2026-01-10T00:54:56.822995",
+      "valid": false,
+      "status_code": 0,
+      "content_type": "",
+      "file_size_bytes": 0,
+      "score": 0,
+      "warnings": [],
+      "error": "HTTP 0: Failed to access URL",
+      "full_response": {
+        "valid": false,
+        "status_code": 0,
+        "content_type": "",
+        "file_size_bytes": 0,
+        "score": 0,
+        "warnings": [],
+        "error": "HTTP 0: Failed to access URL"
+      },
+      "pass": false,
+      "reason": "Valid=False, Score=0"
+    },
+    {
+      "test_name": "Valid HTTPS - Example.com",
+      "input_url": "https://example.com",
+      "expected": "valid",
+      "http_status": 200,
+      "response_time_ms": 888.72,
+      "timestamp": "2026-01-10T00:54:58.713202",
+      "valid": true,
+      "status_code": 200,
+      "content_type": "text/html",
+      "file_size_bytes": 0,
+      "score": 6,
+      "warnings": [
+        "HTML format may require additional parsing"
+      ],
+      "error": null,
+      "full_response": {
+        "valid": true,
+        "status_code": 200,
+        "content_type": "text/html",
+        "file_size_bytes": 0,
+        "score": 6,
+        "warnings": [
+          "HTML format may require additional parsing"
+        ],
+        "error": null
+      },
+      "pass": true,
+      "reason": "Valid=True, Score=6"
+    },
+    {
+      "test_name": "Valid HTTP - Example.com",
+      "input_url": "http://example.com",
+      "expected": "valid",
+      "http_status": 200,
+      "response_time_ms": 1341.6,
+      "timestamp": "2026-01-10T00:55:01.055155",
+      "valid": true,
+      "status_code": 200,
+      "content_type": "text/html",
+      "file_size_bytes": 0,
+      "score": 6,
+      "warnings": [
+        "HTML format may require additional parsing"
+      ],
+      "error": null,
+      "full_response": {
+        "valid": true,
+        "status_code": 200,
+        "content_type": "text/html",
+        "file_size_bytes": 0,
+        "score": 6,
+        "warnings": [
+          "HTML format may require additional parsing"
+        ],
+        "error": null
+      },
+      "pass": true,
+      "reason": "Valid=True, Score=6"
+    },
+    {
+      "test_name": "PDF URL",
+      "input_url": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+      "expected": "valid",
+      "http_status": 200,
+      "response_time_ms": 910.29,
+      "timestamp": "2026-01-10T00:55:02.966952",
+      "valid": true,
+      "status_code": 200,
+      "content_type": "application/pdf; qs=0.001",
+      "file_size_bytes": 13264,
+      "score": 9,
+      "warnings": [
+        "Small file size: 13.0KB"
+      ],
+      "error": null,
+      "full_response": {
+        "valid": true,
+        "status_code": 200,
+        "content_type": "application/pdf; qs=0.001",
+        "file_size_bytes": 13264,
+        "score": 9,
+        "warnings": [
+          "Small file size: 13.0KB"
+        ],
+        "error": null
+      },
+      "pass": true,
+      "reason": "Valid=True, Score=9"
+    },
+    {
+      "test_name": "Invalid Format - No Protocol",
+      "input_url": "not-a-url",
+      "expected": "error",
+      "http_status": 200,
+      "response_time_ms": 857.76,
+      "timestamp": "2026-01-10T00:55:04.825169",
+      "valid": false,
+      "status_code": 0,
+      "content_type": "",
+      "file_size_bytes": 0,
+      "score": 0,
+      "warnings": [],
+      "error": "URL must start with http:// or https://",
+      "full_response": {
+        "valid": false,
+        "status_code": 0,
+        "content_type": "",
+        "file_size_bytes": 0,
+        "score": 0,
+        "warnings": [],
+        "error": "URL must start with http:// or https://"
+      },
+      "pass": true,
+      "reason": "Error: URL must start with http:// or https://"
+    },
+    {
+      "test_name": "Invalid Format - FTP Protocol",
+      "input_url": "ftp://example.com",
+      "expected": "error",
+      "http_status": 200,
+      "response_time_ms": 659.95,
+      "timestamp": "2026-01-10T00:55:06.485951",
+      "valid": false,
+      "status_code": 0,
+      "content_type": "",
+      "file_size_bytes": 0,
+      "score": 0,
+      "warnings": [],
+      "error": "URL must start with http:// or https://",
+      "full_response": {
+        "valid": false,
+        "status_code": 0,
+        "content_type": "",
+        "file_size_bytes": 0,
+        "score": 0,
+        "warnings": [],
+        "error": "URL must start with http:// or https://"
+      },
+      "pass": true,
+      "reason": "Error: URL must start with http:// or https://"
+    },
+    {
+      "test_name": "Invalid Format - Empty String",
+      "input_url": "",
+      "expected": "error",
+      "http_status": 200,
+      "response_time_ms": 605.72,
+      "timestamp": "2026-01-10T00:55:08.092227",
+      "valid": false,
+      "status_code": 0,
+      "content_type": "",
+      "file_size_bytes": 0,
+      "score": 0,
+      "warnings": [],
+      "error": "URL is required",
+      "full_response": {
+        "valid": false,
+        "status_code": 0,
+        "content_type": "",
+        "file_size_bytes": 0,
+        "score": 0,
+        "warnings": [],
+        "error": "URL is required"
+      },
+      "pass": true,
+      "reason": "Error: URL is required"
+    },
+    {
+      "test_name": "URL with Query Parameters",
+      "input_url": "https://httpbin.org/get?param1=value1&param2=value2",
+      "expected": "valid",
+      "http_status": 200,
+      "response_time_ms": 1296.99,
+      "timestamp": "2026-01-10T00:55:10.389980",
+      "valid": false,
+      "status_code": 0,
+      "content_type": "",
+      "file_size_bytes": 0,
+      "score": 0,
+      "warnings": [],
+      "error": "HTTP 0: Failed to access URL",
+      "full_response": {
+        "valid": false,
+        "status_code": 0,
+        "content_type": "",
+        "file_size_bytes": 0,
+        "score": 0,
+        "warnings": [],
+        "error": "HTTP 0: Failed to access URL"
+      },
+      "pass": false,
+      "reason": "Valid=False, Score=0"
+    },
+    {
+      "test_name": "Non-existent Domain",
+      "input_url": "https://this-domain-definitely-does-not-exist-12345.com",
+      "expected": "error_or_timeout",
+      "http_status": 200,
+      "response_time_ms": 688.29,
+      "timestamp": "2026-01-10T00:55:12.079496",
+      "valid": false,
+      "status_code": 0,
+      "content_type": "",
+      "file_size_bytes": 0,
+      "score": 0,
+      "warnings": [],
+      "error": "HTTP 0: Failed to access URL",
+      "full_response": {
+        "valid": false,
+        "status_code": 0,
+        "content_type": "",
+        "file_size_bytes": 0,
+        "score": 0,
+        "warnings": [],
+        "error": "HTTP 0: Failed to access URL"
+      },
+      "pass": true,
+      "reason": "Received response: HTTP 0: Failed to access URL"
+    }
+  ]
+}

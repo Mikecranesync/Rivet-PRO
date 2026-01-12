@@ -1,0 +1,57 @@
+# Git
+.git
+.gitignore
+
+# Docker
+.dockerignore
+docker-compose.yml
+Dockerfile
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv
+pip-log.txt
+.pytest_cache/
+
+# Java
+target/
+*.class
+*.jar
+*.war
+*.ear
+.mvn/
+mvnw
+mvnw.cmd
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+.DS_Store
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+logs/
+
+# Testing
+coverage/
+.coverage
+
+# Documentation
+*.md
+docs/
+
+# Plans
+.claude/

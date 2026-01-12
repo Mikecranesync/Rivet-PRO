@@ -1,0 +1,335 @@
+================================================================================
+N8N WORKFLOW STATUS REPORT
+================================================================================
+
+Total workflows in n8n: 39
+
+[INACTIVE]
+  Name: Self Study
+  ID: 06iJbka5ANhAjeWs
+  Nodes: 6
+  Created: 2025-10-03T06:12:36.149Z
+  Updated: 2025-10-05T09:41:00.000Z
+
+[ACTIVE]
+  Name: Chucky Discord RAG Agent
+  ID: 3eDFoJ4rHUSJXjPH
+  Nodes: 24
+  Created: 2025-11-06T00:50:49.234Z
+  Updated: 2025-11-06T00:50:49.234Z
+
+[ACTIVE]
+  Name: RIVET URL Validator - PRODUCTION
+  ID: 6dINHjc5VUj5oQg2
+  Nodes: 10
+  Created: 2026-01-10T06:00:12.680Z
+  Updated: 2026-01-10T06:03:14.022Z
+  Webhooks: 1
+    - /rivet-url-validator-prod
+
+[INACTIVE]
+  Name: Parse PDF with LlamaParse and save to Supabase
+  ID: 8J5xOYCzPxedhzbU
+  Nodes: 31
+  Created: 2025-09-20T23:04:58.964Z
+  Updated: 2025-09-26T23:09:55.000Z
+  Webhooks: 1
+    - /1693c858-4a08-42df-b075-4f7a6ae54bde
+
+[INACTIVE]
+  Name: Gmail AI Email Manager
+  ID: 8viTueyWe1A7WBKe
+  Nodes: 10
+  Created: 2025-10-20T11:36:41.078Z
+  Updated: 2025-10-20T16:18:09.000Z
+
+[INACTIVE]
+  Name: Ask questions about a PDF using AI
+  ID: ARx1pVswZXdhS3uQ
+  Nodes: 18
+  Created: 2025-09-19T06:11:36.190Z
+  Updated: 2025-09-20T00:18:32.000Z
+
+[INACTIVE]
+  Name: TEST - RIVET - Usage Tracker
+  ID: Bc7RZueNoUJR1atl4GImD
+  Nodes: 12
+  Created: 2026-01-08T23:35:03.323Z
+  Updated: 2026-01-08T23:35:52.740Z
+  Telegram nodes: 6
+
+[INACTIVE]
+  Name: RAG Chatbot for Company Documents using Google Drive and Gemini
+  ID: D2hunBvOsege3UCx
+  Nodes: 18
+  Created: 2025-08-26T21:26:39.758Z
+  Updated: 2025-08-26T22:25:02.000Z
+
+[ACTIVE]
+  Name: TEST - RIVET - Echo Webhook
+  ID: DUuWTD4FLTGnqeyD
+  Nodes: 3
+  Created: 2026-01-09T15:07:41.043Z
+  Updated: 2026-01-09T15:07:41.043Z
+  Webhooks: 1
+    - /rivet-test-echo
+
+[ACTIVE]
+  Name: TEST - RIVET - Manual Hunter
+  ID: HQgppQgX9H2yyQdN
+  Nodes: 24
+  Created: 2026-01-09T13:52:40.832Z
+  Updated: 2026-01-10T06:24:48.919Z
+  Webhooks: 1
+    - /rivet-manual-hunter
+  Telegram nodes: 3
+
+[INACTIVE]
+  Name: My workflow 2
+  ID: HollNC7FiGoS711h
+  Nodes: 3
+  Created: 2025-09-14T00:44:18.977Z
+  Updated: 2025-09-14T00:44:18.977Z
+  Webhooks: 1
+    - /6f2a9064-c756-4c34-bc2f-80bb8ae6dfbc
+
+[INACTIVE]
+  Name: My workflow
+  ID: K7mqYJKCqPvzFPCp
+  Nodes: 7
+  Created: 2025-08-26T06:53:00.637Z
+  Updated: 2025-08-30T01:27:32.000Z
+  Webhooks: 1
+    - /webhook-test/612002e2-9f13-4e64-9db2-3fcf90e733c9
+
+[ACTIVE]
+  Name: Claude Chucky
+  ID: KOyYbUfZjFUUvrGp
+  Nodes: 139
+  Created: 2025-10-30T22:10:42.455Z
+  Updated: 2025-10-30T22:30:49.000Z
+  Webhooks: 1
+    - /e09b9319-67a0-407d-a894-694b48d68214
+  Telegram nodes: 9
+
+[INACTIVE]
+  Name: Parse PDF with LlamaParse and save to Airtable
+  ID: Kdr7C2UllK3o9ruN
+  Nodes: 31
+  Created: 2025-09-20T12:01:31.854Z
+  Updated: 2025-09-20T22:55:03.000Z
+  Webhooks: 1
+    - /0f7f5ebb-8b66-453b-a818-20cc3647c783
+
+[INACTIVE]
+  Name: TEST - RIVET - Telegram Bot
+  ID: KvUDysYp2pw0wZ1x
+  Nodes: 7
+  Created: 2026-01-09T15:08:35.619Z
+  Updated: 2026-01-09T15:08:35.619Z
+  Webhooks: 1
+    - /rivet-test-telegram
+  Telegram nodes: 1
+
+[ACTIVE]
+  Name: TEST - RIVET - Commands
+  ID: OVZotDUnaM_jYRbyXn_MH
+  Nodes: 10
+  Created: 2026-01-08T23:17:44.640Z
+  Updated: 2026-01-08T23:17:44.640Z
+  Telegram nodes: 5
+
+[ACTIVE]
+  Name: TEST - RIVET - Database Health
+  ID: OZzWjpzZRug0vrZY
+  Nodes: 6
+  Created: 2026-01-09T15:08:34.887Z
+  Updated: 2026-01-09T15:08:34.887Z
+  Webhooks: 1
+    - /rivet-test-db-health
+
+[INACTIVE]
+  Name: Gmail AI Email Manager (Corrected)
+  ID: QNQVvJtxRoLPT7DL
+  Nodes: 8
+  Created: 2025-10-20T14:05:14.806Z
+  Updated: 2025-10-20T16:32:34.000Z
+
+[ACTIVE]
+  Name: RIVET LLM Judge
+  ID: QaFV6k14mQroMfat
+  Nodes: 10
+  Created: 2026-01-09T20:24:08.231Z
+  Updated: 2026-01-10T12:05:29.873Z
+  Webhooks: 1
+    - /rivet-llm-judge
+
+[INACTIVE]
+  Name: RIVET Pro - Photo to Manual
+  ID: S9Zi0ohDZ3zp6Ne2avmXO
+  Nodes: 20
+  Created: 2026-01-05T22:06:34.011Z
+  Updated: 2026-01-06T00:37:09.648Z
+  Telegram nodes: 7
+
+[INACTIVE]
+  Name: TEST - RIVET - Echo Webhook
+  ID: Sp2o14Nm9mytkaVT
+  Nodes: 3
+  Created: 2026-01-09T15:06:54.127Z
+  Updated: 2026-01-09T15:06:54.127Z
+  Webhooks: 1
+    - /rivet-test-echo
+
+[INACTIVE]
+  Name: Company Knowledge Base Agent (RAG)
+  ID: TO6P11Iuo3kEbt9J
+  Nodes: 49
+  Created: 2025-10-12T23:29:02.350Z
+  Updated: 2025-10-12T23:29:02.350Z
+  Telegram nodes: 3
+
+[ACTIVE]
+  Name: Personal Assistant Bot
+  ID: VHOxsRQD9VanhuKC
+  Nodes: 122
+  Created: 2025-09-29T02:49:09.025Z
+  Updated: 2025-10-14T22:57:53.000Z
+  Telegram nodes: 5
+
+[ACTIVE]
+  Name: RIVET URL Validator
+  ID: YhW8Up8oM2eHXicx
+  Nodes: 10
+  Created: 2026-01-09T20:24:06.050Z
+  Updated: 2026-01-10T05:53:01.664Z
+  Webhooks: 1
+    - /rivet-url-validator
+
+[ACTIVE]
+  Name: RIVET Photo Bot v2
+  ID: b-dRUZ6PrwkhlyRuQi7QS
+  Nodes: 10
+  Created: 2026-01-08T20:44:34.411Z
+  Updated: 2026-01-09T08:36:44.229Z
+  Telegram nodes: 5
+
+[ACTIVE]
+  Name: RIVET Test Runner
+  ID: bc6oMDj0hVuW4ZXX
+  Nodes: 10
+  Created: 2026-01-09T20:24:10.272Z
+  Updated: 2026-01-10T00:23:57.034Z
+  Webhooks: 1
+    - /rivet-test-runner
+
+[INACTIVE]
+  Name: TEST - RIVET - Echo Webhook
+  ID: gEeDVcmmQz7qmdgD
+  Nodes: 3
+  Created: 2026-01-09T15:08:34.223Z
+  Updated: 2026-01-09T15:08:34.223Z
+  Webhooks: 1
+    - /rivet-test-echo
+
+[INACTIVE]
+  Name: My workflow 3
+  ID: gSqNXF24CrX9I59i
+  Nodes: 5
+  Created: 2025-09-20T09:21:33.794Z
+  Updated: 2025-09-20T11:16:14.000Z
+
+[INACTIVE]
+  Name: Google Drive Agent
+  ID: glT9JIOkz6GDYZQ5
+  Nodes: 16
+  Created: 2025-10-16T22:35:37.001Z
+  Updated: 2025-10-17T22:23:20.000Z
+  Webhooks: 1
+    - /cd726147-b93e-48f8-b945-e1fd8f6be1c2
+
+[INACTIVE]
+  Name: AI-Powered Research Assistant for Platform Questions with GPT-4o and MCP
+  ID: iFf8AyYxC0ho5ayY
+  Nodes: 5
+  Created: 2025-10-03T23:20:18.875Z
+  Updated: 2025-10-03T23:20:18.875Z
+
+[INACTIVE]
+  Name: Demo: My first AI Agent in n8n
+  ID: ifLXn9Ko2q6kSrrl
+  Nodes: 6
+  Created: 2025-08-25T02:04:33.818Z
+  Updated: 2025-08-26T22:27:07.000Z
+
+[INACTIVE]
+  Name: Payment & Billing Management
+  ID: lKgC2CP8L9qx5LFS
+  Nodes: 11
+  Created: 2025-11-03T19:35:24.449Z
+  Updated: 2025-11-03T19:35:24.449Z
+  Telegram nodes: 4
+
+[INACTIVE]
+  Name: TEST - RIVET - Manual Hunter
+  ID: muXmcUUquqmgWBmL
+  Nodes: 18
+  Created: 2026-01-09T13:52:28.731Z
+  Updated: 2026-01-09T13:52:28.731Z
+  Webhooks: 1
+    - /rivet-manual-hunter
+  Telegram nodes: 3
+
+[INACTIVE]
+  Name: Build a Restaurant Voice Assistant with VAPI and PostgreSQL for Bookings & Orders
+  ID: nPJMij5yIDuwARXh
+  Nodes: 10
+  Created: 2025-10-11T07:18:34.512Z
+  Updated: 2025-10-11T07:18:34.512Z
+  Webhooks: 2
+    - /9f6b9125-0b75-41c2-87a9-1b6746c89e2e
+    - /efe2c13f-1ba5-46e1-9996-57bdc6041973
+
+[ACTIVE]
+  Name: Chucky Discord RAG Agent
+  ID: pATTXSIHCGMrUDN2
+  Nodes: 28
+  Created: 2025-11-03T22:11:20.810Z
+  Updated: 2025-11-04T07:52:56.000Z
+
+[ACTIVE]
+  Name: Chucky
+  ID: se5fJohsfS6hSBVK
+  Nodes: 149
+  Created: 2025-08-30T01:49:34.059Z
+  Updated: 2026-01-06T00:39:30.855Z
+  Webhooks: 1
+    - /e09b9319-67a0-407d-a894-694b48d68214
+  Telegram nodes: 9
+
+[INACTIVE]
+  Name: Email Support Agent w/ Gemini & GPT fallback using Gmail + Google Sheets
+  ID: t0eGdgiHUDmlSeKC
+  Nodes: 12
+  Created: 2025-10-16T23:40:44.858Z
+  Updated: 2025-10-17T05:35:45.000Z
+
+[ACTIVE]
+  Name: Chucky Callback Routine
+  ID: vDgf8NFoOMHllCkl
+  Nodes: 3
+  Created: 2025-10-19T13:27:53.995Z
+  Updated: 2025-10-19T22:08:33.000Z
+  Telegram nodes: 1
+
+[INACTIVE]
+  Name: User Management & Authentication
+  ID: zlmHfY50kpgypxRc
+  Nodes: 12
+  Created: 2025-11-03T16:15:38.820Z
+  Updated: 2025-11-03T16:15:38.820Z
+  Telegram nodes: 4
+
+================================================================================
+SUMMARY: 15 active, 24 inactive
+================================================================================

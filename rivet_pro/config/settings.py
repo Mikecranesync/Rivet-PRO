@@ -41,6 +41,22 @@ class Settings(BaseSettings):
         "http://localhost:5678/webhook/manual-hunter",
         description="n8n webhook URL for manual search (Manual Hunter workflow)"
     )
+    n8n_feedback_webhook_url: str = Field(
+        "http://localhost:5678/webhook/user-feedback",
+        description="n8n webhook URL for user feedback loop"
+    )
+    ralph_main_loop_url: str = Field(
+        "http://localhost:5678/webhook/ralph-main-loop",
+        description="Ralph main loop webhook for story execution"
+    )
+    feedback_max_per_hour: int = Field(
+        5,
+        description="Maximum feedback messages per user per hour"
+    )
+    feedback_approval_timeout_hours: int = Field(
+        24,
+        description="Hours before pending approvals expire"
+    )
 
     # WhatsApp Configuration (Future)
     whatsapp_phone_id: Optional[str] = None

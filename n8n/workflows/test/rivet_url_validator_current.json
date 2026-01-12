@@ -1,0 +1,637 @@
+{
+    "updatedAt": "2026-01-10T00:22:28.202Z",
+    "createdAt": "2026-01-09T20:24:06.050Z",
+    "id": "YhW8Up8oM2eHXicx",
+    "name": "RIVET URL Validator",
+    "description": null,
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "rivet-url-validator",
+                "responseMode": "responseNode",
+                "options": {}
+            },
+            "id": "webhook-trigger",
+            "name": "Webhook Trigger",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2,
+            "position": [
+                240,
+                400
+            ],
+            "webhookId": "rivet-url-validator-webhook"
+        },
+        {
+            "parameters": {
+                "jsCode": " // Map through all incoming items\n  return $input.all().map(item => {\n    const data = item.json;\n\n    // Safely extract URL and Context from the body or root\n    const url = data.body?.url || data.url || '';\n    const context = data.body?.context || data.context || {};\n\n    // Validation logic (simpler, more reliable)\n    let validFormat = false;\n    let error = null;\n\n    if (!url || url.trim() === '') {\n      error = 'URL is required';\n    } else if (!url.startsWith('http://') && !url.startsWith('https://')) {\n      error = 'URL must start with http:// or https://';\n    } else {\n      // URL has valid protocol - mark as valid\n      validFormat = true;\n    }\n\n    // Return in the standard n8n format\n    return {\n      json: {\n        url,\n        context,\n        validFormat,\n        error\n      }\n    };\n  });"
+            },
+            "id": "extract-request-data",
+            "name": "Extract Request Data",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                464,
+                400
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "boolean": [
+                        {
+                            "value1": "={{$json.validFormat}}",
+                            "value2": true
+                        }
+                    ]
+                }
+            },
+            "id": "check-format",
+            "name": "Valid Format?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 1,
+            "position": [
+                688,
+                400
+            ]
+        },
+        {
+            "parameters": {
+                "method": "HEAD",
+                "url": "={{$json.url}}",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "User-Agent",
+                            "value": "RIVET-Test-Bot/1.0"
+                        }
+                    ]
+                },
+                "options": {
+                    "redirect": {
+                        "redirect": {
+                            "maxRedirects": 3
+                        }
+                    },
+                    "response": {
+                        "response": {
+                            "fullResponse": true
+                        }
+                    },
+                    "timeout": 10000
+                }
+            },
+            "id": "http-head-check",
+            "name": "HTTP HEAD Check",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                912,
+                304
+            ],
+            "continueOnFail": true
+        },
+        {
+            "parameters": {
+                "mode": "runOnceForEachItem",
+                "jsCode": "const headResponse = $input.item.json;\n\n// Extract what we need directly from headers\nlet statusCode = headResponse.statusCode || 0;\nlet contentType = '';\nlet contentLength = 0;\nlet validContentType = false;\nlet error = null;\n\nif (statusCode >= 200 && statusCode < 300) {\n  // Extract headers\n  const headers = headResponse.headers || {};\n  contentType = headers['content-type'] || headers['Content-Type'] || '';\n  contentLength = parseInt(headers['content-length'] || headers['Content-Length'] || '0', 10);\n  \n  // Check if content type is valid for a manual\n  const lowerContentType = contentType.toLowerCase();\n  validContentType = lowerContentType.includes('pdf') || \n                     lowerContentType.includes('html') || \n                     lowerContentType.includes('text');\n  \n  if (!validContentType) {\n    error = 'Content type ' + contentType + ' not suitable for manuals';\n  }\n} else {\n  error = 'HTTP ' + statusCode + ': Failed to access URL';\n}\n\nreturn {\n  json: {\n    statusCode: statusCode,\n    contentType: contentType,\n    contentLength: contentLength,\n    validContentType: validContentType,\n    error: error\n  }\n};"
+            },
+            "id": "check-content-type",
+            "name": "Check Content-Type",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1120,
+                304
+            ]
+        },
+        {
+            "parameters": {
+                "mode": "runOnceForEachItem",
+                "jsCode": "const data = $input.item.json;\n\n// Calculate validation score (0-10)\nlet score = 0;\nlet valid = false;\nlet warnings = [];\n\nif (!data.error) {\n  valid = true;\n  \n  // Score based on HTTP status (0-3 points)\n  if (data.statusCode >= 200 && data.statusCode < 300) {\n    score += 3;\n  } else if (data.statusCode >= 300 && data.statusCode < 400) {\n    score += 2;\n    warnings.push('HTTP ' + data.statusCode + ': URL redirects');\n  }\n  \n  // Score based on content type (0-4 points)\n  if (data.contentType.toLowerCase().includes('pdf')) {\n    score += 4;\n  } else if (data.contentType.toLowerCase().includes('html')) {\n    score += 3;\n    warnings.push('HTML format may require additional parsing');\n  } else if (data.contentType.toLowerCase().includes('text')) {\n    score += 2;\n    warnings.push('Plain text format detected');\n  }\n  \n  // Score based on file size (0-3 points)\n  const sizeMB = data.contentLength / (1024 * 1024);\n  if (sizeMB > 0.1 && sizeMB < 50) {\n    score += 3;\n  } else if (sizeMB >= 50 && sizeMB < 100) {\n    score += 2;\n    warnings.push('Large file size: ' + sizeMB.toFixed(1) + 'MB');\n  } else if (sizeMB >= 100) {\n    score += 1;\n    warnings.push('Very large file size: ' + sizeMB.toFixed(1) + 'MB');\n  } else if (sizeMB > 0) {\n    score += 2;\n    warnings.push('Small file size: ' + (sizeMB * 1024).toFixed(1) + 'KB');\n  }\n}\n\nreturn {\n  json: {\n    valid: valid,\n    status_code: data.statusCode,\n    content_type: data.contentType,\n    file_size_bytes: data.contentLength,\n    score: score,\n    warnings: warnings,\n    error: data.error\n  }\n};"
+            },
+            "id": "calculate-score",
+            "name": "Calculate Validation Score",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1344,
+                304
+            ]
+        },
+        {
+            "parameters": {
+                "mode": "runOnceForEachItem",
+                "jsCode": "const data = $input.item.json;\n\nconst response = {\n  valid: false,\n  status_code: 0,\n  content_type: '',\n  file_size_bytes: 0,\n  score: 0,\n  warnings: [],\n  error: data.error || 'Invalid URL format'\n};\n\nreturn { json: response };"
+            },
+            "id": "build-response",
+            "name": "Build Response",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1568,
+                304
+            ]
+        },
+        {
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={{ JSON.stringify($json) }}",
+                "options": {}
+            },
+            "id": "respond-webhook-success",
+            "name": "Respond to Webhook",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1.1,
+            "position": [
+                1792,
+                304
+            ]
+        },
+        {
+            "parameters": {
+                "mode": "runOnceForEachItem",
+                "jsCode": "// In \"Each Item\" mode, $input.item refers to the single item currently being processed\nconst data = $input.item.json;\n\n// Build the standardized error response\nconst response = {\n  valid: false,\n  status_code: 0,\n  content_type: '',\n  file_size_bytes: 0,\n  score: 0,\n  warnings: [],\n  error: data.error || 'Invalid URL format'\n};\n\n// In \"Each Item\" mode, you return the object directly\nreturn { json: response };"
+            },
+            "id": "build-error-response",
+            "name": "Build Error Response",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                912,
+                512
+            ]
+        },
+        {
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={{ JSON.stringify($json) }}",
+                "options": {}
+            },
+            "id": "respond-webhook-error",
+            "name": "Respond Error",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1.1,
+            "position": [
+                1120,
+                512
+            ]
+        }
+    ],
+    "connections": {
+        "Webhook Trigger": {
+            "main": [
+                [
+                    {
+                        "node": "Extract Request Data",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Extract Request Data": {
+            "main": [
+                [
+                    {
+                        "node": "Valid Format?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Valid Format?": {
+            "main": [
+                [
+                    {
+                        "node": "HTTP HEAD Check",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Build Error Response",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "HTTP HEAD Check": {
+            "main": [
+                [
+                    {
+                        "node": "Check Content-Type",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Check Content-Type": {
+            "main": [
+                [
+                    {
+                        "node": "Calculate Validation Score",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Calculate Validation Score": {
+            "main": [
+                [
+                    {
+                        "node": "Build Response",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Build Response": {
+            "main": [
+                [
+                    {
+                        "node": "Respond to Webhook",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Build Error Response": {
+            "main": [
+                [
+                    {
+                        "node": "Respond Error",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "settings": {
+        "executionOrder": "v1",
+        "callerPolicy": "workflowsFromSameOwner",
+        "availableInMCP": false
+    },
+    "staticData": null,
+    "meta": null,
+    "pinData": {},
+    "versionId": "b95ffc67-7aab-4536-98bc-892f91b08a3b",
+    "activeVersionId": "b95ffc67-7aab-4536-98bc-892f91b08a3b",
+    "versionCounter": 32,
+    "triggerCount": 1,
+    "shared": [
+        {
+            "updatedAt": "2026-01-09T20:24:06.052Z",
+            "createdAt": "2026-01-09T20:24:06.052Z",
+            "role": "workflow:owner",
+            "workflowId": "YhW8Up8oM2eHXicx",
+            "projectId": "LeroM2c3daethFFW",
+            "project": {
+                "updatedAt": "2025-08-25T02:01:30.700Z",
+                "createdAt": "2025-08-25T02:01:28.242Z",
+                "id": "LeroM2c3daethFFW",
+                "name": "Mike Harper <mike@cranesync.com>",
+                "type": "personal",
+                "icon": null,
+                "description": null,
+                "creatorId": "2cf5d340-a1c7-4bc6-a403-629cd1ef7433",
+                "projectRelations": [
+                    {
+                        "updatedAt": "2025-08-25T02:01:28.242Z",
+                        "createdAt": "2025-08-25T02:01:28.242Z",
+                        "userId": "2cf5d340-a1c7-4bc6-a403-629cd1ef7433",
+                        "projectId": "LeroM2c3daethFFW",
+                        "user": {
+                            "updatedAt": "2026-01-09T08:36:21.000Z",
+                            "createdAt": "2025-08-25T02:01:26.748Z",
+                            "id": "2cf5d340-a1c7-4bc6-a403-629cd1ef7433",
+                            "email": "mike@cranesync.com",
+                            "firstName": "Mike",
+                            "lastName": "Harper",
+                            "personalizationAnswers": null,
+                            "settings": {
+                                "userActivated": true,
+                                "easyAIWorkflowOnboarded": true,
+                                "userClaimedAiCredits": true,
+                                "firstSuccessfulWorkflowId": "VHOxsRQD9VanhuKC",
+                                "userActivatedAt": 1759215503709,
+                                "npsSurvey": {
+                                    "responded": true,
+                                    "lastShownAt": 1759960688435
+                                }
+                            },
+                            "disabled": false,
+                            "mfaEnabled": false,
+                            "lastActiveAt": "2026-01-09",
+                            "isPending": false
+                        }
+                    }
+                ]
+            }
+        }
+    ],
+    "tags": [],
+    "activeVersion": {
+        "updatedAt": "2026-01-10T00:22:43.000Z",
+        "createdAt": "2026-01-10T00:22:28.203Z",
+        "versionId": "b95ffc67-7aab-4536-98bc-892f91b08a3b",
+        "workflowId": "YhW8Up8oM2eHXicx",
+        "nodes": [
+            {
+                "parameters": {
+                    "httpMethod": "POST",
+                    "path": "rivet-url-validator",
+                    "responseMode": "responseNode",
+                    "options": {}
+                },
+                "id": "webhook-trigger",
+                "name": "Webhook Trigger",
+                "type": "n8n-nodes-base.webhook",
+                "typeVersion": 2,
+                "position": [
+                    240,
+                    400
+                ],
+                "webhookId": "rivet-url-validator-webhook"
+            },
+            {
+                "parameters": {
+                    "jsCode": " // Map through all incoming items\n  return $input.all().map(item => {\n    const data = item.json;\n\n    // Safely extract URL and Context from the body or root\n    const url = data.body?.url || data.url || '';\n    const context = data.body?.context || data.context || {};\n\n    // Validation logic (simpler, more reliable)\n    let validFormat = false;\n    let error = null;\n\n    if (!url || url.trim() === '') {\n      error = 'URL is required';\n    } else if (!url.startsWith('http://') && !url.startsWith('https://')) {\n      error = 'URL must start with http:// or https://';\n    } else {\n      // URL has valid protocol - mark as valid\n      validFormat = true;\n    }\n\n    // Return in the standard n8n format\n    return {\n      json: {\n        url,\n        context,\n        validFormat,\n        error\n      }\n    };\n  });"
+                },
+                "id": "extract-request-data",
+                "name": "Extract Request Data",
+                "type": "n8n-nodes-base.code",
+                "typeVersion": 2,
+                "position": [
+                    464,
+                    400
+                ]
+            },
+            {
+                "parameters": {
+                    "conditions": {
+                        "boolean": [
+                            {
+                                "value1": "={{$json.validFormat}}",
+                                "value2": true
+                            }
+                        ]
+                    }
+                },
+                "id": "check-format",
+                "name": "Valid Format?",
+                "type": "n8n-nodes-base.if",
+                "typeVersion": 1,
+                "position": [
+                    688,
+                    400
+                ]
+            },
+            {
+                "parameters": {
+                    "method": "HEAD",
+                    "url": "={{$json.url}}",
+                    "sendHeaders": true,
+                    "headerParameters": {
+                        "parameters": [
+                            {
+                                "name": "User-Agent",
+                                "value": "RIVET-Test-Bot/1.0"
+                            }
+                        ]
+                    },
+                    "options": {
+                        "redirect": {
+                            "redirect": {
+                                "maxRedirects": 3
+                            }
+                        },
+                        "response": {
+                            "response": {
+                                "fullResponse": true
+                            }
+                        },
+                        "timeout": 10000
+                    }
+                },
+                "id": "http-head-check",
+                "name": "HTTP HEAD Check",
+                "type": "n8n-nodes-base.httpRequest",
+                "typeVersion": 4.2,
+                "position": [
+                    912,
+                    304
+                ],
+                "continueOnFail": true
+            },
+            {
+                "parameters": {
+                    "mode": "runOnceForEachItem",
+                    "jsCode": "const headResponse = $input.item.json;\n\n// Extract what we need directly from headers\nlet statusCode = headResponse.statusCode || 0;\nlet contentType = '';\nlet contentLength = 0;\nlet validContentType = false;\nlet error = null;\n\nif (statusCode >= 200 && statusCode < 300) {\n  // Extract headers\n  const headers = headResponse.headers || {};\n  contentType = headers['content-type'] || headers['Content-Type'] || '';\n  contentLength = parseInt(headers['content-length'] || headers['Content-Length'] || '0', 10);\n  \n  // Check if content type is valid for a manual\n  const lowerContentType = contentType.toLowerCase();\n  validContentType = lowerContentType.includes('pdf') || \n                     lowerContentType.includes('html') || \n                     lowerContentType.includes('text');\n  \n  if (!validContentType) {\n    error = 'Content type ' + contentType + ' not suitable for manuals';\n  }\n} else {\n  error = 'HTTP ' + statusCode + ': Failed to access URL';\n}\n\nreturn {\n  json: {\n    statusCode: statusCode,\n    contentType: contentType,\n    contentLength: contentLength,\n    validContentType: validContentType,\n    error: error\n  }\n};"
+                },
+                "id": "check-content-type",
+                "name": "Check Content-Type",
+                "type": "n8n-nodes-base.code",
+                "typeVersion": 2,
+                "position": [
+                    1120,
+                    304
+                ]
+            },
+            {
+                "parameters": {
+                    "mode": "runOnceForEachItem",
+                    "jsCode": "const data = $input.item.json;\n\n// Calculate validation score (0-10)\nlet score = 0;\nlet valid = false;\nlet warnings = [];\n\nif (!data.error) {\n  valid = true;\n  \n  // Score based on HTTP status (0-3 points)\n  if (data.statusCode >= 200 && data.statusCode < 300) {\n    score += 3;\n  } else if (data.statusCode >= 300 && data.statusCode < 400) {\n    score += 2;\n    warnings.push('HTTP ' + data.statusCode + ': URL redirects');\n  }\n  \n  // Score based on content type (0-4 points)\n  if (data.contentType.toLowerCase().includes('pdf')) {\n    score += 4;\n  } else if (data.contentType.toLowerCase().includes('html')) {\n    score += 3;\n    warnings.push('HTML format may require additional parsing');\n  } else if (data.contentType.toLowerCase().includes('text')) {\n    score += 2;\n    warnings.push('Plain text format detected');\n  }\n  \n  // Score based on file size (0-3 points)\n  const sizeMB = data.contentLength / (1024 * 1024);\n  if (sizeMB > 0.1 && sizeMB < 50) {\n    score += 3;\n  } else if (sizeMB >= 50 && sizeMB < 100) {\n    score += 2;\n    warnings.push('Large file size: ' + sizeMB.toFixed(1) + 'MB');\n  } else if (sizeMB >= 100) {\n    score += 1;\n    warnings.push('Very large file size: ' + sizeMB.toFixed(1) + 'MB');\n  } else if (sizeMB > 0) {\n    score += 2;\n    warnings.push('Small file size: ' + (sizeMB * 1024).toFixed(1) + 'KB');\n  }\n}\n\nreturn {\n  json: {\n    valid: valid,\n    status_code: data.statusCode,\n    content_type: data.contentType,\n    file_size_bytes: data.contentLength,\n    score: score,\n    warnings: warnings,\n    error: data.error\n  }\n};"
+                },
+                "id": "calculate-score",
+                "name": "Calculate Validation Score",
+                "type": "n8n-nodes-base.code",
+                "typeVersion": 2,
+                "position": [
+                    1344,
+                    304
+                ]
+            },
+            {
+                "parameters": {
+                    "mode": "runOnceForEachItem",
+                    "jsCode": "const data = $input.item.json;\n\nconst response = {\n  valid: false,\n  status_code: 0,\n  content_type: '',\n  file_size_bytes: 0,\n  score: 0,\n  warnings: [],\n  error: data.error || 'Invalid URL format'\n};\n\nreturn { json: response };"
+                },
+                "id": "build-response",
+                "name": "Build Response",
+                "type": "n8n-nodes-base.code",
+                "typeVersion": 2,
+                "position": [
+                    1568,
+                    304
+                ]
+            },
+            {
+                "parameters": {
+                    "respondWith": "json",
+                    "responseBody": "={{ JSON.stringify($json) }}",
+                    "options": {}
+                },
+                "id": "respond-webhook-success",
+                "name": "Respond to Webhook",
+                "type": "n8n-nodes-base.respondToWebhook",
+                "typeVersion": 1.1,
+                "position": [
+                    1792,
+                    304
+                ]
+            },
+            {
+                "parameters": {
+                    "mode": "runOnceForEachItem",
+                    "jsCode": "// In \"Each Item\" mode, $input.item refers to the single item currently being processed\nconst data = $input.item.json;\n\n// Build the standardized error response\nconst response = {\n  valid: false,\n  status_code: 0,\n  content_type: '',\n  file_size_bytes: 0,\n  score: 0,\n  warnings: [],\n  error: data.error || 'Invalid URL format'\n};\n\n// In \"Each Item\" mode, you return the object directly\nreturn { json: response };"
+                },
+                "id": "build-error-response",
+                "name": "Build Error Response",
+                "type": "n8n-nodes-base.code",
+                "typeVersion": 2,
+                "position": [
+                    912,
+                    512
+                ]
+            },
+            {
+                "parameters": {
+                    "respondWith": "json",
+                    "responseBody": "={{ JSON.stringify($json) }}",
+                    "options": {}
+                },
+                "id": "respond-webhook-error",
+                "name": "Respond Error",
+                "type": "n8n-nodes-base.respondToWebhook",
+                "typeVersion": 1.1,
+                "position": [
+                    1120,
+                    512
+                ]
+            }
+        ],
+        "connections": {
+            "Webhook Trigger": {
+                "main": [
+                    [
+                        {
+                            "node": "Extract Request Data",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "Extract Request Data": {
+                "main": [
+                    [
+                        {
+                            "node": "Valid Format?",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "Valid Format?": {
+                "main": [
+                    [
+                        {
+                            "node": "HTTP HEAD Check",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ],
+                    [
+                        {
+                            "node": "Build Error Response",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "HTTP HEAD Check": {
+                "main": [
+                    [
+                        {
+                            "node": "Check Content-Type",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "Check Content-Type": {
+                "main": [
+                    [
+                        {
+                            "node": "Calculate Validation Score",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "Calculate Validation Score": {
+                "main": [
+                    [
+                        {
+                            "node": "Build Response",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "Build Response": {
+                "main": [
+                    [
+                        {
+                            "node": "Respond to Webhook",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "Build Error Response": {
+                "main": [
+                    [
+                        {
+                            "node": "Respond Error",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            }
+        },
+        "authors": "Mike Harper",
+        "name": "Version 1.3",
+        "description": "",
+        "autosaved": false,
+        "workflowPublishHistory": [
+            {
+                "createdAt": "2026-01-10T00:22:43.529Z",
+                "id": 79,
+                "workflowId": "YhW8Up8oM2eHXicx",
+                "versionId": "b95ffc67-7aab-4536-98bc-892f91b08a3b",
+                "event": "activated",
+                "userId": "2cf5d340-a1c7-4bc6-a403-629cd1ef7433"
+            }
+        ]
+    }
+}

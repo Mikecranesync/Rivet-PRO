@@ -1,0 +1,304 @@
+Fetching workflows list...
+Status: 200
+Total workflows: 38
+
+Workflow ID: 06iJbka5ANhAjeWs
+  Name: Self Study
+  Active: False
+  Nodes: 6
+
+Workflow ID: 3eDFoJ4rHUSJXjPH
+  Name: Chucky Discord RAG Agent
+  Active: True
+  Nodes: 24
+
+Workflow ID: 8J5xOYCzPxedhzbU
+  Name: Parse PDF with LlamaParse and save to Supabase
+  Active: False
+  Nodes: 31
+  Webhook found:
+    Path: 1693c858-4a08-42df-b075-4f7a6ae54bde
+    Response Mode: None
+
+Workflow ID: 8viTueyWe1A7WBKe
+  Name: Gmail AI Email Manager
+  Active: False
+  Nodes: 10
+
+Workflow ID: ARx1pVswZXdhS3uQ
+  Name: Ask questions about a PDF using AI
+  Active: False
+  Nodes: 18
+
+Workflow ID: Bc7RZueNoUJR1atl4GImD
+  Name: TEST - RIVET - Usage Tracker
+  Active: False
+  Nodes: 12
+
+Workflow ID: D2hunBvOsege3UCx
+  Name: RAG Chatbot for Company Documents using Google Drive and Gemini
+  Active: False
+  Nodes: 18
+
+Workflow ID: DUuWTD4FLTGnqeyD
+  Name: TEST - RIVET - Echo Webhook
+  Active: True
+  Nodes: 3
+  Webhook found:
+    Path: rivet-test-echo
+    Response Mode: responseNode
+  Webhook found:
+    Path: None
+    Response Mode: None
+
+Workflow ID: HQgppQgX9H2yyQdN
+  Name: TEST - RIVET - Manual Hunter
+  Active: True
+  Nodes: 18
+  Webhook found:
+    Path: rivet-manual-hunter
+    Response Mode: None
+
+Workflow ID: HollNC7FiGoS711h
+  Name: My workflow 2
+  Active: False
+  Nodes: 3
+  Webhook found:
+    Path: 6f2a9064-c756-4c34-bc2f-80bb8ae6dfbc
+    Response Mode: None
+
+Workflow ID: K7mqYJKCqPvzFPCp
+  Name: My workflow
+  Active: False
+  Nodes: 7
+  Webhook found:
+    Path: webhook-test/612002e2-9f13-4e64-9db2-3fcf90e733c9
+    Response Mode: responseNode
+  Webhook found:
+    Path: None
+    Response Mode: None
+
+Workflow ID: KOyYbUfZjFUUvrGp
+  Name: Claude Chucky
+  Active: True
+  Nodes: 139
+  Webhook found:
+    Path: e09b9319-67a0-407d-a894-694b48d68214
+    Response Mode: None
+  Webhook found:
+    Path: None
+    Response Mode: None
+
+Workflow ID: Kdr7C2UllK3o9ruN
+  Name: Parse PDF with LlamaParse and save to Airtable
+  Active: False
+  Nodes: 31
+  Webhook found:
+    Path: 0f7f5ebb-8b66-453b-a818-20cc3647c783
+    Response Mode: None
+
+Workflow ID: KvUDysYp2pw0wZ1x
+  Name: TEST - RIVET - Telegram Bot
+  Active: False
+  Nodes: 7
+  Webhook found:
+    Path: rivet-test-telegram
+    Response Mode: responseNode
+  Webhook found:
+    Path: None
+    Response Mode: None
+  Webhook found:
+    Path: None
+    Response Mode: None
+
+Workflow ID: OVZotDUnaM_jYRbyXn_MH
+  Name: TEST - RIVET - Commands
+  Active: True
+  Nodes: 10
+
+Workflow ID: OZzWjpzZRug0vrZY
+  Name: TEST - RIVET - Database Health
+  Active: True
+  Nodes: 6
+  Webhook found:
+    Path: rivet-test-db-health
+    Response Mode: responseNode
+  Webhook found:
+    Path: None
+    Response Mode: None
+  Webhook found:
+    Path: None
+    Response Mode: None
+
+Workflow ID: QNQVvJtxRoLPT7DL
+  Name: Gmail AI Email Manager (Corrected)
+  Active: False
+  Nodes: 8
+
+Workflow ID: QaFV6k14mQroMfat
+  Name: RIVET LLM Judge
+  Active: True
+  Nodes: 10
+  Webhook found:
+    Path: rivet-llm-judge
+    Response Mode: responseNode
+  Webhook found:
+    Path: None
+    Response Mode: None
+
+Workflow ID: S9Zi0ohDZ3zp6Ne2avmXO
+  Name: RIVET Pro - Photo to Manual
+  Active: False
+  Nodes: 20
+
+Workflow ID: Sp2o14Nm9mytkaVT
+  Name: TEST - RIVET - Echo Webhook
+  Active: False
+  Nodes: 3
+  Webhook found:
+    Path: rivet-test-echo
+    Response Mode: responseNode
+  Webhook found:
+    Path: None
+    Response Mode: None
+
+Workflow ID: TO6P11Iuo3kEbt9J
+  Name: Company Knowledge Base Agent (RAG)
+  Active: False
+  Nodes: 49
+
+Workflow ID: VHOxsRQD9VanhuKC
+  Name: Personal Assistant Bot
+  Active: True
+  Nodes: 122
+
+Workflow ID: YhW8Up8oM2eHXicx
+  Name: RIVET URL Validator
+  Active: True
+  Nodes: 10
+  Webhook found:
+    Path: rivet-url-validator
+    Response Mode: responseNode
+  Webhook found:
+    Path: None
+    Response Mode: None
+  Webhook found:
+    Path: None
+    Response Mode: None
+
+Workflow ID: b-dRUZ6PrwkhlyRuQi7QS
+  Name: RIVET Photo Bot v2
+  Active: True
+  Nodes: 10
+
+Workflow ID: bc6oMDj0hVuW4ZXX
+  Name: RIVET Test Runner
+  Active: True
+  Nodes: 10
+  Webhook found:
+    Path: rivet-test-runner
+    Response Mode: responseNode
+  Webhook found:
+    Path: None
+    Response Mode: None
+  Webhook found:
+    Path: None
+    Response Mode: None
+
+Workflow ID: gEeDVcmmQz7qmdgD
+  Name: TEST - RIVET - Echo Webhook
+  Active: False
+  Nodes: 3
+  Webhook found:
+    Path: rivet-test-echo
+    Response Mode: responseNode
+  Webhook found:
+    Path: None
+    Response Mode: None
+
+Workflow ID: gSqNXF24CrX9I59i
+  Name: My workflow 3
+  Active: False
+  Nodes: 5
+
+Workflow ID: glT9JIOkz6GDYZQ5
+  Name: Google Drive Agent
+  Active: False
+  Nodes: 16
+  Webhook found:
+    Path: None
+    Response Mode: None
+  Webhook found:
+    Path: cd726147-b93e-48f8-b945-e1fd8f6be1c2
+    Response Mode: None
+
+Workflow ID: iFf8AyYxC0ho5ayY
+  Name: AI-Powered Research Assistant for Platform Questions with GPT-4o and MCP
+  Active: False
+  Nodes: 5
+
+Workflow ID: ifLXn9Ko2q6kSrrl
+  Name: Demo: My first AI Agent in n8n
+  Active: False
+  Nodes: 6
+
+Workflow ID: lKgC2CP8L9qx5LFS
+  Name: Payment & Billing Management
+  Active: False
+  Nodes: 11
+
+Workflow ID: muXmcUUquqmgWBmL
+  Name: TEST - RIVET - Manual Hunter
+  Active: False
+  Nodes: 18
+  Webhook found:
+    Path: rivet-manual-hunter
+    Response Mode: None
+
+Workflow ID: nPJMij5yIDuwARXh
+  Name: Build a Restaurant Voice Assistant with VAPI and PostgreSQL for Bookings & Orders
+  Active: False
+  Nodes: 10
+  Webhook found:
+    Path: 9f6b9125-0b75-41c2-87a9-1b6746c89e2e
+    Response Mode: responseNode
+  Webhook found:
+    Path: None
+    Response Mode: None
+  Webhook found:
+    Path: efe2c13f-1ba5-46e1-9996-57bdc6041973
+    Response Mode: responseNode
+  Webhook found:
+    Path: None
+    Response Mode: None
+
+Workflow ID: pATTXSIHCGMrUDN2
+  Name: Chucky Discord RAG Agent
+  Active: True
+  Nodes: 28
+
+Workflow ID: se5fJohsfS6hSBVK
+  Name: Chucky
+  Active: True
+  Nodes: 149
+  Webhook found:
+    Path: e09b9319-67a0-407d-a894-694b48d68214
+    Response Mode: None
+  Webhook found:
+    Path: None
+    Response Mode: None
+
+Workflow ID: t0eGdgiHUDmlSeKC
+  Name: Email Support Agent w/ Gemini & GPT fallback using Gmail + Google Sheets
+  Active: False
+  Nodes: 12
+
+Workflow ID: vDgf8NFoOMHllCkl
+  Name: Chucky Callback Routine
+  Active: True
+  Nodes: 3
+
+Workflow ID: zlmHfY50kpgypxRc
+  Name: User Management & Authentication
+  Active: False
+  Nodes: 12

@@ -1,0 +1,8 @@
+{
+  "workflow_id": "6dINHjc5VUj5oQg2",
+  "workflow_name": "RIVET URL Validator - PRODUCTION",
+  "webhook_url": "https://mikecranesync.app.n8n.cloud/webhook/rivet-url-validator-prod",
+  "deployed_at": "2026-01-10T06:00:12.680Z",
+  "active": true,
+  "nodes": 10
+}

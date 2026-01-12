@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.0.xsd">
+
+    <!-- Baseline Python Schema - Mirrors existing 9 migrations -->
+    <include file="db/changelog/changes/001-baseline-python-schema.xml"/>
+
+    <!-- Grashjs Extensions - Multi-tenancy and Company structure -->
+    <include file="db/changelog/changes/002-company-multi-tenancy.xml"/>
+
+    <!-- Asset Management Extensions -->
+    <include file="db/changelog/changes/003-asset-extensions.xml"/>
+
+    <!-- Locations and Sites -->
+    <include file="db/changelog/changes/004-locations.xml"/>
+
+    <!-- Teams and Roles -->
+    <include file="db/changelog/changes/005-teams-roles.xml"/>
+
+    <!-- Vendors and Customers -->
+    <include file="db/changelog/changes/006-vendors-customers.xml"/>
+
+    <!-- Preventive Maintenance -->
+    <include file="db/changelog/changes/010-preventive-maintenance.xml"/>
+
+    <!-- Schedules -->
+    <include file="db/changelog/changes/011-schedules.xml"/>
+
+    <!-- Tasks -->
+    <include file="db/changelog/changes/012-tasks.xml"/>
+
+    <!-- Meters and Readings -->
+    <include file="db/changelog/changes/013-meters.xml"/>
+
+    <!-- Parts and Inventory -->
+    <include file="db/changelog/changes/015-parts.xml"/>
+
+    <!-- Purchase Orders -->
+    <include file="db/changelog/changes/016-purchase-orders.xml"/>
+
+    <!-- Files and Attachments -->
+    <include file="db/changelog/changes/020-files.xml"/>
+
+    <!-- Checklists -->
+    <include file="db/changelog/changes/021-checklists.xml"/>
+
+    <!-- Notifications -->
+    <include file="db/changelog/changes/025-notifications.xml"/>
+
+    <!-- Workflow Automation -->
+    <include file="db/changelog/changes/030-workflows.xml"/>
+
+</databaseChangeLog>
