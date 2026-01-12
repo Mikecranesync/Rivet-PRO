@@ -5,6 +5,7 @@ Caches manual URLs in database and searches via n8n Manual Hunter webhook.
 
 from typing import Optional, Dict, Any
 import httpx
+import json
 from datetime import datetime
 from rivet_pro.infra.observability import get_logger
 from rivet_pro.config.settings import settings
@@ -32,6 +33,13 @@ class ManualService:
         self.db = db
         self.tavily_api_key = settings.tavily_api_key
         self.use_tavily_direct = bool(self.tavily_api_key)
+
+        # LLM configuration for URL validation
+        self.anthropic_api_key = settings.anthropic_api_key
+        self.openai_api_key = settings.openai_api_key
+
+        if not self.anthropic_api_key and not self.openai_api_key:
+            logger.warning("No LLM API keys configured - URL validation will be disabled")
 
         if not self.use_tavily_direct:
             # Fallback to n8n webhook if no Tavily key
@@ -167,6 +175,157 @@ class ManualService:
             logger.error(f"Cache lookup failed | {manufacturer} {model} | error={e}")
             return None
 
+    async def _validate_manual_url(
+        self,
+        url: str,
+        manufacturer: str,
+        model: str,
+        timeout: int = 5
+    ) -> Dict[str, Any]:
+        """
+        Use LLM to validate if URL is a direct PDF manual link or search page.
+
+        Args:
+            url: URL to validate
+            manufacturer: Equipment manufacturer
+            model: Equipment model number
+            timeout: LLM API timeout in seconds (default: 5)
+
+        Returns:
+            Dict with validation results:
+            {
+                'is_direct_pdf': bool,
+                'confidence': float (0.0-1.0),
+                'reasoning': str,
+                'likely_pdf_extension': bool
+            }
+
+        If LLM validation fails, returns safe default (reject URL):
+            {'is_direct_pdf': False, 'confidence': 0.0, 'reasoning': 'LLM validation failed'}
+        """
+        # Safety first: if no LLM configured, reject all URLs
+        if not self.anthropic_api_key and not self.openai_api_key:
+            logger.warning(f"URL validation skipped (no LLM) | {url}")
+            return {
+                'is_direct_pdf': False,
+                'confidence': 0.0,
+                'reasoning': 'LLM validation not available'
+            }
+
+        # Build validation prompt
+        prompt = f"""You are validating equipment manual URLs. Analyze this URL and determine if it's a DIRECT link to a PDF manual or just a search/catalog page.
+
+Equipment: {manufacturer} {model}
+URL: {url}
+
+Respond with ONLY valid JSON (no markdown, no explanation):
+{{
+  "is_direct_pdf": true or false,
+  "confidence": 0.0 to 1.0,
+  "reasoning": "brief explanation",
+  "likely_pdf_extension": true or false
+}}
+
+Direct PDF indicators:
+- Ends with .pdf
+- Contains /documents/ or /manuals/ or /literature/ or /support/
+- Has specific model number in path
+- URL path suggests a document download
+
+Search page indicators:
+- Contains /search?q= or ?query= or /results
+- Generic product listing page
+- Catalog or category page without specific document
+- E-commerce or shopping cart URLs
+- Generic homepage or landing page
+
+Be strict: only return is_direct_pdf=true if you're confident it's a real manual."""
+
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                # Try Anthropic Claude first (preferred)
+                if self.anthropic_api_key:
+                    try:
+                        response = await client.post(
+                            "https://api.anthropic.com/v1/messages",
+                            headers={
+                                "x-api-key": self.anthropic_api_key,
+                                "anthropic-version": "2023-06-01",
+                                "content-type": "application/json"
+                            },
+                            json={
+                                "model": "claude-3-5-sonnet-20241022",
+                                "max_tokens": 200,
+                                "messages": [
+                                    {"role": "user", "content": prompt}
+                                ]
+                            }
+                        )
+
+                        if response.status_code == 200:
+                            data = response.json()
+                            content = data.get('content', [{}])[0].get('text', '{}')
+                            result = json.loads(content)
+
+                            logger.info(
+                                f"URL validation (Claude) | {manufacturer} {model} | "
+                                f"url={url} | is_direct_pdf={result.get('is_direct_pdf')} | "
+                                f"confidence={result.get('confidence'):.2f}"
+                            )
+
+                            return result
+
+                    except Exception as e:
+                        logger.warning(f"Claude URL validation failed | {url} | error={e}")
+
+                # Fallback to OpenAI GPT-4o-mini
+                if self.openai_api_key:
+                    try:
+                        response = await client.post(
+                            "https://api.openai.com/v1/chat/completions",
+                            headers={
+                                "Authorization": f"Bearer {self.openai_api_key}",
+                                "Content-Type": "application/json"
+                            },
+                            json={
+                                "model": "gpt-4o-mini",
+                                "max_tokens": 200,
+                                "temperature": 0.1,
+                                "messages": [
+                                    {"role": "user", "content": prompt}
+                                ]
+                            }
+                        )
+
+                        if response.status_code == 200:
+                            data = response.json()
+                            content = data.get('choices', [{}])[0].get('message', {}).get('content', '{}')
+                            result = json.loads(content)
+
+                            logger.info(
+                                f"URL validation (GPT-4o-mini) | {manufacturer} {model} | "
+                                f"url={url} | is_direct_pdf={result.get('is_direct_pdf')} | "
+                                f"confidence={result.get('confidence'):.2f}"
+                            )
+
+                            return result
+
+                    except Exception as e:
+                        logger.warning(f"OpenAI URL validation failed | {url} | error={e}")
+
+        except httpx.TimeoutException:
+            logger.error(f"URL validation timeout | {url} | timeout={timeout}s")
+        except Exception as e:
+            logger.error(f"URL validation failed | {url} | error={e}")
+
+        # Safety default: reject URL if validation failed
+        logger.warning(f"URL rejected (validation failed) | {url}")
+        return {
+            'is_direct_pdf': False,
+            'confidence': 0.0,
+            'reasoning': 'LLM validation failed - rejecting for safety'
+        }
+
     async def cache_manual(
         self,
         manufacturer: str,
@@ -290,23 +449,48 @@ class ManualService:
                     data = response.json()
                     results = data.get('results', [])
 
-                    # Find first PDF result
+                    # Validate each result with LLM judge
                     for result in results:
                         url = result.get('url', '')
                         title = result.get('title', '')
 
-                        # Check if URL is a PDF or contains "manual"
-                        is_pdf = url.lower().endswith('.pdf') or 'manual' in url.lower()
+                        # Quick pre-filter: obvious PDF indicators
+                        is_likely_pdf = url.lower().endswith('.pdf') or 'manual' in url.lower()
 
-                        if is_pdf:
-                            logger.info(f"Tavily found manual | {manufacturer} {model} | url={url}")
-                            return {
-                                'url': url,
-                                'title': title or f"{manufacturer} {model} Manual",
-                                'source': 'tavily'
-                            }
+                        if is_likely_pdf:
+                            # Validate with LLM before returning
+                            validation = await self._validate_manual_url(
+                                url=url,
+                                manufacturer=manufacturer,
+                                model=model,
+                                timeout=5
+                            )
 
-                    logger.info(f"Tavily search returned no PDF results | {manufacturer} {model}")
+                            is_valid = validation.get('is_direct_pdf', False)
+                            confidence = validation.get('confidence', 0.0)
+                            reasoning = validation.get('reasoning', 'No reasoning provided')
+
+                            if is_valid and confidence >= 0.7:
+                                # URL passed validation
+                                logger.info(
+                                    f"Tavily manual validated | {manufacturer} {model} | "
+                                    f"url={url} | confidence={confidence:.2f}"
+                                )
+                                return {
+                                    'url': url,
+                                    'title': title or f"{manufacturer} {model} Manual",
+                                    'source': 'tavily',
+                                    'confidence': confidence
+                                }
+                            else:
+                                # URL rejected by LLM judge
+                                logger.warning(
+                                    f"URL rejected by LLM judge | {manufacturer} {model} | "
+                                    f"url={url} | confidence={confidence:.2f} | reason={reasoning}"
+                                )
+                                # Continue checking next result
+
+                    logger.info(f"Tavily search: no valid PDF results after LLM validation | {manufacturer} {model}")
                     return None
 
                 logger.warning(f"Tavily API returned {response.status_code} | {manufacturer} {model}")
@@ -359,11 +543,39 @@ class ManualService:
                     # }
 
                     if data.get('found') and data.get('url'):
-                        return {
-                            'url': data['url'],
-                            'title': data.get('title', f"{manufacturer} {model} Manual"),
-                            'source': data.get('source', 'n8n')
-                        }
+                        url = data['url']
+
+                        # Validate URL with LLM before returning
+                        validation = await self._validate_manual_url(
+                            url=url,
+                            manufacturer=manufacturer,
+                            model=model,
+                            timeout=5
+                        )
+
+                        is_valid = validation.get('is_direct_pdf', False)
+                        confidence = validation.get('confidence', 0.0)
+                        reasoning = validation.get('reasoning', 'No reasoning provided')
+
+                        if is_valid and confidence >= 0.7:
+                            # URL passed validation
+                            logger.info(
+                                f"n8n manual validated | {manufacturer} {model} | "
+                                f"url={url} | confidence={confidence:.2f}"
+                            )
+                            return {
+                                'url': url,
+                                'title': data.get('title', f"{manufacturer} {model} Manual"),
+                                'source': data.get('source', 'n8n'),
+                                'confidence': confidence
+                            }
+                        else:
+                            # URL rejected by LLM judge
+                            logger.warning(
+                                f"n8n URL rejected by LLM judge | {manufacturer} {model} | "
+                                f"url={url} | confidence={confidence:.2f} | reason={reasoning}"
+                            )
+                            return None
 
                     return None
 

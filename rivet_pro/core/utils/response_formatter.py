@@ -367,12 +367,17 @@ def format_equipment_response(
 
         title = manual.get('title', f"{mfr} {model} Manual")
         url = manual['url']
+        confidence = manual.get('confidence', 1.0)
 
         # Create clickable Markdown link
         response += f"[{title}]({url})\n\n"
 
-        # Add helpful tip
-        response += "💡 _Bookmark this for offline access._\n"
+        # Add confidence indicator if medium confidence (0.5-0.7)
+        if 0.5 <= confidence < 0.7:
+            response += "⚠️ _Link quality uncertain - please verify before use._\n\n"
+        elif confidence >= 0.7:
+            # High confidence - add helpful tip
+            response += "💡 _Bookmark this for offline access._\n"
 
         # Add source attribution if available
         if manual.get('source') and manual.get('source') != 'cache':
