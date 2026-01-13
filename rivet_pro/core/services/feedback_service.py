@@ -459,3 +459,167 @@ class FeedbackService:
             context['model'] = model_match.group(1).strip()
 
         return context
+
+    async def create_atom_from_feedback(
+        self,
+        story_id: str,
+        interaction_id: UUID
+    ) -> Optional[UUID]:
+        """
+        Create knowledge atom from approved Ralph fix.
+
+        Called after Ralph story is completed and deployed. Converts
+        user feedback + fix details into a validated knowledge atom.
+
+        Args:
+            story_id: Ralph story ID (e.g., 'FEEDBACK-001')
+            interaction_id: UUID of feedback interaction
+
+        Returns:
+            UUID of created knowledge atom, or None if failed
+        """
+        try:
+            # Get story details
+            story = await self.db.fetchrow(
+                """
+                SELECT
+                    story_id,
+                    title,
+                    description,
+                    acceptance_criteria,
+                    feedback_type,
+                    commit_hash
+                FROM ralph_stories
+                WHERE story_id = $1
+                """,
+                story_id
+            )
+
+            if not story:
+                logger.warning(f"Story not found | story_id={story_id}")
+                return None
+
+            # Get interaction details
+            interaction = await self.db.fetchrow(
+                """
+                SELECT
+                    feedback_text,
+                    context_data,
+                    created_at
+                FROM interactions
+                WHERE id = $1
+                """,
+                interaction_id
+            )
+
+            if not interaction:
+                logger.warning(f"Interaction not found | interaction_id={interaction_id}")
+                return None
+
+            # Extract equipment details from context
+            context_data = interaction['context_data'] or {}
+            manufacturer = context_data.get('manufacturer')
+            model = context_data.get('model')
+            equipment_type = context_data.get('equipment_type')
+
+            if not manufacturer or not model:
+                logger.warning(
+                    f"Missing manufacturer/model | story_id={story_id} | context={context_data}"
+                )
+                return None
+
+            # Map feedback_type to AtomType
+            feedback_type = story['feedback_type'] or 'general_bug'
+            atom_type_map = {
+                'manual_404': 'SPEC',
+                'wrong_manual': 'SPEC',
+                'wrong_equipment': 'TIP',
+                'ocr_failure': 'TIP',
+                'unclear_answer': 'PROCEDURE',
+                'general_bug': 'PROCEDURE',
+                'performance_issue': 'TIP',
+                'feature_request': 'PROCEDURE'
+            }
+            atom_type = atom_type_map.get(feedback_type, 'PROCEDURE')
+
+            # Build atom content
+            content = f"**Issue:** {interaction['feedback_text']}\n\n"
+            content += f"**Fix:** {story['description']}\n\n"
+
+            if story['acceptance_criteria']:
+                try:
+                    criteria = json.loads(story['acceptance_criteria']) if isinstance(
+                        story['acceptance_criteria'], str
+                    ) else story['acceptance_criteria']
+                    if isinstance(criteria, list):
+                        content += "**Validation:**\n"
+                        for criterion in criteria:
+                            content += f"- {criterion}\n"
+                except:
+                    pass
+
+            content += f"\n**Commit:** {story['commit_hash']}"
+
+            # Generate keywords
+            keywords = [
+                manufacturer.lower(),
+                model.lower(),
+                feedback_type,
+                atom_type.lower()
+            ]
+            if equipment_type:
+                keywords.append(equipment_type.lower())
+
+            # Create knowledge atom
+            atom_id = await self.db.fetchval(
+                """
+                INSERT INTO knowledge_atoms (
+                    id,
+                    atom_type,
+                    manufacturer,
+                    model,
+                    equipment_type,
+                    content,
+                    keywords,
+                    confidence,
+                    human_verified,
+                    source_type,
+                    source_id,
+                    created_at,
+                    usage_count
+                )
+                VALUES (
+                    gen_random_uuid(),
+                    $1, $2, $3, $4, $5, $6,
+                    0.85,  -- High confidence (human-verified)
+                    true,  -- Human verified
+                    'feedback',
+                    $7,
+                    NOW(),
+                    0
+                )
+                RETURNING id
+                """,
+                atom_type,
+                manufacturer,
+                model,
+                equipment_type,
+                content,
+                keywords,
+                str(interaction_id)
+            )
+
+            logger.info(
+                f"Atom created from feedback | atom_id={atom_id} | "
+                f"story_id={story_id} | type={atom_type}"
+            )
+
+            return atom_id
+
+        except Exception as e:
+            logger.error(
+                f"Failed to create atom from feedback | story_id={story_id} | "
+                f"interaction_id={interaction_id} | error={e}",
+                exc_info=True
+            )
+            return None
