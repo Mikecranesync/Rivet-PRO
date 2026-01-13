@@ -484,3 +484,110 @@ Create .env.example and complete README.
 
 **Total:** 7 stories | 12-16 hours | $0.50-1.00
 **READY FOR RALPH** 🚀
+
+---
+
+## RALPH Process Optimization Stories (Meta-Optimization)
+
+**Context:** Using Ralph to optimize Ralph! Reduce token usage 40-50%, latency 50-70%.
+
+---
+
+### RALPH-P1: Role-Based Command Filtering
+**Priority:** P1 | **Complexity:** Medium | **Status:** ⬜ TODO
+
+**Description:** Filter Telegram commands by user subscription_tier (free/pro/admin). Reduce token usage 40%.
+
+**Acceptance Criteria:**
+- [ ] Create @role_required decorator in bot.py
+- [ ] Filter handlers by subscription_tier  
+- [ ] Free users: /start, /equip, /wo only
+- [ ] Pro users: + /stats, /manual
+- [ ] Admin users: + /admin commands
+- [ ] Upgrade message for blocked commands
+- [ ] Committed: feat(RALPH-P1): add role-based command filtering
+
+**Files:** bot.py, user_service.py
+
+---
+
+### RALPH-P2: Progressive Disclosure for /equip search
+**Priority:** P1 | **Complexity:** Simple | **Status:** ⬜ TODO
+
+**Description:** /equip search returns summaries. /equip detail <id> returns full info. Reduce tokens 60%.
+
+**Acceptance Criteria:**
+- [ ] /equip search motor → max 10 results (ID | mfg | model)
+- [ ] /equip detail EQ-2025-001 → full details
+- [ ] Search < 500 tokens, Detail < 2000 tokens
+- [ ] Committed: feat(RALPH-P2): progressive disclosure
+
+**Files:** bot.py, equipment_service.py
+
+---
+
+### RALPH-P3: Bundle Photo Workflow
+**Priority:** P0 | **Complexity:** Medium | **Status:** ⬜ TODO
+
+**Description:** Bundle Bot→n8n→Python into single process_photo(). Reduce latency 70%, tokens 50%.
+
+**Acceptance Criteria:**
+- [ ] Create photo_service.py with process_photo()
+- [ ] Combines: OCR, equipment match, DB save, usage track
+- [ ] Returns: {equipment_id, manual_url, message}
+- [ ] Eliminate n8n webhook callback
+- [ ] Committed: feat(RALPH-P3): bundle photo workflow
+
+**Files:** photo_service.py (NEW), bot.py, equipment_service.py
+
+---
+
+### RALPH-P4: Context-Rich Error Messages
+**Priority:** P1 | **Complexity:** Simple | **Status:** ⬜ TODO
+
+**Description:** All errors include 2-3 action suggestions.
+
+**Acceptance Criteria:**
+- [ ] Format: "⚠️ [Problem]. Try: 1) [Action], 2) [Action], 3) [Action]"
+- [ ] Update all error messages in bot.py
+- [ ] Committed: feat(RALPH-P4): context-rich errors
+
+**Files:** bot.py
+
+---
+
+### RALPH-P5: Response Template with Next Actions
+**Priority:** P1 | **Complexity:** Simple | **Status:** ⬜ TODO
+
+**Description:** All responses include "What's next?" section.
+
+**Acceptance Criteria:**
+- [ ] Create format_with_actions() helper
+- [ ] All success messages include next actions
+- [ ] Committed: feat(RALPH-P5): next-action guidance
+
+**Files:** response_formatter.py (NEW), bot.py
+
+---
+
+### RALPH-P6: Token Usage Dashboard
+**Priority:** P2 | **Complexity:** Medium | **Status:** ⬜ TODO
+
+**Description:** /admin stats shows token usage per command/user/time.
+
+**Acceptance Criteria:**
+- [ ] Add token_count to usage_tracking table
+- [ ] Track tokens per command
+- [ ] /admin stats → total, avg, top users
+- [ ] Admin-only access
+- [ ] Committed: feat(RALPH-P6): token dashboard
+
+**Files:** bot.py, usage_service.py, 011_usage_tracking.sql
+
+---
+
+**Execution Order:** P3 → P2 → P4 → P5 → P1 → P6
+**Total:** 8-12 hours | $0.40-0.80
+**Target:** 40-50% token reduction, 50-70% latency reduction
+
+**READY FOR RALPH** 🚀
