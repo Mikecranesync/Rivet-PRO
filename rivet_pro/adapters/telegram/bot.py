@@ -22,6 +22,7 @@ from rivet_pro.core.services.stripe_service import StripeService
 from rivet_pro.core.services.manual_service import ManualService
 from rivet_pro.core.services.feedback_service import FeedbackService
 from rivet_pro.core.services.alerting_service import AlertingService
+from rivet_pro.core.services.kb_analytics_service import KnowledgeBaseAnalytics
 from rivet_pro.core.utils import format_equipment_response
 
 logger = get_logger(__name__)
@@ -42,6 +43,7 @@ class TelegramBot:
         self.stripe_service = None  # Initialized after db connects
         self.manual_service = None  # Initialized after db connects
         self.feedback_service = None  # Initialized after db connects
+        self.kb_analytics_service = None  # Initialized after db connects
 
         # Initialize alerting service for Ralph notifications (RALPH-BOT-3)
         self.alerting_service = AlertingService(
@@ -600,6 +602,77 @@ class TelegramBot:
             logger.error(f"Error in /stats command: {e}", exc_info=True)
             await update.message.reply_text("❌ An error occurred. Please try again.")
 
+    async def kb_stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Handle /kb_stats command - Display knowledge base statistics.
+        Admin-only command for monitoring KB growth and effectiveness.
+        """
+        user = update.effective_user
+        telegram_user_id = str(user.id)
+
+        # Admin check - only allow authorized users
+        admin_list = [settings.telegram_admin_chat_id]  # Add more admins as needed
+        if telegram_user_id not in admin_list:
+            await update.message.reply_text(
+                "🔒 This command is admin-only.\n\n"
+                "Contact the system administrator for access."
+            )
+            logger.warning(f"Unauthorized /kb_stats attempt | user_id={user.id}")
+            return
+
+        logger.info(f"/kb_stats command | user_id={user.id}")
+
+        try:
+            # Fetch KB statistics
+            stats = await self.kb_analytics_service.get_learning_stats()
+            hit_rate = await self.kb_analytics_service.get_kb_hit_rate()
+            response_times = await self.kb_analytics_service.get_response_time_comparison()
+            atoms_today = await self.kb_analytics_service.get_atoms_created_today()
+            pending_gaps = await self.kb_analytics_service.get_pending_gaps_count()
+
+            # Format the message
+            message = "📊 *Knowledge Base Statistics*\n\n"
+
+            # Overview
+            message += f"📚 *Total Atoms:* {stats['total_atoms']}\n"
+            message += f"✨ *Created Today:* {atoms_today}\n"
+            message += f"✓ *Verified:* {stats['verified_atoms']}\n"
+            message += f"📈 *Avg Confidence:* {stats['avg_confidence']:.1%}\n\n"
+
+            # Performance
+            message += f"🎯 *KB Hit Rate:* {hit_rate:.1f}%\n"
+            message += f"⚡ *KB Response Time:* {response_times['kb_avg_ms']:.0f}ms\n"
+            message += f"🔍 *External Search Time:* {response_times['external_avg_ms']:.0f}ms\n"
+            message += f"🚀 *Speed Improvement:* {response_times['speedup_factor']:.1f}x faster\n\n"
+
+            # Atoms by source
+            if stats['atoms_by_source']:
+                message += "📦 *Atoms by Source:*\n"
+                for source, count in sorted(stats['atoms_by_source'].items(), key=lambda x: x[1], reverse=True):
+                    message += f"  • {source}: {count}\n"
+                message += "\n"
+
+            # Knowledge gaps
+            message += f"🔴 *Pending Gaps:* {pending_gaps}\n"
+            message += f"✅ *Resolved Gaps:* {stats['gaps_resolved']}\n\n"
+
+            # Top atoms
+            if stats['most_used_atoms']:
+                message += "🏆 *Top 5 Most Used Atoms:*\n"
+                for i, atom in enumerate(stats['most_used_atoms'], 1):
+                    message += (
+                        f"{i}. {atom['manufacturer']} {atom['model']} "
+                        f"({atom['usage_count']} uses, {atom['confidence']:.1%} confidence)\n"
+                    )
+
+            await update.message.reply_text(message, parse_mode="Markdown")
+
+        except Exception as e:
+            logger.error(f"Error in /kb_stats command: {e}", exc_info=True)
+            await update.message.reply_text(
+                "❌ Failed to retrieve KB statistics. Please try again later."
+            )
+
     async def upgrade_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
         Handle /upgrade command.
@@ -833,6 +906,7 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("equip", self.equip_command))
         self.application.add_handler(CommandHandler("wo", self.wo_command))
         self.application.add_handler(CommandHandler("stats", self.stats_command))
+        self.application.add_handler(CommandHandler("kb_stats", self.kb_stats_command))
         self.application.add_handler(CommandHandler("upgrade", self.upgrade_command))
 
         # Register callback handler for inline keyboard buttons (approve/reject)
@@ -876,6 +950,7 @@ class TelegramBot:
         self.stripe_service = StripeService(self.db)
         self.manual_service = ManualService(self.db)
         self.feedback_service = FeedbackService(self.db.pool)
+        self.kb_analytics_service = KnowledgeBaseAnalytics(self.db.pool)
         logger.info("Database and services initialized")
 
         # Initialize the application
