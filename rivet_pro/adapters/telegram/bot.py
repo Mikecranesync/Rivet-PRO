@@ -3,6 +3,7 @@ Telegram bot adapter for Rivet Pro.
 Handles all Telegram-specific interaction logic.
 """
 
+from typing import Optional
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
