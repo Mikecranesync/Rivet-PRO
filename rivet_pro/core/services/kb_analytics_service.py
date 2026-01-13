@@ -312,3 +312,109 @@ class KnowledgeBaseAnalytics:
         except Exception as e:
             logger.error(f"Failed to get pending gaps count | error={e}")
             return 0
+
+    async def generate_daily_health_report(self) -> str:
+        """
+        Generate a daily health report for the knowledge base.
+
+        Returns:
+            Formatted Telegram Markdown message with KB health metrics
+        """
+        try:
+            # Gather all metrics
+            total_atoms = await self.db.fetchval(
+                "SELECT COUNT(*) FROM knowledge_atoms"
+            ) or 0
+
+            atoms_today = await self.db.fetchval(
+                """
+                SELECT COUNT(*) FROM knowledge_atoms
+                WHERE DATE(created_at) = CURRENT_DATE
+                """
+            ) or 0
+
+            atoms_yesterday = await self.db.fetchval(
+                """
+                SELECT COUNT(*) FROM knowledge_atoms
+                WHERE DATE(created_at) = CURRENT_DATE - INTERVAL '1 day'
+                """
+            ) or 0
+
+            verified_count = await self.db.fetchval(
+                "SELECT COUNT(*) FROM knowledge_atoms WHERE human_verified = true"
+            ) or 0
+
+            pending_gaps = await self.db.fetchval(
+                "SELECT COUNT(*) FROM knowledge_gaps WHERE resolved = false"
+            ) or 0
+
+            # Hit rates
+            hit_rate_24h = await self.get_kb_hit_rate(days=1)
+            hit_rate_7d = await self.get_kb_hit_rate(days=7)
+
+            # Top 3 high-priority gaps
+            top_gaps = await self.db.fetch(
+                """
+                SELECT
+                    query_text,
+                    priority,
+                    occurrence_count
+                FROM knowledge_gaps
+                WHERE resolved = false
+                ORDER BY priority DESC, occurrence_count DESC
+                LIMIT 3
+                """
+            )
+
+            # Build health alerts
+            alerts = []
+            if hit_rate_24h < 20.0:
+                alerts.append("⚠️ Low KB hit rate (24h) - consider adding more atoms")
+            if pending_gaps > 10:
+                alerts.append(f"⚠️ {pending_gaps} unresolved gaps need attention")
+            if atoms_today == 0 and atoms_yesterday == 0:
+                alerts.append("⚠️ No new atoms in 2 days - KB may be stagnant")
+            if total_atoms > 0 and (verified_count / total_atoms) < 0.1:
+                alerts.append("⚠️ Low verification rate - review atom quality")
+
+            # Format Telegram message
+            report = "📊 *Knowledge Base Health Report*\n"
+            report += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+            # Atom stats
+            report += "*📚 Knowledge Atoms*\n"
+            report += f"  Total: {total_atoms:,}\n"
+            report += f"  Today: {atoms_today} | Yesterday: {atoms_yesterday}\n"
+            report += f"  Verified: {verified_count:,}\n\n"
+
+            # Hit rates
+            report += "*🎯 Hit Rates*\n"
+            report += f"  24h: {hit_rate_24h:.1f}%\n"
+            report += f"  7d: {hit_rate_7d:.1f}%\n\n"
+
+            # Gaps
+            report += "*🔍 Knowledge Gaps*\n"
+            report += f"  Pending: {pending_gaps}\n"
+
+            if top_gaps:
+                report += "  Top priorities:\n"
+                for gap in top_gaps:
+                    query = gap['query_text'][:30] + "..." if len(gap['query_text']) > 30 else gap['query_text']
+                    report += f"    • {query} (×{gap['occurrence_count']})\n"
+            report += "\n"
+
+            # Alerts
+            if alerts:
+                report += "*🚨 Health Alerts*\n"
+                for alert in alerts:
+                    report += f"  {alert}\n"
+            else:
+                report += "✅ *No health issues detected*\n"
+
+            report += "\n_Generated: " + datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC") + "_"
+
+            return report
+
+        except Exception as e:
+            logger.error(f"Failed to generate daily health report | error={e}")
+            return "❌ *KB Health Report Error*\n\nFailed to generate report. Check logs for details."
