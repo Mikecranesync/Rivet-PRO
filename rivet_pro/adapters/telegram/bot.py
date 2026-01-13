@@ -211,15 +211,85 @@ class TelegramBot:
                 "📖 Searching for manual..."
             )
 
-            # Search for equipment manual
+            # KB-003: Search knowledge base first, then external if needed
             manual_result = None
+            kb_result = None
             if result.manufacturer and result.model_number:
                 try:
-                    manual_result = await self.manual_service.search_manual(
+                    # Step 1: Check knowledge base
+                    kb_result = await self._search_knowledge_base(
                         manufacturer=result.manufacturer,
                         model=result.model_number,
-                        timeout=15
+                        equipment_type=getattr(result, 'equipment_type', None)
                     )
+
+                    if kb_result:
+                        confidence = kb_result.get('confidence', 0.0)
+
+                        # High confidence (≥0.85): Use KB result, skip external search
+                        if confidence >= 0.85:
+                            manual_result = kb_result
+                            logger.info(
+                                f"KB hit (high confidence) | user_id={user_id} | "
+                                f"confidence={confidence:.2f} | Skipping external search"
+                            )
+
+                            # Increment usage_count for this atom
+                            await self.db.pool.execute(
+                                "UPDATE knowledge_atoms SET usage_count = usage_count + 1 WHERE atom_id = $1",
+                                kb_result['atom_id']
+                            )
+
+                        # Medium confidence (0.40-0.85): Use KB but also trigger external search
+                        elif confidence >= 0.40:
+                            manual_result = kb_result
+                            logger.info(
+                                f"KB hit (medium confidence) | user_id={user_id} | "
+                                f"confidence={confidence:.2f} | Also trying external search"
+                            )
+
+                            # Increment usage_count
+                            await self.db.pool.execute(
+                                "UPDATE knowledge_atoms SET usage_count = usage_count + 1 WHERE atom_id = $1",
+                                kb_result['atom_id']
+                            )
+
+                            # Try external search as backup
+                            try:
+                                external_result = await self.manual_service.search_manual(
+                                    manufacturer=result.manufacturer,
+                                    model=result.model_number,
+                                    timeout=15
+                                )
+                                # If external finds different/better result, use it
+                                if external_result and external_result.get('url') != kb_result.get('url'):
+                                    logger.info(
+                                        f"External search found different manual | "
+                                        f"kb_url={kb_result.get('url')} | "
+                                        f"external_url={external_result.get('url')}"
+                                    )
+                                    # Use external result but keep KB as fallback
+                                    manual_result = external_result
+                            except Exception as e:
+                                logger.error(f"External search failed (using KB result): {e}")
+                                # Keep using KB result
+
+                        # Low confidence (<0.40): Fall through to external search
+                        else:
+                            logger.info(
+                                f"KB hit (low confidence) | user_id={user_id} | "
+                                f"confidence={confidence:.2f} | Using external search"
+                            )
+                            kb_result = None  # Ignore low confidence result
+
+                    # Step 2: If no KB result or low confidence, use external search
+                    if not manual_result:
+                        manual_result = await self.manual_service.search_manual(
+                            manufacturer=result.manufacturer,
+                            model=result.model_number,
+                            timeout=15
+                        )
+
                     if manual_result:
                         logger.info(
                             f"Manual found | user_id={user_id} | "
@@ -228,6 +298,7 @@ class TelegramBot:
                         )
                     else:
                         logger.info(f"Manual not found | user_id={user_id}")
+
                 except Exception as e:
                     logger.error(f"Manual search failed: {e}", exc_info=True)
                     # Continue without manual if search fails
@@ -729,6 +800,75 @@ class TelegramBot:
             await update.message.reply_text(
                 "❌ Could not generate upgrade link. Please try again later."
             )
+
+    async def _search_knowledge_base(
+        self,
+        manufacturer: str,
+        model: str,
+        equipment_type: Optional[str] = None
+    ) -> Optional[dict]:
+        """
+        Search knowledge base for manual before calling external search.
+
+        KB-003: Check knowledge atoms for manufacturer/model match.
+        Returns atom with highest confidence if found.
+
+        Args:
+            manufacturer: Equipment manufacturer
+            model: Equipment model number
+            equipment_type: Optional equipment type
+
+        Returns:
+            Dict with 'url', 'confidence', 'atom_id' if found, None otherwise
+        """
+        try:
+            # Query knowledge_atoms for SPEC type with manufacturer/model match
+            query = """
+                SELECT
+                    atom_id,
+                    source_url,
+                    confidence,
+                    usage_count,
+                    title,
+                    content
+                FROM knowledge_atoms
+                WHERE type = 'spec'
+                  AND LOWER(manufacturer) = LOWER($1)
+                  AND LOWER(model) = LOWER($2)
+                  AND source_url IS NOT NULL
+                ORDER BY confidence DESC, usage_count DESC
+                LIMIT 1
+            """
+
+            row = await self.db.pool.fetchrow(query, manufacturer, model)
+
+            if not row:
+                logger.info(
+                    f"KB miss | manufacturer={manufacturer} | model={model} | "
+                    f"Falling back to external search"
+                )
+                return None
+
+            result = {
+                'atom_id': row['atom_id'],
+                'url': row['source_url'],
+                'confidence': float(row['confidence']),
+                'usage_count': row['usage_count'],
+                'title': row['title'],
+                'cached': True  # Mark as KB hit for logging
+            }
+
+            logger.info(
+                f"KB hit | manufacturer={manufacturer} | model={model} | "
+                f"confidence={result['confidence']:.2f} | "
+                f"usage_count={result['usage_count']}"
+            )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"KB search failed | error={e}", exc_info=True)
+            return None
 
     async def _create_manual_atom(
         self,
