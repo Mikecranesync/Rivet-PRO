@@ -322,13 +322,29 @@ async def analyze_image(
                 best_result = result
 
         except Exception as e:
+            error_str = str(e)
+            error_type = type(e).__name__
+
+            # Skip immediately on permission denied (403) - don't waste time retrying
+            if "403" in error_str or "PERMISSION_DENIED" in error_str or "permission denied" in error_str.lower():
+                logger.warning(
+                    f"{user_log} {provider_config.name} PERMISSION DENIED - skipping immediately (no retry)",
+                    extra={
+                        "user_id": user_id,
+                        "provider": provider_config.name,
+                        "error_type": "permission_denied",
+                        "skip_reason": "API key blocked/leaked"
+                    }
+                )
+                continue
+
             logger.warning(
-                f"{user_log} {provider_config.name} failed: {type(e).__name__}: {e}",
+                f"{user_log} {provider_config.name} failed: {error_type}: {e}",
                 exc_info=True,
                 extra={
                     "user_id": user_id,
                     "provider": provider_config.name,
-                    "error_type": type(e).__name__
+                    "error_type": error_type
                 }
             )
             continue

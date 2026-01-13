@@ -21,6 +21,7 @@ from rivet_pro.core.services.usage_service import UsageService, FREE_TIER_LIMIT
 from rivet_pro.core.services.stripe_service import StripeService
 from rivet_pro.core.services.manual_service import ManualService
 from rivet_pro.core.services.feedback_service import FeedbackService
+from rivet_pro.core.services.alerting_service import AlertingService
 from rivet_pro.core.utils import format_equipment_response
 
 logger = get_logger(__name__)
@@ -41,6 +42,12 @@ class TelegramBot:
         self.stripe_service = None  # Initialized after db connects
         self.manual_service = None  # Initialized after db connects
         self.feedback_service = None  # Initialized after db connects
+
+        # Initialize alerting service for Ralph notifications (RALPH-BOT-3)
+        self.alerting_service = AlertingService(
+            bot_token=settings.telegram_bot_token,
+            ralph_chat_id="8445149012"  # Ralph's Telegram chat ID
+        )
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
@@ -91,6 +98,20 @@ class TelegramBot:
                 )
         except Exception as e:
             logger.error(f"Error handling message: {e}", exc_info=True)
+
+            # Send critical alert to Ralph (RALPH-BOT-3)
+            await self.alerting_service.alert_critical(
+                error=e,
+                context={
+                    "service": "TelegramBot.handle_message",
+                    "content_type": content_type,
+                    "user_id": str(user.id),
+                    "message_text": message.text[:100] if message.text else None
+                },
+                user_id=str(user.id),
+                service="TelegramBot"
+            )
+
             await update.message.reply_text(
                 "⚠️ Something went wrong processing your request. Please try again."
             )
