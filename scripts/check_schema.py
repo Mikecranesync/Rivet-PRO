@@ -1,35 +1,57 @@
-"""
-Check existing knowledge_atoms schema.
-"""
+#!/usr/bin/env python3
+"""Check database schema."""
 
 import asyncio
-import asyncpg
-import os
-from dotenv import load_dotenv
+import sys
+from pathlib import Path
 
-load_dotenv()
+# Fix Windows console encoding
+if sys.platform == "win32":
+    import codecs
+    sys.stdout = codecs.getwriter("utf-8")(sys.stdout.detach())
+    sys.stderr = codecs.getwriter("utf-8")(sys.stderr.detach())
+
+# Add project root to path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+from rivet_pro.infra.database import Database
 
 
 async def check_schema():
-    """Check knowledge_atoms schema."""
-    db_url = os.getenv("NEON_DB_URL")
+    """Check knowledge_atoms table schema."""
+    db = Database()
 
-    conn = await asyncpg.connect(db_url)
+    try:
+        await db.connect()
+        print("Connected to database\n")
 
-    # Get column info
-    schema_info = await conn.fetch("""
-        SELECT column_name, data_type, is_nullable
-        FROM information_schema.columns
-        WHERE table_name = 'knowledge_atoms'
-        ORDER BY ordinal_position
-    """)
+        # Check atom_id column type
+        columns = await db.fetch("""
+            SELECT column_name, data_type, character_maximum_length
+            FROM information_schema.columns
+            WHERE table_name = 'knowledge_atoms'
+                AND column_name = 'atom_id'
+        """)
 
-    print("[*] knowledge_atoms schema:")
-    for col in schema_info:
-        print(f"  {col['column_name']}: {col['data_type']} {'NULL' if col['is_nullable'] == 'YES' else 'NOT NULL'}")
+        if columns:
+            col = columns[0]
+            print(f"atom_id column type: {col['data_type']}")
+            if col['character_maximum_length']:
+                print(f"Max length: {col['character_maximum_length']}")
+        else:
+            print("atom_id column not found")
 
-    await conn.close()
+        return 0
+
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+
+    finally:
+        await db.disconnect()
 
 
 if __name__ == "__main__":
-    asyncio.run(check_schema())
+    exit_code = asyncio.run(check_schema())
+    sys.exit(exit_code)

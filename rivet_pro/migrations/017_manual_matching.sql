@@ -51,7 +51,7 @@ ALTER TABLE manual_cache ADD COLUMN IF NOT EXISTS llm_validated BOOLEAN DEFAULT 
 ALTER TABLE manual_cache ADD COLUMN IF NOT EXISTS llm_confidence FLOAT;
 ALTER TABLE manual_cache ADD COLUMN IF NOT EXISTS validation_reasoning TEXT;
 ALTER TABLE manual_cache ADD COLUMN IF NOT EXISTS manual_type VARCHAR(50);
-ALTER TABLE manual_cache ADD COLUMN IF NOT EXISTS atom_id UUID REFERENCES knowledge_atoms(atom_id);
+ALTER TABLE manual_cache ADD COLUMN IF NOT EXISTS atom_id TEXT REFERENCES knowledge_atoms(atom_id);
 
 CREATE INDEX IF NOT EXISTS idx_manual_cache_validated ON manual_cache(llm_validated) WHERE llm_validated = TRUE;
 CREATE INDEX IF NOT EXISTS idx_manual_cache_atom ON manual_cache(atom_id) WHERE atom_id IS NOT NULL;
