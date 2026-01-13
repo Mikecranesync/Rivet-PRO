@@ -675,6 +675,108 @@ class TelegramBot:
             logger.error(f"Error in /wo command: {e}", exc_info=True)
             await update.message.reply_text("❌ An error occurred. Please try again.")
 
+    async def manual_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Handle /manual command - Instant equipment manual retrieval (MANUAL-003).
+
+        Usage:
+          /manual <equipment_number> - Get validated manual for equipment
+        Example:
+          /manual EQ-2025-0142
+        """
+        args = context.args or []
+
+        try:
+            if not args:
+                await update.message.reply_text(
+                    "📘 *Manual Lookup*\n\n"
+                    "Usage: `/manual <equipment_number>`\n"
+                    "Example: `/manual EQ-2025-0142`\n\n"
+                    "Get instant access to AI-validated equipment manuals.",
+                    parse_mode="Markdown"
+                )
+                return
+
+            equipment_number = args[0].upper()
+
+            # Look up equipment
+            equipment = await self.db.fetchrow("""
+                SELECT id, manufacturer, model_number, equipment_type
+                FROM cmms_equipment
+                WHERE equipment_number = $1
+            """, equipment_number)
+
+            if not equipment:
+                await update.message.reply_text(
+                    f"❌ Equipment `{equipment_number}` not found.\n"
+                    "Try `/equip search <query>` to find equipment.",
+                    parse_mode="Markdown"
+                )
+                return
+
+            # Check manual_cache for validated manual
+            cached_manual = await self.db.fetchrow("""
+                SELECT manual_url, manual_title, llm_confidence, manual_type, llm_validated
+                FROM manual_cache
+                WHERE LOWER(manufacturer) = LOWER($1)
+                    AND LOWER(model) = LOWER($2)
+                    AND llm_validated = TRUE
+            """, equipment['manufacturer'], equipment['model_number'])
+
+            if cached_manual:
+                confidence = cached_manual['llm_confidence']
+                confidence_icon = "✅" if confidence >= 0.90 else "⚠️"
+
+                response = f"""📘 *Manual: {equipment['manufacturer']} {equipment['model_number']}*
+
+*Title:* {cached_manual['manual_title']}
+*Type:* {cached_manual['manual_type'].replace('_', ' ').title()}
+*URL:* {cached_manual['manual_url']}
+
+*Confidence:* {confidence_icon} {confidence:.0%} (AI-validated)"""
+
+                await update.message.reply_text(response, parse_mode="Markdown")
+
+                # Track access
+                await self.db.execute("""
+                    UPDATE manual_cache
+                    SET access_count = access_count + 1, last_accessed = NOW()
+                    WHERE LOWER(manufacturer) = LOWER($1)
+                        AND LOWER(model) = LOWER($2)
+                """, equipment['manufacturer'], equipment['model_number'])
+
+            else:
+                # Check if search is in progress
+                search = await self.db.fetchrow("""
+                    SELECT search_status FROM equipment_manual_searches
+                    WHERE equipment_id = $1
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """, equipment['id'])
+
+                if search and search['search_status'] == 'searching':
+                    await update.message.reply_text(
+                        f"🔍 Manual search in progress for `{equipment_number}`...\n"
+                        "You'll receive a notification when found (usually <60s).",
+                        parse_mode="Markdown"
+                    )
+                elif search and search['search_status'] == 'no_manual_found':
+                    await update.message.reply_text(
+                        f"❌ Manual not found for {equipment['manufacturer']} {equipment['model_number']}.\n"
+                        "We searched multiple sources but couldn't locate a validated manual.",
+                        parse_mode="Markdown"
+                    )
+                else:
+                    await update.message.reply_text(
+                        f"❌ No manual available for `{equipment_number}`.\n"
+                        "Try sending a photo to trigger automatic manual search.",
+                        parse_mode="Markdown"
+                    )
+
+        except Exception as e:
+            logger.error(f"Error in /manual command: {e}", exc_info=True)
+            await update.message.reply_text("❌ An error occurred. Please try again.")
+
     async def stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
         Handle /stats command.
@@ -1237,6 +1339,68 @@ class TelegramBot:
                 parse_mode="HTML"
             )
 
+    async def manual_verification_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Handle user verification of inconclusive manual matches (MANUAL-002).
+        Called when user clicks ✅ or ❌ button on manual verification request.
+        """
+        query = update.callback_query
+        await query.answer()
+
+        try:
+            # Parse callback data: "verify_yes:equipment_id" or "verify_no:equipment_id"
+            action, equipment_id_str = query.data.split(':', 1)
+            equipment_id = UUID(equipment_id_str)
+
+            logger.info(
+                f"Manual verification callback | action={action} | "
+                f"equipment_id={equipment_id}"
+            )
+
+            if action == 'verify_yes':
+                # User confirmed manual is correct
+                await self.db.execute("""
+                    UPDATE equipment_manual_searches
+                    SET requires_human_verification = FALSE,
+                        best_manual_confidence = 0.95,
+                        search_status = 'completed',
+                        updated_at = NOW()
+                    WHERE equipment_id = $1
+                """, equipment_id)
+
+                # TODO: In MANUAL-003, trigger SPEC atom creation here
+
+                await query.edit_message_text(
+                    "✅ Thank you! Manual verified and added to knowledge base.\n"
+                    "This equipment is now available for all future users."
+                )
+
+                logger.info(f"Manual verified by user | equipment_id={equipment_id}")
+
+            elif action == 'verify_no':
+                # User rejected manual - schedule retry
+                from rivet_pro.core.services.manual_matcher_service import ManualMatcherService
+                manual_matcher = ManualMatcherService(self.db)
+
+                await manual_matcher._schedule_retry(
+                    equipment_id=equipment_id,
+                    retry_reason='human_rejected',
+                    current_retry_count=0
+                )
+
+                await query.edit_message_text(
+                    "❌ Got it. We'll keep searching for a better manual.\n"
+                    "I'll notify you when we find a more accurate match."
+                )
+
+                logger.info(f"Manual rejected by user | equipment_id={equipment_id}")
+
+        except Exception as e:
+            logger.error(f"Error handling manual verification: {e}", exc_info=True)
+            await query.edit_message_text(
+                "❌ Error processing your response. Please try again or contact support."
+            )
+
     async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
         Handle errors in the bot.
@@ -1269,6 +1433,7 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("start", self.start_command))
         self.application.add_handler(CommandHandler("equip", self.equip_command))
         self.application.add_handler(CommandHandler("wo", self.wo_command))
+        self.application.add_handler(CommandHandler("manual", self.manual_command))  # MANUAL-003
         self.application.add_handler(CommandHandler("stats", self.stats_command))
         self.application.add_handler(CommandHandler("kb_stats", self.kb_stats_command))
         self.application.add_handler(CommandHandler("upgrade", self.upgrade_command))
@@ -1279,6 +1444,14 @@ class TelegramBot:
             CallbackQueryHandler(
                 self.handle_proposal_callback,
                 pattern=r'^(approve_fix|reject_fix):'
+            )
+        )
+
+        # Register callback handler for manual verification (MANUAL-002)
+        self.application.add_handler(
+            CallbackQueryHandler(
+                self.manual_verification_callback,
+                pattern=r'^verify_(yes|no):'
             )
         )
 

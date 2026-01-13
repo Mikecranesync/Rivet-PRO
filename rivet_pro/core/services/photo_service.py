@@ -22,6 +22,7 @@ from rivet_pro.core.services.ocr_service import analyze_image
 from rivet_pro.core.services.equipment_service import EquipmentService
 from rivet_pro.core.services.usage_service import UsageService
 from rivet_pro.core.services.response_formatter import format_with_actions
+from rivet_pro.core.services.manual_matcher_service import ManualMatcherService
 
 # KB integration imports (KB-003, KB-004, KB-005)
 try:
@@ -44,6 +45,7 @@ class PhotoService:
         self.db = db
         self.equipment_service = EquipmentService(db)
         self.usage_service = UsageService(db)
+        self.manual_matcher = ManualMatcherService(db)
 
         # Initialize KB services if available (KB-003, KB-004, KB-005)
         if KB_AVAILABLE:
@@ -206,6 +208,52 @@ class PhotoService:
 
         except Exception as e:
             logger.error(f"Failed to create equipment atom: {e}", exc_info=True)
+
+    async def _trigger_manual_search(
+        self,
+        equipment_id: UUID,
+        manufacturer: str,
+        model_number: str,
+        equipment_type: Optional[str],
+        telegram_chat_id: int
+    ) -> None:
+        """
+        Trigger async manual search after equipment identification (MANUAL-001).
+
+        Creates search record and triggers background manual matching workflow.
+        Does not block user response - runs entirely in background.
+
+        Args:
+            equipment_id: Equipment UUID
+            manufacturer: Equipment manufacturer
+            model_number: Model number
+            equipment_type: Equipment type/category
+            telegram_chat_id: Telegram chat ID for later notification
+        """
+        try:
+            # Create search record
+            await self.db.execute("""
+                INSERT INTO equipment_manual_searches
+                (equipment_id, telegram_chat_id, search_status)
+                VALUES ($1, $2, 'pending')
+            """, equipment_id, telegram_chat_id)
+
+            logger.info(
+                f"Manual search triggered | equipment_id={equipment_id} | "
+                f"manufacturer={manufacturer} | model={model_number}"
+            )
+
+            # Call ManualMatcherService (MANUAL-002)
+            await self.manual_matcher.search_and_validate_manual(
+                equipment_id=equipment_id,
+                manufacturer=manufacturer,
+                model=model_number,
+                equipment_type=equipment_type,
+                telegram_chat_id=telegram_chat_id
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to trigger manual search: {e}", exc_info=True)
 
     async def _detect_and_fill_gap(
         self,
@@ -383,6 +431,19 @@ class PhotoService:
                             equipment_type=getattr(ocr_result, 'equipment_type', None),
                             equipment_id=equipment_id,
                             confidence=ocr_result.confidence
+                        )
+                    )
+
+                # Step 2.6: Trigger async manual search (MANUAL-001)
+                if equipment_id and ocr_result.model_number:
+                    # Run async to not block response
+                    asyncio.create_task(
+                        self._trigger_manual_search(
+                            equipment_id=equipment_id,
+                            manufacturer=ocr_result.manufacturer,
+                            model_number=ocr_result.model_number,
+                            equipment_type=getattr(ocr_result, 'equipment_type', None),
+                            telegram_chat_id=telegram_user_id
                         )
                     )
 
