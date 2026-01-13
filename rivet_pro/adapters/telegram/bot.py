@@ -4,6 +4,7 @@ Handles all Telegram-specific interaction logic.
 """
 
 from typing import Optional
+from uuid import UUID
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -306,13 +307,36 @@ class TelegramBot:
             # Create knowledge atom if manual was found (CRITICAL-KB-001, KB-002)
             if manual_result and result.manufacturer and result.model_number:
                 try:
+                    # Create interaction record first (KB-001)
+                    interaction_id = None
+                    try:
+                        interaction_id = await self.db.fetchval(
+                            """
+                            INSERT INTO interactions (
+                                user_id, interaction_type, outcome, created_at
+                            )
+                            VALUES (
+                                (SELECT id FROM users WHERE telegram_id = $1),
+                                'manual_lookup', 'manual_delivered', NOW()
+                            )
+                            RETURNING id
+                            """,
+                            str(update.effective_user.id)
+                        )
+                        logger.info(f"Created interaction {interaction_id} for manual lookup")
+                    except Exception as e:
+                        logger.warning(f"Failed to create interaction: {e}")
+                        # Continue anyway - don't break user experience
+
+                    # Create atom with interaction link
                     await self._create_manual_atom(
                         manufacturer=result.manufacturer,
                         model=result.model_number,
                         equipment_type=getattr(result, 'equipment_type', None),
                         manual_url=manual_result.get('url'),
                         confidence=min(result.confidence, 0.95),  # Cap at 0.95
-                        source_id=str(user_id)
+                        source_id=str(user_id),
+                        interaction_id=interaction_id  # Pass interaction_id for linking
                     )
                 except Exception as e:
                     logger.error(f"Failed to create knowledge atom: {e}", exc_info=True)
@@ -877,8 +901,9 @@ class TelegramBot:
         equipment_type: Optional[str],
         manual_url: str,
         confidence: float,
-        source_id: str
-    ) -> None:
+        source_id: str,
+        interaction_id: Optional[UUID] = None
+    ) -> Optional[str]:
         """
         Create knowledge atom after manual is found.
 
@@ -931,7 +956,21 @@ class TelegramBot:
                     existing
                 )
                 logger.info(f"Atom already exists, updated usage | atom_id={existing}")
-                return
+
+                # Link interaction to existing atom
+                if interaction_id:
+                    await self.db.execute(
+                        """
+                        UPDATE interactions
+                        SET atom_id = $1, atom_created = FALSE
+                        WHERE id = $2
+                        """,
+                        existing,
+                        interaction_id
+                    )
+                    logger.info(f"Linked interaction {interaction_id} to existing atom {existing}")
+
+                return existing
 
             # Create new knowledge atom
             atom_id = await self.db.fetchval(
@@ -949,7 +988,8 @@ class TelegramBot:
                     source_type,
                     source_id,
                     created_at,
-                    usage_count
+                    usage_count,
+                    last_used_at
                 )
                 VALUES (
                     gen_random_uuid(),
@@ -960,7 +1000,8 @@ class TelegramBot:
                     'user_interaction',
                     $7,
                     NOW(),
-                    1  -- Start at 1 since it was just used
+                    1,  -- Start at 1 since it was just used
+                    NOW()  -- last_used_at
                 )
                 RETURNING id
                 """,
@@ -979,6 +1020,21 @@ class TelegramBot:
                 f"type=SPEC | source=user_interaction"
             )
 
+            # Link interaction to newly created atom
+            if interaction_id:
+                await self.db.execute(
+                    """
+                    UPDATE interactions
+                    SET atom_id = $1, atom_created = TRUE
+                    WHERE id = $2
+                    """,
+                    atom_id,
+                    interaction_id
+                )
+                logger.info(f"Linked interaction {interaction_id} to new atom {atom_id}")
+
+            return atom_id
+
         except Exception as e:
             logger.error(
                 f"Failed to create manual atom | manufacturer={manufacturer} | "
@@ -986,6 +1042,7 @@ class TelegramBot:
                 exc_info=True
             )
             # Don't raise - atom creation failure shouldn't break user experience
+            return None
 
     async def handle_message_reply(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """

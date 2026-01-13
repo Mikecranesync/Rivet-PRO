@@ -586,7 +586,9 @@ class FeedbackService:
                     source_type,
                     source_id,
                     created_at,
-                    usage_count
+                    usage_count,
+                    last_used_at,
+                    source_interaction_id
                 )
                 VALUES (
                     gen_random_uuid(),
@@ -594,9 +596,11 @@ class FeedbackService:
                     0.85,  -- High confidence (human-verified)
                     true,  -- Human verified
                     'feedback',
-                    $7,
+                    $7,    -- source_id (interaction_id as string)
                     NOW(),
-                    0
+                    0,     -- usage_count
+                    NOW(), -- last_used_at
+                    $8     -- source_interaction_id
                 )
                 RETURNING id
                 """,
@@ -606,12 +610,29 @@ class FeedbackService:
                 equipment_type,
                 content,
                 keywords,
-                str(interaction_id)
+                str(interaction_id),
+                interaction_id  # Add interaction_id for source_interaction_id
             )
 
             logger.info(
                 f"Atom created from feedback | atom_id={atom_id} | "
                 f"story_id={story_id} | type={atom_type}"
+            )
+
+            # Link interaction back to created atom (KB-001)
+            await self.db.execute(
+                """
+                UPDATE interactions
+                SET atom_id = $1, atom_created = TRUE
+                WHERE id = $2
+                """,
+                atom_id,
+                interaction_id
+            )
+
+            logger.info(
+                f"Bidirectional link established | "
+                f"interaction={interaction_id} <-> atom={atom_id}"
             )
 
             return atom_id
