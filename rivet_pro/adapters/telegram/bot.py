@@ -5,6 +5,8 @@ Handles all Telegram-specific interaction logic.
 
 from typing import Optional
 from uuid import UUID
+from datetime import time as datetime_time
+import pytz
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -784,6 +786,38 @@ class TelegramBot:
                 "❌ Failed to retrieve KB statistics. Please try again later."
             )
 
+    async def _send_daily_kb_report(self, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Send daily KB health report to Ralph at scheduled time (KB-009).
+        This is a JobQueue callback, not a command handler.
+        """
+        logger.info("Sending daily KB health report to Ralph")
+
+        try:
+            # Generate the health report
+            report = await self.kb_analytics_service.generate_daily_health_report()
+
+            # Send to Ralph's chat ID
+            await context.bot.send_message(
+                chat_id=self.alerting_service.ralph_chat_id,
+                text=report,
+                parse_mode="Markdown"
+            )
+
+            logger.info("Daily KB health report sent successfully")
+
+        except Exception as e:
+            logger.error(f"Failed to send daily KB health report: {e}", exc_info=True)
+            # Try to alert Ralph about the failure
+            try:
+                await context.bot.send_message(
+                    chat_id=self.alerting_service.ralph_chat_id,
+                    text=f"❌ *Daily KB Report Failed*\n\nError: {str(e)[:200]}",
+                    parse_mode="Markdown"
+                )
+            except:
+                pass  # Don't cascade errors
+
     async def upgrade_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
         Handle /upgrade command.
@@ -1286,6 +1320,17 @@ class TelegramBot:
         # Initialize the application
         await self.application.initialize()
         await self.application.start()
+
+        # Schedule daily KB health report at 9 AM EST (KB-009)
+        est = pytz.timezone('America/New_York')
+        report_time = datetime_time(hour=9, minute=0, tzinfo=est)
+
+        self.application.job_queue.run_daily(
+            callback=self._send_daily_kb_report,
+            time=report_time,
+            name='kb_daily_health_report'
+        )
+        logger.info("Scheduled daily KB health report at 9:00 AM EST")
 
         # Start bot based on configured mode
         if settings.telegram_bot_mode == "webhook":
