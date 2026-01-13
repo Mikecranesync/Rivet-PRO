@@ -231,6 +231,21 @@ class TelegramBot:
                     logger.error(f"Manual search failed: {e}", exc_info=True)
                     # Continue without manual if search fails
 
+            # Create knowledge atom if manual was found (CRITICAL-KB-001, KB-002)
+            if manual_result and result.manufacturer and result.model_number:
+                try:
+                    await self._create_manual_atom(
+                        manufacturer=result.manufacturer,
+                        model=result.model_number,
+                        equipment_type=getattr(result, 'equipment_type', None),
+                        manual_url=manual_result.get('url'),
+                        confidence=min(result.confidence, 0.95),  # Cap at 0.95
+                        source_id=str(user_id)
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to create knowledge atom: {e}", exc_info=True)
+                    # Don't fail the user interaction if atom creation fails
+
             # Format equipment response with manual link
             equipment_data = {
                 'manufacturer': result.manufacturer,
@@ -713,6 +728,123 @@ class TelegramBot:
             await update.message.reply_text(
                 "❌ Could not generate upgrade link. Please try again later."
             )
+
+    async def _create_manual_atom(
+        self,
+        manufacturer: str,
+        model: str,
+        equipment_type: Optional[str],
+        manual_url: str,
+        confidence: float,
+        source_id: str
+    ) -> None:
+        """
+        Create knowledge atom after manual is found.
+
+        Implements CRITICAL-KB-001 and KB-002: System should learn from
+        every successful manual lookup to improve future responses.
+
+        Args:
+            manufacturer: Equipment manufacturer
+            model: Equipment model
+            equipment_type: Type of equipment (motor, PLC, etc.)
+            manual_url: URL to equipment manual
+            confidence: Confidence score (capped at 0.95)
+            source_id: User ID who triggered the lookup
+        """
+        try:
+            # Build atom content
+            content = f"Equipment Manual: {manufacturer} {model}\n\n"
+            content += f"Manual URL: {manual_url}\n"
+            if equipment_type:
+                content += f"Equipment Type: {equipment_type}\n"
+            content += f"\nGenerated from user interaction - verified by successful manual retrieval."
+
+            # Generate keywords for search
+            keywords = [
+                manufacturer.lower(),
+                model.lower(),
+                'manual',
+                'spec'
+            ]
+            if equipment_type:
+                keywords.append(equipment_type.lower())
+
+            # Check if atom already exists
+            existing = await self.db.fetchval(
+                """
+                SELECT id FROM knowledge_atoms
+                WHERE manufacturer = $1
+                  AND model = $2
+                  AND atom_type = 'SPEC'
+                LIMIT 1
+                """,
+                manufacturer,
+                model
+            )
+
+            if existing:
+                # Update usage count
+                await self.db.execute(
+                    "UPDATE knowledge_atoms SET usage_count = usage_count + 1, last_used_at = NOW() WHERE id = $1",
+                    existing
+                )
+                logger.info(f"Atom already exists, updated usage | atom_id={existing}")
+                return
+
+            # Create new knowledge atom
+            atom_id = await self.db.fetchval(
+                """
+                INSERT INTO knowledge_atoms (
+                    id,
+                    atom_type,
+                    manufacturer,
+                    model,
+                    equipment_type,
+                    content,
+                    keywords,
+                    confidence,
+                    human_verified,
+                    source_type,
+                    source_id,
+                    created_at,
+                    usage_count
+                )
+                VALUES (
+                    gen_random_uuid(),
+                    'SPEC',
+                    $1, $2, $3, $4, $5,
+                    $6,  -- confidence
+                    false,  -- Not human-verified yet
+                    'user_interaction',
+                    $7,
+                    NOW(),
+                    1  -- Start at 1 since it was just used
+                )
+                RETURNING id
+                """,
+                manufacturer,
+                model,
+                equipment_type,
+                content,
+                keywords,
+                confidence,
+                source_id
+            )
+
+            logger.info(
+                f"Knowledge atom created | atom_id={atom_id} | "
+                f"manufacturer={manufacturer} | model={model} | "
+                f"type=SPEC | source=user_interaction"
+            )
+
+        except Exception as e:
+            logger.error(
+                f"Failed to create manual atom | manufacturer={manufacturer} | "
+                f"model={model} | error={e}",
+                exc_info=True
+            )
+            # Don't raise - atom creation failure shouldn't break user experience
 
     async def handle_message_reply(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
