@@ -18,11 +18,10 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from rivet_pro.config.settings import get_settings
+from rivet_pro.config.settings import settings
 
 async def test_kb001():
     """Test KB-001 implementation"""
-    settings = get_settings()
     conn = await asyncpg.connect(settings.database_url)
 
     print("=" * 60)
@@ -72,9 +71,9 @@ async def test_kb001():
         # Test 3: Create test user
         print("\n[3/6] Creating test data...")
         user_id = await conn.fetchval("""
-            INSERT INTO users (telegram_id, name)
+            INSERT INTO users (telegram_id, full_name)
             VALUES (999888777, 'KB Test User')
-            ON CONFLICT (telegram_id) DO UPDATE SET name='KB Test User'
+            ON CONFLICT (telegram_id) DO UPDATE SET full_name='KB Test User'
             RETURNING id
         """)
         print(f"✓ Test user created/updated: {user_id}")
@@ -93,13 +92,15 @@ async def test_kb001():
         # Create atom with source_interaction_id
         atom_id = await conn.fetchval("""
             INSERT INTO knowledge_atoms (
-                type, title, content, manufacturer, model,
+                atom_id, atom_type, title, summary, content,
+                manufacturer, model, difficulty, source_document, source_pages,
                 confidence, source_type, source_id,
-                source_interaction_id, last_used_at, created_by
+                source_interaction_id, last_used_at, created_by, human_verified
             )
             VALUES (
-                'spec', 'Test Atom', 'Test content for KB-001', 'TestManufacturer', 'TestModel-X',
-                0.8, 'test', $1, $2, NOW(), 'system'
+                gen_random_uuid()::text, 'specification', 'Test Atom', 'Test Summary', 'Test content for KB-001',
+                'TestManufacturer', 'TestModel-X', 'beginner', 'test_kb_001', ARRAY[]::integer[],
+                0.8, 'test', $1, $2, NOW(), 'system', false
             )
             RETURNING atom_id
         """, str(user_id), interaction_id)
@@ -163,13 +164,23 @@ async def test_kb001():
 
         # Test 6: Cleanup
         print("\n[6/6] Cleaning up test data...")
-        deleted_atoms = await conn.execute(
-            "DELETE FROM knowledge_atoms WHERE atom_id = $1",
+        # Break circular FK by nulling out references first
+        await conn.execute(
+            "UPDATE interactions SET atom_id = NULL WHERE id = $1",
+            interaction_id
+        )
+        await conn.execute(
+            "UPDATE knowledge_atoms SET source_interaction_id = NULL WHERE atom_id = $1",
             atom_id
         )
+        # Now delete both
         deleted_interactions = await conn.execute(
             "DELETE FROM interactions WHERE id = $1",
             interaction_id
+        )
+        deleted_atoms = await conn.execute(
+            "DELETE FROM knowledge_atoms WHERE atom_id = $1",
+            atom_id
         )
         print(f"✓ Cleaned up: atom {atom_id}, interaction {interaction_id}")
 
