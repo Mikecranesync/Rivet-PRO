@@ -1,755 +1,714 @@
-# Rivet-PRO Architecture Documentation
+# RIVET Pro - Complete Architecture Documentation
 
-## System Overview
+> **Last Updated:** 2026-01-14
+> **Primary Database:** Neon PostgreSQL (ep-purple-hall-ahimeyn0)
+> **Backup Database:** Supabase (mggqgrxwumnnujojndub)
 
-Rivet-PRO is a CMMS (Computerized Maintenance Management System) with Telegram bot integration, providing equipment tracking, work order management, and AI-powered troubleshooting through a conversational interface.
+---
 
-## Architecture Diagram
+## Quick Reference
+
+| Resource | Value |
+|----------|-------|
+| **Neon Project** | ep-purple-hall-ahimeyn0 |
+| **Neon Host** | ep-purple-hall-ahimeyn0-pooler.c-3.us-east-1.aws.neon.tech |
+| **Supabase Project** | mggqgrxwumnnujojndub |
+| **Supabase URL** | https://mggqgrxwumnnujojndub.supabase.co |
+| **Telegram Bot** | @RivetProBot (8161680636) |
+| **Admin Chat ID** | 8445149012 |
+| **Repository** | C:\Users\hharp\OneDrive\Desktop\Rivet-PRO |
+
+---
+
+## System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    USER INTERFACES                           │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  📱 Telegram Bot          🌐 Web UI          🔧 n8n          │
-│  (Port: Polling)      (Port: 3001)      (Port: 5678)        │
-│                                                               │
-└──────────────┬───────────────┬────────────────┬─────────────┘
-               │               │                │
-               │               │                │
-               ▼               ▼                ▼
-┌──────────────────────────────────────────────────────────────┐
-│                   APPLICATION LAYER                           │
-├──────────────────────────────────────────────────────────────┤
-│                                                                │
-│  🤖 Telegram Bot          🖥️  CMMS Backend                   │
-│  (bot_launcher.py)        (Spring Boot)                       │
-│  - Photo OCR              - REST API                          │
-│  - Command handlers       - Business logic                    │
-│  - Equipment queries      - JWT auth                          │
-│  - Work order CRUD        - File uploads                      │
-│  Port: N/A                Port: 8081                          │
-│                                                                │
-└────────────────┬───────────────────────┬──────────────────────┘
-                 │                       │
-                 │                       │
-                 ▼                       ▼
-┌──────────────────────────────────────────────────────────────┐
-│                    DATA LAYER                                 │
-├──────────────────────────────────────────────────────────────┤
-│                                                                │
-│  🗄️  PostgreSQL           📦 MinIO Storage                   │
-│  (Database)               (S3-compatible)                     │
-│  - Equipment registry     - Equipment photos                  │
-│  - Work orders            - Manual PDFs                       │
-│  - Users/auth             - Attachments                       │
-│  - Knowledge base         - Backups                           │
-│  Port: 5435               Ports: 9000, 9001                   │
-│                                                                │
-└──────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         USER INTERFACES                                  │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│   [Telegram Bot]          [FastAPI Web]           [n8n Workflows]       │
+│   Polling/Webhook         REST API :8000          Automation :5678      │
+│   - Photo OCR             - Equipment CRUD        - Manual Hunter       │
+│   - /equip, /wo, /manual  - Work Orders           - KB Enrichment       │
+│   - Natural language      - Auth (JWT)            - Feedback Loop       │
+│                           - Swagger docs          - Ralph Execution     │
+│                                                                          │
+└────────────────┬──────────────────┬─────────────────┬───────────────────┘
+                 │                  │                 │
+                 ▼                  ▼                 ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      APPLICATION LAYER (rivet_pro/)                      │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐         │
+│  │    ADAPTERS     │  │      CORE       │  │     INFRA       │         │
+│  ├─────────────────┤  ├─────────────────┤  ├─────────────────┤         │
+│  │ telegram/       │  │ services/       │  │ database.py     │         │
+│  │  └─ bot.py      │  │  ├─ equipment   │  │  (asyncpg pool) │         │
+│  │ web/            │  │  ├─ work_order  │  │ observability   │         │
+│  │  ├─ main.py     │  │  ├─ ocr         │  │  (logging)      │         │
+│  │  └─ routers/    │  │  ├─ manual      │  └─────────────────┘         │
+│  │ llm/            │  │  ├─ stripe      │                               │
+│  │  └─ router.py   │  │  ├─ usage       │  ┌─────────────────┐         │
+│  │    (multi-LLM)  │  │  ├─ feedback    │  │     CONFIG      │         │
+│  └─────────────────┘  │  ├─ kb_analytics│  ├─────────────────┤         │
+│                       │  ├─ alerting    │  │ settings.py     │         │
+│                       │  └─ 8 more...   │  │ feature_flags   │         │
+│                       └─────────────────┘  └─────────────────┘         │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         DATA LAYER                                       │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌─────────────────────────────────┐  ┌─────────────────────────────┐  │
+│  │   NEON PostgreSQL (PRIMARY)     │  │   SUPABASE (BACKUP/LEGACY)  │  │
+│  │   ep-purple-hall-ahimeyn0       │  │   mggqgrxwumnnujojndub      │  │
+│  ├─────────────────────────────────┤  ├─────────────────────────────┤  │
+│  │ 120 tables                      │  │ knowledge_atoms: 1,985 rows │  │
+│  │ - users (3)                     │  │ (Legacy KB data)            │  │
+│  │ - cmms_equipment (38)           │  │                             │  │
+│  │ - work_orders (40)              │  │ REST API: Working           │  │
+│  │ - knowledge_atoms (26)          │  │ Direct DB: DNS issues       │  │
+│  │ - ralph_stories (56)            │  │                             │  │
+│  │ - manufacturers (11)            │  │                             │  │
+│  │ - + 114 more tables             │  │                             │  │
+│  └─────────────────────────────────┘  └─────────────────────────────┘  │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Infrastructure Components
+## Database Connections
 
-### 1. Grashjs CMMS (Core System)
+### Primary: Neon PostgreSQL
 
-**Location:** `C:\Users\hharp\OneDrive\Desktop\grashjs-cmms\`
+```
+Host: ep-purple-hall-ahimeyn0-pooler.c-3.us-east-1.aws.neon.tech
+Database: neondb
+User: neondb_owner
+Password: npg_c3UNa4KOlCeL
+SSL: require
 
-**Docker Containers:**
+Connection String:
+postgresql://neondb_owner:npg_c3UNa4KOlCeL@ep-purple-hall-ahimeyn0-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require
+```
 
-| Container | Image | Port | Purpose |
-|-----------|-------|------|---------|
-| atlas_db | postgres:16-alpine | 5435:5432 | PostgreSQL database |
-| atlas-cmms-backend | intelloop/atlas-cmms-backend | 8081:8080 | Spring Boot API |
-| atlas-cmms-frontend | intelloop/atlas-cmms-frontend | 3001:3000 | React web UI |
-| atlas_minio | minio/minio | 9000-9001 | Object storage |
+### Backup: Supabase
 
-**Key Services:**
+```
+Project URL: https://mggqgrxwumnnujojndub.supabase.co
+DB Host: db.mggqgrxwumnnujojndub.supabase.co
+Database: postgres
+User: postgres
+Password: $!hLQDYB#uW23DJ
+Service Role Key: sb_secret_x67ttLFGhQY_KsNmBB-fMQ_WC5Ab_tP
 
-**PostgreSQL (atlas_db)**
-- Database: `atlas`
-- User: `rivet_admin`
-- Password: `rivet_secure_password_2026`
-- Tables: 100+ (Equipment, WorkOrder, User, Part, Location, etc.)
-- Migrations: Managed by Liquibase (173+ changesets)
+Note: Direct PostgreSQL connection has DNS resolution issues.
+Use Supabase REST API instead for backup operations.
+```
 
-**CMMS Backend (atlas-cmms-backend)**
-- Framework: Spring Boot 2.6.7 + Java 8
-- API: REST (OpenAPI/Swagger)
-- Auth: JWT tokens
-- Health: `/actuator/health`
-- Features:
-  - Multi-tenant support
-  - RBAC (Role-based access control)
-  - File uploads (via MinIO)
-  - Custom fields
-  - Preventive maintenance scheduling
-  - Parts inventory
-  - Vendor management
+### Important: Two Neon Projects Exist
 
-**CMMS Frontend (atlas-cmms-frontend)**
-- Framework: React 18 + TypeScript
-- UI Library: Material-UI
-- Features:
-  - Asset management
-  - Work order tracking
-  - Calendar/scheduling
-  - Analytics/reports
-  - User management
-
-**MinIO (atlas_minio)**
-- Bucket: `atlas-bucket`
-- User: `minio`
-- Password: `minio_secure_password_2026`
-- Console: http://localhost:9001
-- Stores: Photos, PDFs, attachments
+| Neon Project | Endpoint | Status |
+|--------------|----------|--------|
+| **ep-purple-hall-ahimeyn0** | Primary, 120 tables | **USE THIS** |
+| ep-lingering-salad-ahbmzx98 | Empty, 4 tables | Ignore |
 
 ---
 
-### 2. Telegram Bot
+## Database Schema Overview
 
-**Location:** `C:\Users\hharp\OneDrive\Desktop\Rivet-PRO\`
+### Table Categories (120 total)
 
-**Main Files:**
-- `bot_launcher.py` - Startup script with validation
-- `cmms_bot.py` - Bot implementation
-- `integrations/grashjs_client.py` - CMMS API client (~500 lines)
+#### CMMS Core (5 tables)
+| Table | Rows | Purpose |
+|-------|------|---------|
+| `cmms_equipment` | 38 | Equipment registry (manufacturer, model, serial, location) |
+| `work_orders` | 40 | Work order tracking with equipment linking |
+| `technicians` | 0 | Technician profiles |
+| `machines` | 4 | Machine instances |
+| `user_machines` | 0 | User-owned equipment |
 
-**Bot Configuration:**
-```python
-BOT_TOKEN = "7855741814:AAFHIk0vPmG9ZHACISMl-izzDwdS0bk_nYo"
-ADMIN_TELEGRAM_ID = 8445149012
-CMMS_EMAIL = "mike@cranesync.com"
-CMMS_PASSWORD = "Bo1ws2er@12"
-CMMS_API_URL = "http://localhost:8081"
+#### Knowledge Base (11 tables)
+| Table | Rows | Purpose |
+|-------|------|---------|
+| `knowledge_atoms` | 26 | AI-generated knowledge units |
+| `knowledge_gaps` | 0 | Identified knowledge gaps |
+| `manual_cache` | 3 | Cached manual lookups |
+| `manuals` | 10 | Manual metadata |
+| `equipment_manuals` | 2 | Equipment-manual links |
+| `manufacturers` | 11 | Manufacturer registry |
+| `equipment_models` | 5 | Canonical equipment models |
+| `product_families` | 0 | Product family groupings |
+| `tech_notes` | 0 | Technical notes |
+| `manual_chunks` | 0 | Chunked manual content |
+| `manual_files` | 0 | Manual file storage |
+
+#### Users & Authentication (8 tables)
+| Table | Rows | Purpose |
+|-------|------|---------|
+| `users` | 3 | Primary user table (telegram_id, subscription) |
+| `rivet_users` | 1 | Legacy user table |
+| `user` | 1 | n8n user table |
+| `teams` | 0 | Team/organization groupings |
+| `admin_users` | 1 | Admin accounts |
+| `user_api_keys` | 0 | API key storage |
+| `role` | 13 | Role definitions |
+| `scope` | 169 | Permission scopes |
+
+#### Interactions & Chat (6 tables)
+| Table | Rows | Purpose |
+|-------|------|---------|
+| `interactions` | 6 | User interaction logging |
+| `chat_hub_messages` | 0 | Chat message history |
+| `chat_hub_sessions` | 0 | Chat sessions |
+| `print_chat_history` | 4 | Print-related chats |
+| `prints` | 2 | Print jobs |
+| `rivet_print_sessions` | 0 | Print sessions |
+
+#### Manual Hunter System (5 tables)
+| Table | Rows | Purpose |
+|-------|------|---------|
+| `manual_hunter_cache` | 0 | Manual search cache |
+| `manual_hunter_queue` | 0 | Pending manual searches |
+| `manual_requests` | 0 | User manual requests |
+| `manual_gaps` | 2 | Missing manuals |
+| `equipment_manual_searches` | 0 | Search history |
+
+#### KB Enrichment Pipeline (4 tables)
+| Table | Rows | Purpose |
+|-------|------|---------|
+| `enrichment_queue` | 0 | Pending enrichment tasks |
+| `enrichment_stats` | 2 | Enrichment metrics |
+| `gap_requests` | 58 | Knowledge gap requests |
+| `human_review_queue` | 0 | Items needing review |
+
+#### Usage & Billing (6 tables)
+| Table | Rows | Purpose |
+|-------|------|---------|
+| `usage_events` | 0 | Usage event log |
+| `usage_tracking` | 14 | Usage metrics |
+| `rivet_usage_log` | 0 | Legacy usage log |
+| `subscription_limits` | 3 | Tier limits |
+| `tier_limits` | 3 | Feature limits by tier |
+| `rivet_stripe_events` | 0 | Stripe webhook events |
+
+#### Ralph Autonomous System (4 tables)
+| Table | Rows | Purpose |
+|-------|------|---------|
+| `ralph_stories` | 56 | User stories for autonomous dev |
+| `ralph_projects` | 1 | Project definitions |
+| `ralph_executions` | 0 | Execution history |
+| `ralph_iterations` | 0 | Iteration tracking |
+
+#### n8n Workflow Tables (5 tables)
+| Table | Rows | Purpose |
+|-------|------|---------|
+| `workflow_entity` | 0 | Workflow definitions |
+| `workflow_history` | 0 | Workflow version history |
+| `execution_entity` | 0 | Execution records |
+| `execution_data` | 0 | Execution payloads |
+| `credentials_entity` | 1 | Stored credentials |
+
+---
+
+## Key Table Schemas
+
+### users
+```sql
+id                    UUID PRIMARY KEY
+telegram_id           BIGINT
+whatsapp_id           VARCHAR
+full_name             VARCHAR
+email                 VARCHAR
+company               VARCHAR
+subscription_tier     VARCHAR  -- 'free', 'pro', 'team'
+team_id               UUID REFERENCES teams(id)
+monthly_lookup_count  INTEGER
+lookup_count_reset_date DATE
+created_at            TIMESTAMPTZ
+last_active_at        TIMESTAMPTZ
+-- + 10 more columns
 ```
 
-**Bot Commands:**
-- `/start` - Show main menu
-- `/help` - Help message
-- `/status` - CMMS connection status
+### cmms_equipment
+```sql
+id                    UUID PRIMARY KEY
+equipment_number      VARCHAR NOT NULL  -- 'EQ-2026-000001'
+manufacturer          VARCHAR NOT NULL
+model_number          VARCHAR
+serial_number         VARCHAR
+equipment_type        VARCHAR
+location              VARCHAR
+department            VARCHAR
+criticality           ENUM ('low', 'medium', 'high', 'critical')
+owned_by_user_id      TEXT
+machine_id            UUID
+description           TEXT
+work_order_count      INTEGER DEFAULT 0
+last_reported_fault   TEXT
+created_at            TIMESTAMPTZ
+-- + 9 more columns
+```
 
-**Bot Features (via inline buttons):**
-- 📦 View Assets - List all equipment
-- 🔧 Work Orders - List work orders
-- ➕ Create Asset - Link to web UI
-- ➕ Create WO - Create work order
-- 📊 CMMS Status - Connection diagnostics
+### work_orders
+```sql
+id                    UUID PRIMARY KEY
+work_order_number     VARCHAR NOT NULL  -- 'WO-2026-000001'
+user_id               TEXT NOT NULL
+telegram_username     VARCHAR
+created_by_agent      VARCHAR
+source                ENUM NOT NULL
+equipment_id          UUID NOT NULL REFERENCES cmms_equipment(id)
+equipment_number      VARCHAR
+manufacturer          VARCHAR
+model_number          VARCHAR
+title                 VARCHAR NOT NULL
+description           TEXT
+status                VARCHAR  -- 'open', 'in_progress', 'completed', 'cancelled'
+priority              VARCHAR  -- 'low', 'medium', 'high', 'critical'
+fault_codes           JSONB
+created_at            TIMESTAMPTZ
+-- + 20 more columns
+```
 
-**API Integration:**
-Bot → `grashjs_client.py` → CMMS API (HTTP/JSON)
+### knowledge_atoms
+```sql
+id                    UUID PRIMARY KEY
+atom_id               TEXT NOT NULL
+atom_type             TEXT NOT NULL  -- 'concept', 'procedure', 'specification'
+title                 TEXT NOT NULL
+summary               TEXT NOT NULL
+content               TEXT NOT NULL
+manufacturer          TEXT NOT NULL
+product_family        TEXT
+product_version       TEXT
+difficulty            TEXT NOT NULL
+prerequisites         ARRAY
+related_atoms         ARRAY
+source_document       TEXT
+source_pages          ARRAY
+source_url            TEXT
+citations             JSONB
+quality_score         FLOAT
+safety_level          TEXT
+safety_notes          TEXT
+keywords              ARRAY
+embedding             VECTOR
+created_at            TIMESTAMPTZ
+last_validated_at     TIMESTAMPTZ
+-- + 20 more columns
+```
 
-All CRUD operations use the GrashjsClient wrapper class:
-```python
-from grashjs_client import GrashjsClient
-
-cmms = GrashjsClient('http://localhost:8081')
-cmms.login(email, password)
-assets = cmms.get_assets()
-wo = cmms.create_work_order(title, description, priority)
+### ralph_stories
+```sql
+id                    SERIAL PRIMARY KEY
+project_id            INTEGER
+story_id              VARCHAR NOT NULL  -- 'FEATURE-001'
+title                 VARCHAR NOT NULL
+description           TEXT
+acceptance_criteria   JSONB
+status                VARCHAR  -- 'todo', 'in_progress', 'done', 'blocked'
+status_emoji          VARCHAR
+priority              INTEGER
+commit_hash           VARCHAR
+error_message         TEXT
+retry_count           INTEGER DEFAULT 0
+created_at            TIMESTAMPTZ
+updated_at            TIMESTAMPTZ
+-- + 8 more columns
 ```
 
 ---
 
-### 3. n8n Orchestration
+## Directory Structure
 
-**Port:** 5678 (http://localhost:5678)
-
-**Workflows:**
-
-**Rivet-PRO Startup Orchestrator** (17 nodes)
-- Manual trigger
-- Docker health check
-- CMMS container management
-- API health polling (30 attempts × 5s = 2.5min max)
-- Login validation
-- Bot process management
-- Telegram notifications (success/failure)
-
-**Node Types Used:**
-- Manual Trigger - User-initiated
-- Code Node (JavaScript) - Variable init, message formatting
-- Execute Command - Docker commands, bot startup
-- HTTP Request - Health checks, CMMS login, Telegram API
-- IF Node - Conditional branching (success/error paths)
-- Wait Node - Delays for service initialization
-
-**Credentials Required:**
-- N8N_API_KEY (in .env)
-- Telegram bot token (in workflow variables)
-- CMMS credentials (in workflow variables)
+```
+Rivet-PRO/
+├── rivet_pro/                      # Main application
+│   ├── adapters/                   # External integrations
+│   │   ├── telegram/
+│   │   │   └── bot.py              # TelegramBot class (1900 lines)
+│   │   ├── web/
+│   │   │   ├── main.py             # FastAPI app
+│   │   │   └── routers/            # API endpoints
+│   │   │       ├── auth.py
+│   │   │       ├── equipment.py
+│   │   │       ├── work_orders.py
+│   │   │       ├── stats.py
+│   │   │       ├── stripe.py
+│   │   │       └── upload.py
+│   │   └── llm/
+│   │       └── router.py           # Multi-provider LLM routing
+│   │
+│   ├── core/                       # Business logic
+│   │   ├── services/               # 17 service classes
+│   │   │   ├── equipment_service.py
+│   │   │   ├── work_order_service.py
+│   │   │   ├── ocr_service.py
+│   │   │   ├── manual_service.py
+│   │   │   ├── manual_matcher_service.py
+│   │   │   ├── sme_service.py
+│   │   │   ├── feedback_service.py
+│   │   │   ├── stripe_service.py
+│   │   │   ├── usage_service.py
+│   │   │   ├── alerting_service.py
+│   │   │   ├── kb_analytics_service.py
+│   │   │   ├── enrichment_queue_service.py
+│   │   │   ├── product_family_discoverer.py
+│   │   │   └── equipment_taxonomy.py
+│   │   ├── models/
+│   │   │   └── ocr.py
+│   │   ├── prompts/
+│   │   │   └── sme/                # Manufacturer-specific prompts
+│   │   │       ├── siemens.py
+│   │   │       ├── abb.py
+│   │   │       ├── fanuc.py
+│   │   │       ├── rockwell.py
+│   │   │       ├── schneider.py
+│   │   │       ├── mitsubishi.py
+│   │   │       └── generic.py
+│   │   ├── utils/
+│   │   └── feature_flags.py
+│   │
+│   ├── config/
+│   │   ├── settings.py             # Pydantic BaseSettings
+│   │   └── feature_flags.json
+│   │
+│   ├── infra/
+│   │   ├── database.py             # asyncpg connection pool
+│   │   └── observability.py        # Logging setup
+│   │
+│   ├── migrations/                 # SQL migration files (18)
+│   │   ├── 001_saas_layer.sql
+│   │   ├── 002_knowledge_base.sql
+│   │   ├── 003_cmms_equipment.sql
+│   │   ├── 004_work_orders.sql
+│   │   └── ... (14 more)
+│   │
+│   ├── workers/
+│   │   └── manual_gap_filler.py
+│   │
+│   ├── main.py                     # RivetProApplication
+│   ├── start_bot.py                # Bot launcher
+│   └── run_migrations.py
+│
+├── scripts/
+│   └── ralph/                      # Ralph autonomous system
+│       ├── prompt.md               # Agent instructions
+│       ├── prd.json                # Product requirements
+│       ├── progress.txt            # Execution log
+│       └── ralph_local.py          # Python runner
+│
+├── n8n/workflows/                  # n8n workflow exports
+│
+├── docs/
+│   ├── QUICK_CONTEXT.md
+│   ├── SESSION_LOG.md
+│   └── BRANCHING_GUIDE.md
+│
+├── .github/workflows/              # CI/CD
+│   ├── neon-branch.yml
+│   ├── neon-cleanup.yml
+│   └── neon-migration-preview.yml
+│
+├── .env                            # Environment variables
+├── .env.example
+├── CLAUDE.md                       # Claude Code instructions
+├── ARCHITECTURE.md                 # This file
+├── docker-compose.yml
+├── pyproject.toml
+└── requirements.txt
+```
 
 ---
 
-## Dependency Graph
+## Service Layer (17 Services)
 
-```
-Startup Sequence (Critical Path):
-
-1. Docker Desktop
-   └─> Running and responsive
-
-2. PostgreSQL (atlas_db)
-   └─> Health check: pg_isready
-   └─> Database 'atlas' initialized
-   └─> Liquibase migrations complete
-
-3. MinIO (atlas_minio)
-   └─> Health check: HTTP 200 on /minio/health/live
-   └─> Bucket 'atlas-bucket' created
-
-4. CMMS Backend (atlas-cmms-backend)
-   └─> Depends on: PostgreSQL, MinIO
-   └─> Health check: /actuator/health → {"status":"UP"}
-   └─> Ready when: HTTP 200 or 403
-
-5. CMMS Frontend (atlas-cmms-frontend)
-   └─> Depends on: CMMS Backend
-   └─> Health check: HTTP 200 on port 3001
-
-6. Telegram Bot
-   └─> Depends on: CMMS Backend (must respond)
-   └─> Auth: Must login with valid credentials
-   └─> Telegram API: Must connect successfully
-   └─> Ready when: Polling starts, sends /getMe successfully
-```
-
-**Total startup time:** 30-60 seconds (from containers down to bot ready)
+| Service | File | Purpose | Key Methods |
+|---------|------|---------|-------------|
+| **EquipmentService** | equipment_service.py | Equipment CRUD & matching | `match_or_create_equipment()`, `search_equipment()` |
+| **WorkOrderService** | work_order_service.py | Work order lifecycle | `create_work_order()`, `update_status()` |
+| **OCRService** | ocr_service.py | Multi-provider vision OCR | `extract_from_image()` |
+| **ManualService** | manual_service.py | Manual lookup | `search_manual()` |
+| **ManualMatcherService** | manual_matcher_service.py | Fuzzy manual matching | `find_best_match()` |
+| **SMEService** | sme_service.py | Manufacturer-specific AI | `get_sme_response()` |
+| **FeedbackService** | feedback_service.py | User feedback collection | `create_feedback()`, `approve_proposal()` |
+| **StripeService** | stripe_service.py | Payment processing | `create_checkout_session()`, `is_pro_user()` |
+| **UsageService** | usage_service.py | Usage tracking & limits | `can_use_service()`, `record_lookup()` |
+| **AlertingService** | alerting_service.py | Telegram notifications | `alert_critical()` |
+| **KBAnalyticsService** | kb_analytics_service.py | KB metrics & reporting | `get_learning_stats()`, `generate_daily_health_report()` |
+| **EnrichmentQueueService** | enrichment_queue_service.py | KB enrichment pipeline | `enqueue_enrichment()` |
+| **ProductFamilyDiscoverer** | product_family_discoverer.py | Equipment family grouping | `discover_family()` |
+| **EquipmentTaxonomy** | equipment_taxonomy.py | Component classification | `identify_component()` |
+| **PhotoService** | photo_service.py | Photo handling | `upload_photo()` |
 
 ---
 
-## Port Allocation
+## LLM Provider Chain
 
-| Port | Service | Protocol | Purpose | Required |
-|------|---------|----------|---------|----------|
-| 3001 | CMMS Frontend | HTTP | Web UI | ✅ Yes |
-| 5435 | PostgreSQL | TCP | Database | ✅ Yes |
-| 5678 | n8n | HTTP | Workflow automation | ⚠️ Optional |
-| 8081 | CMMS Backend | HTTP | REST API | ✅ Yes |
-| 9000 | MinIO API | HTTP | Object storage | ✅ Yes |
-| 9001 | MinIO Console | HTTP | Storage UI | ⚠️ Optional |
+Cost-optimized routing (cheapest first):
 
-**Port Conflicts:**
-If any port is already in use, Docker won't start the container. Check with:
-```bash
-netstat -ano | findstr :8081
-```
+| Priority | Provider | Model | Cost/1K tokens |
+|----------|----------|-------|----------------|
+| 1 | Groq | Llama 4 Scout | $0.00011 |
+| 2 | Google | Gemini 2.5 Flash | $0.000075 |
+| 3 | OpenAI | GPT-4o-mini | $0.00015 |
+| 4 | Anthropic | Claude 3 Haiku | $0.00025 |
+| 5 | OpenAI | GPT-4o | $0.005 |
+
+Configuration in `rivet_pro/adapters/llm/router.py`
 
 ---
 
-## Data Flow
+## Telegram Bot Commands
 
-### Telegram Message → Equipment Lookup
+| Command | Handler | Description |
+|---------|---------|-------------|
+| `/start` | `start_command` | User registration, welcome message |
+| `/help` | `help_command` | Show all commands |
+| `/menu` | `menu_command` | Interactive menu buttons |
+| `/equip list` | `equip_command` | List user's equipment |
+| `/equip search <q>` | `equip_command` | Search equipment |
+| `/equip view <num>` | `equip_command` | View equipment details |
+| `/wo list` | `wo_command` | List work orders |
+| `/wo view <num>` | `wo_command` | View work order details |
+| `/wo create` | `wo_command` | Create work order |
+| `/manual <equip>` | `manual_command` | Get equipment manual |
+| `/library` | `library_command` | Browse machine library |
+| `/stats` | `stats_command` | User CMMS statistics |
+| `/kb_stats` | `kb_stats_command` | KB statistics (admin) |
+| `/upgrade` | `upgrade_command` | Stripe checkout link |
+| `/reset` | `reset_command` | Clear session |
+| `/done` | `done_command` | Exit troubleshooting |
 
+**Photo Handler:** Send any photo to trigger OCR analysis and equipment matching.
+
+---
+
+## Data Flow Diagrams
+
+### Photo OCR Flow
 ```
-1. User sends message in Telegram
-   └─> Telegram API delivers to bot via polling
-
-2. Bot receives update
-   └─> Parses command/button callback
-   └─> Routes to appropriate handler
-
-3. Handler calls CMMS API
-   └─> GrashjsClient.get_assets(search=query)
-   └─> HTTP GET /api/assets?search=query
-
-4. CMMS Backend processes request
-   └─> Queries PostgreSQL
-   └─> Applies filters, pagination
-   └─> Returns JSON response
-
-5. Bot formats response
-   └─> Creates message with inline buttons
-   └─> Sends via Telegram API
-
-6. User sees formatted asset list
+User sends photo
+    │
+    ▼
+TelegramBot._handle_photo()
+    │
+    ├─► UsageService.can_use_service() → Check free tier limit
+    │
+    ├─► Download photo bytes
+    │
+    ├─► OCRService.extract_from_image() → Multi-provider LLM
+    │       │
+    │       └─► Returns: manufacturer, model, serial, confidence
+    │
+    ├─► EquipmentService.match_or_create_equipment()
+    │       │
+    │       └─► Returns: equipment_id, equipment_number, is_new
+    │
+    ├─► ManualService.search_manual() or KB search
+    │       │
+    │       └─► Returns: manual_url, confidence
+    │
+    ├─► Create knowledge_atom (if manual found)
+    │
+    ├─► Log interaction
+    │
+    └─► Send formatted response to user
 ```
 
 ### Work Order Creation Flow
-
 ```
-1. User clicks "Create WO" button
-   └─> Callback query to bot
-
-2. Bot creates work order
-   └─> GrashjsClient.create_work_order(title, description, priority)
-   └─> HTTP POST /api/work-orders
-   └─> Body: {"title": "...", "description": "...", "priority": "MEDIUM"}
-
-3. CMMS Backend creates WO
-   └─> INSERT INTO work_order (...)
-   └─> Returns work order JSON with ID
-
-4. Bot sends confirmation
-   └─> Message: "Work order #123 created!"
-   └─> Button: "View in Web UI" → http://localhost:3001/app/work-orders/123
-
-5. User can view in either:
-   - Telegram (summary)
-   - Web UI (full details)
+User: /wo create EQ-2026-000001 "Motor overheating"
+    │
+    ▼
+TelegramBot.wo_command()
+    │
+    ├─► Parse equipment_number and description
+    │
+    ├─► EquipmentService.get_equipment_by_number()
+    │       │
+    │       └─► Validates equipment exists
+    │
+    ├─► WorkOrderService.create_work_order()
+    │       │
+    │       ├─► Generate work_order_number (WO-2026-XXXXXX)
+    │       ├─► INSERT INTO work_orders
+    │       └─► UPDATE cmms_equipment.work_order_count
+    │
+    └─► Send confirmation with WO number
 ```
 
 ---
 
-## Database Schema
+## Environment Variables
 
-### Key Tables
+```bash
+# Database (PRIMARY - use this!)
+DATABASE_URL=postgresql://neondb_owner:npg_c3UNa4KOlCeL@ep-purple-hall-ahimeyn0-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require
+DATABASE_PROVIDER=neon
+DATABASE_FAILOVER_ENABLED=true
+DATABASE_FAILOVER_ORDER=neon,vps,supabase
 
-**equipment (Assets)**
+# Supabase (BACKUP)
+SUPABASE_URL=https://mggqgrxwumnnujojndub.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=sb_secret_x67ttLFGhQY_KsNmBB-fMQ_WC5Ab_tP
+SUPABASE_DB_HOST=db.mggqgrxwumnnujojndub.supabase.co
+SUPABASE_DB_PASSWORD=$!hLQDYB#uW23DJ
+
+# Telegram
+TELEGRAM_BOT_TOKEN=8161680636:AAGF8eyldKWGF2I0qVSWXxveonRy02GH_nE
+TELEGRAM_BOT_MODE=polling  # or 'webhook'
+TELEGRAM_ADMIN_CHAT_ID=8445149012
+
+# AI Providers
+GROQ_API_KEY=xxx
+GOOGLE_API_KEY=xxx
+ANTHROPIC_API_KEY=xxx
+OPENAI_API_KEY=xxx
+
+# Stripe
+STRIPE_API_KEY=xxx
+STRIPE_WEBHOOK_SECRET=xxx
+
+# n8n Webhooks
+N8N_WEBHOOK_URL=xxx
+N8N_MANUAL_HUNTER_URL=xxx
+N8N_FEEDBACK_WEBHOOK_URL=xxx
+RALPH_MAIN_LOOP_URL=xxx
+
+# Application
+ENVIRONMENT=development
+LOG_LEVEL=INFO
+```
+
+---
+
+## Current Data Summary
+
+| Metric | Count |
+|--------|-------|
+| **Users** | 3 |
+| **Equipment** | 38 |
+| **Work Orders** | 40 |
+| **KB Atoms (Neon)** | 26 |
+| **KB Atoms (Supabase)** | 1,985 |
+| **Cached Manuals** | 3 |
+| **Manufacturers** | 11 |
+| **Ralph Stories** | 56 |
+| **Gap Requests** | 58 |
+| **Total Tables** | 120 |
+
+---
+
+## Design Patterns
+
+| Pattern | Implementation |
+|---------|----------------|
+| **Adapter** | `adapters/` folder isolates external integrations |
+| **Service Layer** | Business logic in `core/services/` |
+| **Repository** | Services encapsulate database queries |
+| **Singleton** | FeatureFlagManager, Database pool |
+| **Dependency Injection** | FastAPI `Depends()` |
+| **Provider Chain** | LLM router tries providers in cost order |
+| **Feature Flags** | Safe rollouts via JSON config |
+| **Async/Await** | All I/O operations |
+| **Trigger-Based** | Database triggers for auto-numbering |
+
+---
+
+## Startup Commands
+
+```bash
+# Run the Telegram bot
+cd C:\Users\hharp\OneDrive\Desktop\Rivet-PRO
+python run_bot.py
+
+# Or using module
+python -m rivet_pro.adapters.telegram.bot
+
+# Run FastAPI web server
+uvicorn rivet_pro.adapters.web.main:app --reload --port 8000
+
+# Run Ralph autonomous agent
+python scripts/ralph/ralph_local.py --max 5
+
+# Run migrations
+python rivet_pro/run_migrations.py
+
+# Test database connection
+python -c "
+import asyncio
+import asyncpg
+async def test():
+    conn = await asyncpg.connect('postgresql://neondb_owner:npg_c3UNa4KOlCeL@ep-purple-hall-ahimeyn0-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require')
+    print(await conn.fetchval('SELECT NOW()'))
+    await conn.close()
+asyncio.run(test())
+"
+```
+
+---
+
+## Troubleshooting
+
+### Database Connection Issues
+
+1. **Wrong Neon endpoint**: Use `ep-purple-hall-ahimeyn0`, NOT `ep-lingering-salad`
+2. **Neon sleeping**: Wake at https://console.neon.tech
+3. **Supabase DNS**: Use REST API instead of direct PostgreSQL
+
+### Bot Issues
+
+1. **Bot not responding**: Check `TELEGRAM_BOT_TOKEN` in `.env`
+2. **Database errors**: Verify `DATABASE_URL` points to correct Neon
+3. **Free tier limit**: Check `usage_tracking` table
+
+### Common Queries
+
 ```sql
-id              BIGSERIAL PRIMARY KEY
-name            VARCHAR(255) NOT NULL
-description     TEXT
-model           VARCHAR(255)
-serial_number   VARCHAR(255)
-barcode         VARCHAR(255)
-qr_code         VARCHAR(255)
-category_id     BIGINT REFERENCES categories(id)
-location_id     BIGINT REFERENCES locations(id)
-assigned_to_id  BIGINT REFERENCES users(id)
-warranty_date   DATE
-acquisition_cost DECIMAL
-status          VARCHAR(50)  -- OPERATIONAL, DOWN, MAINTENANCE, etc.
-created_at      TIMESTAMP
-updated_at      TIMESTAMP
+-- Check user subscription
+SELECT telegram_id, subscription_tier, monthly_lookup_count
+FROM users WHERE telegram_id = 8445149012;
+
+-- List recent work orders
+SELECT work_order_number, title, status, created_at
+FROM work_orders ORDER BY created_at DESC LIMIT 10;
+
+-- Check Ralph stories
+SELECT story_id, title, status FROM ralph_stories
+WHERE status != 'done' ORDER BY priority;
+
+-- KB atom count by type
+SELECT atom_type, COUNT(*) FROM knowledge_atoms GROUP BY atom_type;
 ```
-
-**work_order**
-```sql
-id               BIGSERIAL PRIMARY KEY
-title            VARCHAR(255) NOT NULL
-description      TEXT
-priority         VARCHAR(50)  -- LOW, MEDIUM, HIGH, CRITICAL
-status           VARCHAR(50)  -- OPEN, IN_PROGRESS, ON_HOLD, COMPLETE
-asset_id         BIGINT REFERENCES equipment(id)
-assigned_to_id   BIGINT REFERENCES users(id)
-location_id      BIGINT REFERENCES locations(id)
-category_id      BIGINT REFERENCES categories(id)
-due_date         TIMESTAMP
-completed_on     TIMESTAMP
-estimated_duration INTEGER  -- minutes
-actual_duration  INTEGER  -- minutes
-created_at       TIMESTAMP
-updated_at       TIMESTAMP
-```
-
-**users (Authentication)**
-```sql
-id              BIGSERIAL PRIMARY KEY
-email           VARCHAR(255) UNIQUE NOT NULL
-first_name      VARCHAR(255)
-last_name       VARCHAR(255)
-phone           VARCHAR(255)
-role            VARCHAR(50)  -- ADMIN, LIMITED_ADMIN, TECHNICIAN, etc.
-rate            DECIMAL
-org_id          BIGINT REFERENCES organizations(id)
-enabled         BOOLEAN DEFAULT TRUE
-created_at      TIMESTAMP
-```
-
-**Total tables:** 100+ (includes parts, inventory, vendors, customers, files, custom fields, notifications, etc.)
-
----
-
-## Health Check Endpoints
-
-### CMMS Backend
-```bash
-GET http://localhost:8081/actuator/health
-
-Response (healthy):
-{
-  "status": "UP"
-}
-
-Response (starting/unhealthy):
-HTTP 503 or no response
-```
-
-### PostgreSQL
-```bash
-docker exec atlas_db pg_isready -U rivet_admin -d atlas
-
-Response (healthy):
-/var/run/postgresql:5432 - accepting connections
-```
-
-### MinIO
-```bash
-GET http://localhost:9000/minio/health/live
-
-Response (healthy):
-HTTP 200 OK
-```
-
-### Telegram Bot
-```bash
-GET https://api.telegram.org/bot{TOKEN}/getMe
-
-Response (healthy):
-{
-  "ok": true,
-  "result": {
-    "id": 7855741814,
-    "is_bot": true,
-    "first_name": "Rivet CMMS Bot",
-    ...
-  }
-}
-```
-
----
-
-## Credentials & Secrets
-
-### Storage Locations
-
-1. **Main .env file:**
-   - Location: `C:\Users\hharp\OneDrive\Desktop\Rivet-PRO\.env`
-   - Contains: All API keys, tokens, database URLs
-   - **NOT** committed to git (in .gitignore)
-
-2. **CMMS .env file:**
-   - Location: `C:\Users\hharp\OneDrive\Desktop\grashjs-cmms\.env`
-   - Contains: CMMS-specific config (DB, MinIO, JWT secret)
-
-3. **Bot configuration:**
-   - Hardcoded in: `cmms_bot.py`, `bot_launcher.py`
-   - Source: Read from main .env or hardcoded
-
-### Credential Reference
-
-| Credential | Value | Where Used |
-|------------|-------|------------|
-| CMMS Email | mike@cranesync.com | Bot login, n8n workflow |
-| CMMS Password | Bo1ws2er@12 | Bot login, n8n workflow |
-| Telegram Bot Token | 7855741814:AAGF... | Bot, n8n workflow |
-| Telegram Admin Chat ID | 8445149012 | n8n notifications |
-| PostgreSQL User | rivet_admin | CMMS backend, direct DB access |
-| PostgreSQL Password | rivet_secure_password_2026 | CMMS backend |
-| MinIO User | minio | CMMS backend |
-| MinIO Password | minio_secure_password_2026 | CMMS backend, MinIO console |
-| JWT Secret | rivet_pro_jwt_secret... | CMMS backend (token signing) |
-
----
-
-## Security Considerations
-
-### Current Setup (Development)
-
-⚠️ **Not production-ready** - Current configuration is for local development only.
-
-**Issues:**
-- Default/weak passwords (change these!)
-- Credentials hardcoded in scripts
-- No HTTPS/SSL
-- No firewall rules
-- JWT secret should be regenerated
-- MinIO uses default credentials
-- No rate limiting
-- No input validation in bot
-
-### Production Recommendations
-
-1. **Change all passwords** to strong, random values
-2. **Use environment variables** for all secrets (no hardcoding)
-3. **Enable HTTPS** with Let's Encrypt
-4. **Set up firewall** rules (only expose 443, block others)
-5. **Regenerate JWT secret** with strong random value
-6. **Enable CORS** properly (restrict origins)
-7. **Add rate limiting** on API endpoints
-8. **Implement input validation** in bot commands
-9. **Set up backups** (automated PostgreSQL dumps)
-10. **Enable audit logging** for all CRUD operations
-11. **Use Docker secrets** instead of .env for sensitive data
-12. **Implement API key rotation** policy
-
----
-
-## Deployment Options
-
-### Option 1: Local Development (Current)
-
-**Pros:**
-- Easy to debug
-- Fast iteration
-- No internet required (except Telegram API)
-
-**Cons:**
-- Must keep PC running
-- Not accessible remotely
-- No automatic restart on failure
-
-**Use for:** Development, testing, demos
-
----
-
-### Option 2: VPS Deployment (Recommended for Production)
-
-**Target:** 72.60.175.144
-
-**Pros:**
-- 24/7 availability
-- Accessible anywhere
-- Automatic restart (systemd)
-- Better for team use
-
-**Cons:**
-- Requires server setup
-- Need to manage security
-- Monthly hosting cost
-
-**Deployment Steps:**
-
-1. **Upload CMMS:**
-   ```bash
-   scp -r grashjs-cmms/ root@72.60.175.144:/opt/
-   ```
-
-2. **Upload Bot:**
-   ```bash
-   scp -r Rivet-PRO/ root@72.60.175.144:/opt/
-   ```
-
-3. **SSH and setup:**
-   ```bash
-   ssh root@72.60.175.144
-   cd /opt/grashjs-cmms
-   docker-compose up -d
-
-   cd /opt/Rivet-PRO
-   python3 -m venv venv
-   source venv/bin/activate
-   pip install -r requirements.txt
-   ```
-
-4. **Create systemd service:**
-   ```bash
-   sudo nano /etc/systemd/system/rivet-bot.service
-   ```
-
-   ```ini
-   [Unit]
-   Description=Rivet-PRO Telegram Bot
-   After=network.target docker.service
-   Requires=docker.service
-
-   [Service]
-   Type=simple
-   User=root
-   WorkingDirectory=/opt/Rivet-PRO
-   ExecStart=/opt/Rivet-PRO/venv/bin/python bot_launcher.py
-   Restart=always
-   RestartSec=10
-
-   [Install]
-   WantedBy=multi-user.target
-   ```
-
-5. **Enable and start:**
-   ```bash
-   sudo systemctl daemon-reload
-   sudo systemctl enable rivet-bot
-   sudo systemctl start rivet-bot
-   sudo systemctl status rivet-bot
-   ```
-
-6. **Configure nginx** (reverse proxy for web UI):
-   ```nginx
-   server {
-       listen 80;
-       server_name your-domain.com;
-
-       location / {
-           proxy_pass http://localhost:3001;
-           proxy_set_header Host $host;
-           proxy_set_header X-Real-IP $remote_addr;
-       }
-
-       location /api {
-           proxy_pass http://localhost:8081;
-           proxy_set_header Host $host;
-           proxy_set_header X-Real-IP $remote_addr;
-       }
-   }
-   ```
-
-7. **Enable HTTPS** with Let's Encrypt:
-   ```bash
-   sudo certbot --nginx -d your-domain.com
-   ```
-
----
-
-## Monitoring & Logging
-
-### Docker Logs
-```bash
-# All containers
-cd C:\Users\hharp\OneDrive\Desktop\grashjs-cmms
-docker-compose logs -f
-
-# Specific service
-docker-compose logs -f atlas-cmms-backend
-
-# Last 100 lines
-docker-compose logs --tail=100 atlas-cmms-backend
-```
-
-### Bot Logs
-The bot outputs all logs to stdout. When running via START_RIVET.bat, you see them in the terminal window.
-
-For production (systemd):
-```bash
-sudo journalctl -u rivet-bot -f
-```
-
-### Database Queries
-```bash
-docker exec -it atlas_db psql -U rivet_admin -d atlas
-
-# Example queries
-SELECT COUNT(*) FROM work_order WHERE status = 'OPEN';
-SELECT name, model, status FROM equipment LIMIT 10;
-```
-
-### Health Monitoring
-```bash
-# Check all services
-curl http://localhost:8081/actuator/health
-curl http://localhost:3001
-curl http://localhost:9000/minio/health/live
-curl https://api.telegram.org/bot{TOKEN}/getMe
-```
-
----
-
-## Backup & Recovery
-
-### Database Backup
-```bash
-# Dump database
-docker exec atlas_db pg_dump -U rivet_admin atlas > backup_$(date +%Y%m%d).sql
-
-# Restore database
-docker exec -i atlas_db psql -U rivet_admin atlas < backup_20260106.sql
-```
-
-### MinIO Backup
-```bash
-# Using mc (MinIO client)
-mc alias set local http://localhost:9000 minio minio_secure_password_2026
-mc mirror local/atlas-bucket ./minio-backup/
-```
-
-### Full System Backup
-```bash
-# Backup everything
-cd C:\Users\hharp\OneDrive\Desktop\grashjs-cmms
-docker-compose down
-tar -czf rivet-backup-$(date +%Y%m%d).tar.gz \
-    grashjs-cmms/ \
-    Rivet-PRO/ \
-    --exclude='node_modules' \
-    --exclude='venv' \
-    --exclude='__pycache__'
-docker-compose up -d
-```
-
----
-
-## Performance Tuning
-
-### PostgreSQL
-```sql
--- Increase shared_buffers (in postgresql.conf)
-shared_buffers = 256MB
-
--- Increase work_mem
-work_mem = 16MB
-
--- Create indexes
-CREATE INDEX idx_work_order_status ON work_order(status);
-CREATE INDEX idx_equipment_name ON equipment(name);
-CREATE INDEX idx_work_order_asset ON work_order(asset_id);
-```
-
-### Docker Resource Limits
-```yaml
-# In docker-compose.yml
-services:
-  atlas-cmms-backend:
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-          cpus: '1.0'
-```
-
-### Bot Performance
-- Use connection pooling for CMMS API calls
-- Cache frequently accessed data (assets list, etc.)
-- Implement request throttling (max 30 req/sec to Telegram API)
-
----
-
-## Future Enhancements
-
-1. **OCR Integration**
-   - Photo → Gemini Vision → Equipment data extraction
-   - Auto-create equipment from nameplate photos
-
-2. **Knowledge Base**
-   - Store manuals, troubleshooting guides
-   - AI-powered search and recommendations
-
-3. **Advanced Analytics**
-   - Equipment uptime tracking
-   - Work order completion metrics
-   - Cost analysis
-
-4. **Mobile App**
-   - Native iOS/Android app
-   - Offline mode
-   - Push notifications
-
-5. **Multi-tenancy**
-   - Support multiple organizations
-   - Role-based access control
-   - Data isolation
-
-6. **Integrations**
-   - SAP/ERP integration
-   - IoT sensor data
-   - Third-party parts catalogs
-
----
-
-## Glossary
-
-- **CMMS:** Computerized Maintenance Management System
-- **WO:** Work Order
-- **PM:** Preventive Maintenance
-- **Asset:** Equipment, machinery, or facility being maintained
-- **JWT:** JSON Web Token (authentication)
-- **MinIO:** S3-compatible object storage
-- **n8n:** Workflow automation tool
-- **Polling:** Bot checks Telegram API for new messages (vs webhook)
-- **Webhook:** Telegram pushes new messages to bot URL
-- **OCR:** Optical Character Recognition (reading text from images)
 
 ---
 
 ## Version History
 
-- **v1.0.0** (2026-01-06) - Initial one-click startup implementation
-  - Desktop launcher (START_RIVET.bat)
-  - Bot credentials configured (mike@cranesync.com)
-  - n8n orchestration workflow
-  - Complete documentation
+| Date | Version | Changes |
+|------|---------|---------|
+| 2026-01-14 | 2.0.0 | Complete rewrite, documented Neon as primary DB |
+| 2026-01-14 | 1.5.0 | Repository cleanup, memory system |
+| 2026-01-13 | 1.4.0 | Telegram bot commands expanded |
+| 2026-01-12 | 1.3.0 | KB analytics, feedback loop |
+| 2026-01-10 | 1.2.0 | Stripe integration |
+| 2026-01-08 | 1.1.0 | Work order system |
+| 2026-01-06 | 1.0.0 | Initial CMMS extraction |
 
 ---
 
-For operational guide, see [STARTUP_GUIDE.md](./STARTUP_GUIDE.md)
+## Related Documentation
+
+- [CLAUDE.md](./CLAUDE.md) - Claude Code instructions
+- [docs/QUICK_CONTEXT.md](./docs/QUICK_CONTEXT.md) - Session restoration
+- [docs/SESSION_LOG.md](./docs/SESSION_LOG.md) - Work history
+- [docs/BRANCHING_GUIDE.md](./docs/BRANCHING_GUIDE.md) - Git workflow
+- [scripts/ralph/prompt.md](./scripts/ralph/prompt.md) - Ralph agent instructions
