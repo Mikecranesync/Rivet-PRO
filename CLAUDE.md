@@ -249,3 +249,33 @@ ls -la ~/Agent-Factory/migrations/ | grep -i cmms
 ```
 
 **Extract it. Wire it. Ship it.**
+
+---
+
+# SESSION MEMORY
+
+## CURRENT STATE (Update before clearing context)
+- **Last session**: 2026-01-14
+- **Active branch**: main
+- **Recent work**: Repository cleanup - archived 137 files locally, implemented memory system
+- **Next task**: Continue CMMS extraction from Agent Factory
+
+## USER PREFERENCES (Learned from interactions)
+- Archive files instead of permanently deleting them
+- Commit changes to git for historical reference
+- Keep local archive for files containing secrets/API keys
+- Use trunk-based development with feature flags
+- Prefer automatic reminders to save session context
+- Self-approve PRs for solo development
+
+## CODE PATTERNS
+- **Feature flags**: Use `FeatureFlagManager` from `rivet_pro/core/feature_flags.py`
+- **Bot handlers**: `rivet_pro/adapters/telegram/bot.py`
+- **Database**: PostgreSQL via Neon (DATABASE_URL in .env)
+- **Ralph stories**: `ralph_stories` table in database
+- **Memory storage**: `rivet_pro/rivet/memory/storage.py` (pluggable backends)
+
+## QUICK CONTEXT RESTORATION
+If you just started a new session, read `docs/QUICK_CONTEXT.md` for instant context.
+For session history, check `docs/SESSION_LOG.md`.
+Query MCP memory: `mcp__memory__search_nodes("RIVET")`
