@@ -15,6 +15,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dotenv import load_dotenv
 load_dotenv()
 
+# Run startup validation BEFORE importing bot (which connects to DB)
+from rivet_pro.core.startup_validation import run_startup_validation
+if not run_startup_validation():
+    print("\nStartup validation failed. Exiting.")
+    sys.exit(1)
+
 from rivet_pro.adapters.telegram.bot import telegram_bot
 from rivet_pro.infra.observability import get_logger
 

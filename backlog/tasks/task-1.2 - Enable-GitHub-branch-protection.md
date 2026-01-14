@@ -1,10 +1,10 @@
 ---
 id: task-1.2
 title: Enable GitHub branch protection
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-01-14 23:31'
-updated_date: '2026-01-14 23:44'
+updated_date: '2026-01-14 23:49'
 labels:
   - stability
   - github
