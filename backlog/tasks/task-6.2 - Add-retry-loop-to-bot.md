@@ -4,11 +4,13 @@ title: Add retry loop to bot
 status: To Do
 assignee: []
 created_date: '2026-01-14 23:33'
+updated_date: '2026-01-14 23:44'
 labels:
   - telegram
   - integration
 dependencies: []
 parent_task_id: task-6
+ordinal: 24000
 ---
 
 ## Description

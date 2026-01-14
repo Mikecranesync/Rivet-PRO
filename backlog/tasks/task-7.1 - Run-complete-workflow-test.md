@@ -4,11 +4,13 @@ title: Run complete workflow test
 status: To Do
 assignee: []
 created_date: '2026-01-14 23:33'
+updated_date: '2026-01-14 23:44'
 labels:
   - testing
   - e2e
 dependencies: []
 parent_task_id: task-7
+ordinal: 26000
 ---
 
 ## Description

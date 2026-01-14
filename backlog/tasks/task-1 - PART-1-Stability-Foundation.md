@@ -1,13 +1,15 @@
 ---
 id: task-1
 title: 'PART 1: Stability Foundation'
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-01-14 23:30'
+updated_date: '2026-01-14 23:43'
 labels:
   - epic
   - stability
 dependencies: []
+ordinal: 1000
 ---
 
 ## Description

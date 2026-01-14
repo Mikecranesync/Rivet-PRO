@@ -4,10 +4,12 @@ title: 'PART 3: Data Sync'
 status: To Do
 assignee: []
 created_date: '2026-01-14 23:30'
+updated_date: '2026-01-14 23:44'
 labels:
   - epic
   - sync
 dependencies: []
+ordinal: 10000
 ---
 
 ## Description

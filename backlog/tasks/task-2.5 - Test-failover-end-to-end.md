@@ -4,11 +4,13 @@ title: Test failover end-to-end
 status: To Do
 assignee: []
 created_date: '2026-01-14 23:31'
+updated_date: '2026-01-14 23:44'
 labels:
   - database
   - testing
 dependencies: []
 parent_task_id: task-2
+ordinal: 9000
 ---
 
 ## Description
