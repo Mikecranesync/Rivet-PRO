@@ -218,6 +218,31 @@ class TelegramBot:
                 )
                 return
 
+            # Log interaction for EVERY equipment lookup (CRITICAL-LOGGING-001)
+            interaction_id = None
+            try:
+                interaction_id = await self.db.fetchval(
+                    """
+                    INSERT INTO interactions (
+                        user_id, interaction_type, ocr_confidence, outcome, created_at
+                    )
+                    VALUES (
+                        (SELECT id FROM users WHERE telegram_id = $1),
+                        'equipment_lookup',
+                        $2,
+                        'ocr_complete',
+                        NOW()
+                    )
+                    RETURNING id
+                    """,
+                    user_id,  # Pass as integer, not string
+                    result.confidence if hasattr(result, 'confidence') else None
+                )
+                logger.info(f"Logged interaction | interaction_id={interaction_id} | user_id={user_id}")
+            except Exception as e:
+                logger.warning(f"Failed to log interaction: {e}")
+                # Continue anyway - don't break user experience
+
             # Create or match equipment in CMMS
             equipment_id = None
             equipment_number = None
@@ -236,6 +261,22 @@ class TelegramBot:
                     f"Equipment {'created' if is_new else 'matched'} | "
                     f"equipment_number={equipment_number} | user_id={user_id}"
                 )
+
+                # Update interaction with equipment_id (CRITICAL-LOGGING-001)
+                if interaction_id and equipment_id:
+                    try:
+                        await self.db.execute(
+                            """
+                            UPDATE interactions
+                            SET equipment_model_id = $1, outcome = 'equipment_matched'
+                            WHERE id = $2
+                            """,
+                            equipment_id,
+                            interaction_id
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to update interaction with equipment: {e}")
+
             except Exception as e:
                 logger.error(f"Failed to create/match equipment: {e}", exc_info=True)
                 # Continue anyway - OCR succeeded even if CMMS failed
@@ -342,26 +383,20 @@ class TelegramBot:
             # Create knowledge atom if manual was found (CRITICAL-KB-001, KB-002)
             if manual_result and result.manufacturer and result.model_number:
                 try:
-                    # Create interaction record first (KB-001)
-                    interaction_id = None
-                    try:
-                        interaction_id = await self.db.fetchval(
-                            """
-                            INSERT INTO interactions (
-                                user_id, interaction_type, outcome, created_at
+                    # Update existing interaction with manual_delivered outcome (CRITICAL-LOGGING-001)
+                    if interaction_id:
+                        try:
+                            await self.db.execute(
+                                """
+                                UPDATE interactions
+                                SET outcome = 'manual_delivered'
+                                WHERE id = $1
+                                """,
+                                interaction_id
                             )
-                            VALUES (
-                                (SELECT id FROM users WHERE telegram_id = $1),
-                                'manual_lookup', 'manual_delivered', NOW()
-                            )
-                            RETURNING id
-                            """,
-                            str(update.effective_user.id)
-                        )
-                        logger.info(f"Created interaction {interaction_id} for manual lookup")
-                    except Exception as e:
-                        logger.warning(f"Failed to create interaction: {e}")
-                        # Continue anyway - don't break user experience
+                            logger.info(f"Updated interaction {interaction_id} with manual_delivered")
+                        except Exception as e:
+                            logger.warning(f"Failed to update interaction outcome: {e}")
 
                     # Create atom with interaction link
                     await self._create_manual_atom(
