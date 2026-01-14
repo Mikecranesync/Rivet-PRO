@@ -133,7 +133,7 @@ class RalphLocal:
             WHERE project_id = $1
               AND status = 'todo'
               AND retry_count < 3
-              AND (story_id LIKE 'KB-%' OR story_id LIKE 'CRITICAL-KB-%' OR story_id LIKE 'STABLE-%')
+              AND (story_id LIKE 'KB-%' OR story_id LIKE 'CRITICAL-KB-%' OR story_id LIKE 'STABLE-%' OR story_id LIKE 'AUTO-KB-%')
             ORDER BY priority ASC
             LIMIT 1
             """,
