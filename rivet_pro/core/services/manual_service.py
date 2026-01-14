@@ -95,8 +95,9 @@ class ManualService:
                 'cached': True
             }
 
-        # 2. Cache miss - search via n8n
-        logger.info(f"Manual cache MISS | {mfr_clean} {model_clean} | Searching via n8n...")
+        # 2. Cache miss - search externally (Tavily or n8n fallback)
+        search_method = "Tavily" if self.use_tavily_direct else "n8n"
+        logger.info(f"Manual cache MISS | {mfr_clean} {model_clean} | Searching via {search_method}...")
 
         try:
             result = await self._search_external(mfr_clean, model_clean, timeout)
@@ -223,34 +224,14 @@ class ManualService:
                 'reasoning': 'LLM validation not available'
             }
 
-        # Build validation prompt
-        prompt = f"""You are validating equipment manual URLs. Analyze this URL and determine if it's a DIRECT link to a PDF manual or just a search/catalog page.
-
-Equipment: {manufacturer} {model}
+        # Build validation prompt (optimized for speed)
+        prompt = f"""Is this URL a direct PDF manual link for {manufacturer} {model}?
 URL: {url}
 
-Respond with ONLY valid JSON (no markdown, no explanation):
-{{
-  "is_direct_pdf": true or false,
-  "confidence": 0.0 to 1.0,
-  "reasoning": "brief explanation",
-  "likely_pdf_extension": true or false
-}}
+Return JSON only: {{"is_direct_pdf":true/false,"confidence":0.0-1.0,"reasoning":"brief","likely_pdf_extension":true/false}}
 
-Direct PDF indicators:
-- Ends with .pdf
-- Contains /documents/ or /manuals/ or /literature/ or /support/
-- Has specific model number in path
-- URL path suggests a document download
-
-Search page indicators:
-- Contains /search?q= or ?query= or /results
-- Generic product listing page
-- Catalog or category page without specific document
-- E-commerce or shopping cart URLs
-- Generic homepage or landing page
-
-Be strict: only return is_direct_pdf=true if you're confident it's a real manual."""
+PDF indicators: .pdf extension, /manuals/, /documents/, /literature/ paths
+NOT PDF: /search?, /results, catalog pages, homepages, shopping carts"""
 
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
@@ -659,13 +640,23 @@ Be strict: only return is_direct_pdf=true if you're confident it's a real manual
                     data = response.json()
                     results = data.get('results', [])
 
+                    logger.info(f"Tavily returned {len(results)} results | {manufacturer} {model}")
+
                     # Validate each result with LLM judge
                     for result in results:
                         url = result.get('url', '')
                         title = result.get('title', '')
 
-                        # Quick pre-filter: obvious PDF indicators
-                        is_likely_pdf = url.lower().endswith('.pdf') or 'manual' in url.lower()
+                        # Quick pre-filter: URLs likely to be documentation
+                        url_lower = url.lower()
+                        is_likely_pdf = (
+                            url_lower.endswith('.pdf') or
+                            'manual' in url_lower or
+                            'document' in url_lower or
+                            'literature' in url_lower or
+                            'support' in url_lower or
+                            'download' in url_lower
+                        )
 
                         if is_likely_pdf:
                             # Validate with LLM before returning
