@@ -63,13 +63,15 @@ app.add_middleware(
 )
 
 # Import and include routers
-from rivet_pro.adapters.web.routers import auth, equipment, work_orders, stats, upload
+from rivet_pro.adapters.web.routers import auth, equipment, work_orders, stats, upload, stripe, version
 
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(equipment.router, prefix="/api/equipment", tags=["Equipment"])
 app.include_router(work_orders.router, prefix="/api/work-orders", tags=["Work Orders"])
 app.include_router(stats.router, prefix="/api/stats", tags=["Statistics"])
 app.include_router(upload.router, prefix="/api/upload", tags=["Upload"])
+app.include_router(stripe.router, prefix="/api/stripe", tags=["Payments"])
+app.include_router(version.router, prefix="/api", tags=["System"])
 
 
 @app.get("/health")

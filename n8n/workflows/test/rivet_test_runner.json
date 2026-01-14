@@ -1,0 +1,196 @@
+{
+  "name": "RIVET Test Runner",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rivet-test-runner",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 400],
+      "webhookId": "rivet-test-runner-webhook"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const data = $input.item.json;\n\n// Extract data from webhook body or root\nconst url = data.body?.url || data.url || '';\nconst test_type = data.body?.test_type || data.test_type || 'e2e';\nconst context = data.body?.context || data.context || {};\n\nconst equipment_type = context.equipment_type || data.body?.equipment_type || data.equipment_type || '';\nconst manufacturer = context.manufacturer || data.body?.manufacturer || data.manufacturer || '';\n\n// Validation\nlet error = null;\nif (!url) {\n  error = 'URL is required';\n}\n\n// Record start time\nconst startTime = Date.now();\n\nreturn {\n  json: {\n    url,\n    test_type,\n    equipment_type,\n    manufacturer,\n    startTime,\n    error\n  }\n};"
+      },
+      "id": "extract-request-data",
+      "name": "Extract Request Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://mikecranesync.app.n8n.cloud/webhook/rivet-url-validator",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"url\": {{ JSON.stringify($json.url) }},\n  \"context\": {\n    \"equipment_type\": {{ JSON.stringify($json.equipment_type) }},\n    \"manufacturer\": {{ JSON.stringify($json.manufacturer) }}\n  }\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "call-url-validator",
+      "name": "Call URL Validator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 400],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const validationResult = $input.item.json;\n\n// Get data from Extract Request Data node\nconst extractedData = $('Extract Request Data').item.json;\n\n// Store validation result\nreturn {\n  json: {\n    url: extractedData.url,\n    equipment_type: extractedData.equipment_type,\n    manufacturer: extractedData.manufacturer,\n    startTime: extractedData.startTime,\n    validation: validationResult,\n    shouldContinue: validationResult.valid === true\n  }\n};"
+      },
+      "id": "store-validation",
+      "name": "Store Validation Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.shouldContinue}}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-validation",
+      "name": "Validation Passed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1120, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://mikecranesync.app.n8n.cloud/webhook/rivet-llm-judge",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"url\": {{ JSON.stringify($json.url) }},\n  \"equipment_type\": {{ JSON.stringify($json.equipment_type) }},\n  \"manufacturer\": {{ JSON.stringify($json.manufacturer) }}\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "call-llm-judge",
+      "name": "Call LLM Judge",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const judgeResult = $input.item.json;\n\n// Get data from Store Validation Result node\nconst storedData = $('Store Validation Result').item.json;\n\n// Calculate test duration\nconst endTime = Date.now();\nconst test_duration_ms = endTime - storedData.startTime;\n\n// Determine overall result\n// PASS: validation score >= 7 AND quality_score >= 6\nconst validationScore = storedData.validation.score || 0;\nconst qualityScore = judgeResult.quality_score || 0;\n\nconst overall = (validationScore >= 7 && qualityScore >= 6) ? 'pass' : 'fail';\n\n// Build response\nreturn {\n  json: {\n    overall,\n    validation: storedData.validation,\n    quality: judgeResult,\n    test_duration_ms,\n    timestamp: new Date().toISOString(),\n    url: storedData.url\n  }\n};"
+      },
+      "id": "calculate-overall",
+      "name": "Calculate Overall Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "respond-webhook-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1780, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const data = $input.item.json;\n\n// Calculate test duration\nconst endTime = Date.now();\nconst test_duration_ms = endTime - data.startTime;\n\n// Build failure response (validation failed)\nreturn {\n  json: {\n    overall: 'fail',\n    validation: data.validation,\n    quality: {\n      quality_score: 0,\n      criteria: {},\n      feedback: 'Skipped due to validation failure',\n      llm_model_used: 'N/A',\n      error: 'Validation failed'\n    },\n    test_duration_ms,\n    timestamp: new Date().toISOString(),\n    url: data.url\n  }\n};"
+      },
+      "id": "build-failure-response",
+      "name": "Build Failure Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 500]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "respond-webhook-failure",
+      "name": "Respond Failure",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1560, 500]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{ "node": "Extract Request Data", "type": "main", "index": 0 }]]
+    },
+    "Extract Request Data": {
+      "main": [[{ "node": "Call URL Validator", "type": "main", "index": 0 }]]
+    },
+    "Call URL Validator": {
+      "main": [[{ "node": "Store Validation Result", "type": "main", "index": 0 }]]
+    },
+    "Store Validation Result": {
+      "main": [[{ "node": "Validation Passed?", "type": "main", "index": 0 }]]
+    },
+    "Validation Passed?": {
+      "main": [
+        [{ "node": "Call LLM Judge", "type": "main", "index": 0 }],
+        [{ "node": "Build Failure Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Call LLM Judge": {
+      "main": [[{ "node": "Calculate Overall Result", "type": "main", "index": 0 }]]
+    },
+    "Calculate Overall Result": {
+      "main": [[{ "node": "Respond Success", "type": "main", "index": 0 }]]
+    },
+    "Build Failure Response": {
+      "main": [[{ "node": "Respond Failure", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-09T12:00:00.000Z",
+  "versionId": "1"
+}

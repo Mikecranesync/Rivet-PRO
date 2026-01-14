@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="RIVET Pro - Instant AI-powered troubleshooting for electrical panels. Get expert analysis in seconds via Telegram.">
+    <title>RIVET Pro - Instant Troubleshooting for Electrical Panels</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+        * {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .feature-icon {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-20px); }
+        }
+
+        .float-animation {
+            animation: float 3s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+
+    <!-- Hero Section -->
+    <div class="gradient-bg text-white">
+        <div class="container mx-auto px-6 py-20 lg:py-32">
+            <div class="text-center max-w-4xl mx-auto">
+                <h1 class="text-5xl lg:text-7xl font-bold mb-6 leading-tight">
+                    Instant Troubleshooting for <span class="text-yellow-300">Any Electrical Panel</span>
+                </h1>
+                <p class="text-xl lg:text-2xl mb-10 text-purple-100">
+                    Send a photo via Telegram, get expert AI analysis in 15 seconds. Built for maintenance technicians who need answers now.
+                </p>
+                <div class="flex flex-col sm:flex-row gap-4 justify-center items-center">
+                    <a href="https://t.me/YOUR_BOT_USERNAME" target="_blank" class="bg-white text-purple-700 px-10 py-4 rounded-lg font-bold text-lg hover:bg-gray-100 transition-all shadow-lg hover:shadow-xl transform hover:scale-105">
+                        ⚡ Start Free on Telegram
+                    </a>
+                    <a href="#pricing" class="border-2 border-white text-white px-10 py-4 rounded-lg font-bold text-lg hover:bg-white hover:text-purple-700 transition-all">
+                        See Pricing
+                    </a>
+                </div>
+                <p class="mt-6 text-purple-100">
+                    <span class="font-semibold">10 free analyses</span> • No credit card required
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- How It Works Section -->
+    <div class="py-20 bg-white">
+        <div class="container mx-auto px-6">
+            <div class="text-center max-w-3xl mx-auto mb-16">
+                <h2 class="text-4xl lg:text-5xl font-bold text-gray-900 mb-4">
+                    How It Works
+                </h2>
+                <p class="text-xl text-gray-600">
+                    Three simple steps from photo to actionable guidance
+                </p>
+            </div>
+
+            <div class="grid md:grid-cols-3 gap-12 max-w-5xl mx-auto">
+                <!-- Step 1 -->
+                <div class="text-center">
+                    <div class="w-20 h-20 feature-icon rounded-full flex items-center justify-center text-white text-3xl font-bold mx-auto mb-6 shadow-lg">
+                        1
+                    </div>
+                    <h3 class="text-2xl font-bold text-gray-900 mb-3">Take a Photo</h3>
+                    <p class="text-gray-600 text-lg">
+                        Snap a clear picture of your electrical panel or equipment nameplate
+                    </p>
+                </div>
+
+                <!-- Step 2 -->
+                <div class="text-center">
+                    <div class="w-20 h-20 feature-icon rounded-full flex items-center justify-center text-white text-3xl font-bold mx-auto mb-6 shadow-lg">
+                        2
+                    </div>
+                    <h3 class="text-2xl font-bold text-gray-900 mb-3">Send to RIVET</h3>
+                    <p class="text-gray-600 text-lg">
+                        Message it to our Telegram bot - works anywhere you have cell service
+                    </p>
+                </div>
+
+                <!-- Step 3 -->
+                <div class="text-center">
+                    <div class="w-20 h-20 feature-icon rounded-full flex items-center justify-center text-white text-3xl font-bold mx-auto mb-6 shadow-lg">
+                        3
+                    </div>
+                    <h3 class="text-2xl font-bold text-gray-900 mb-3">Get Analysis</h3>
+                    <p class="text-gray-600 text-lg">
+                        Receive expert guidance: system type, components, and what to check first
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Example Section -->
+    <div class="py-20 bg-gray-50">
+        <div class="container mx-auto px-6">
+            <div class="max-w-5xl mx-auto">
+                <div class="text-center mb-16">
+                    <h2 class="text-4xl lg:text-5xl font-bold text-gray-900 mb-4">
+                        See It In Action
+                    </h2>
+                    <p class="text-xl text-gray-600">
+                        From blurry photo to clear answers
+                    </p>
+                </div>
+
+                <div class="bg-white rounded-2xl shadow-2xl overflow-hidden">
+                    <div class="grid md:grid-cols-2">
+                        <!-- Before -->
+                        <div class="p-10 border-r border-gray-200">
+                            <div class="bg-gray-100 rounded-lg p-6 mb-4 h-64 flex items-center justify-center">
+                                <p class="text-gray-400 text-center text-lg">
+                                    📸 Photo of electrical panel<br/>(Panel photo placeholder)
+                                </p>
+                            </div>
+                            <h3 class="font-bold text-xl text-gray-900 mb-2">You Send:</h3>
+                            <p class="text-gray-600">A photo of an unfamiliar panel you need to troubleshoot</p>
+                        </div>
+
+                        <!-- After -->
+                        <div class="p-10 bg-gradient-to-br from-purple-50 to-indigo-50">
+                            <div class="bg-white rounded-lg p-6 mb-4 h-64 overflow-y-auto shadow-inner">
+                                <p class="text-sm text-gray-800 leading-relaxed">
+                                    <strong class="text-purple-700">⚡ RIVET Pro Analysis</strong><br/><br/>
+                                    <strong>1) Panel Type:</strong> Allen-Bradley 1769 CompactLogix PLC system<br/><br/>
+                                    <strong>2) Key Components:</strong><br/>
+                                    • 1769-L33ER processor (top slot)<br/>
+                                    • 1769-IQ16 input module<br/>
+                                    • 1769-OB16 output module<br/><br/>
+                                    <strong>3) Check First:</strong><br/>
+                                    ✓ Verify 24VDC power supply<br/>
+                                    ✓ Check I/O status LEDs<br/>
+                                    ✓ Confirm Ethernet connectivity<br/><br/>
+                                    <strong>4) Observations:</strong><br/>
+                                    No visible damage. Clean connections.
+                                </p>
+                            </div>
+                            <h3 class="font-bold text-xl text-gray-900 mb-2">You Get:</h3>
+                            <p class="text-gray-600">Specific components, troubleshooting steps, and potential issues</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pricing Section -->
+    <div id="pricing" class="py-20 bg-white">
+        <div class="container mx-auto px-6">
+            <div class="text-center max-w-3xl mx-auto mb-16">
+                <h2 class="text-4xl lg:text-5xl font-bold text-gray-900 mb-4">
+                    Simple, Transparent Pricing
+                </h2>
+                <p class="text-xl text-gray-600">
+                    Try it free, upgrade when you're ready
+                </p>
+            </div>
+
+            <div class="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+                <!-- Free Tier -->
+                <div class="border-2 border-gray-200 rounded-2xl p-10 hover:shadow-lg transition-all">
+                    <h3 class="text-2xl font-bold text-gray-900 mb-2">Free</h3>
+                    <p class="text-gray-600 mb-6">Perfect for trying it out</p>
+                    <div class="mb-8">
+                        <span class="text-5xl font-bold text-gray-900">$0</span>
+                        <span class="text-gray-600">/month</span>
+                    </div>
+                    <ul class="space-y-4 mb-8">
+                        <li class="flex items-start">
+                            <svg class="w-6 h-6 text-green-500 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                            </svg>
+                            <span class="text-gray-700"><strong>10 free analyses</strong></span>
+                        </li>
+                        <li class="flex items-start">
+                            <svg class="w-6 h-6 text-green-500 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                            </svg>
+                            <span class="text-gray-700">Full feature access</span>
+                        </li>
+                        <li class="flex items-start">
+                            <svg class="w-6 h-6 text-green-500 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                            </svg>
+                            <span class="text-gray-700">No credit card required</span>
+                        </li>
+                    </ul>
+                    <a href="https://t.me/YOUR_BOT_USERNAME" target="_blank" class="block w-full text-center bg-gray-200 text-gray-900 px-8 py-4 rounded-lg font-bold text-lg hover:bg-gray-300 transition-all">
+                        Start Free
+                    </a>
+                </div>
+
+                <!-- Pro Tier -->
+                <div class="border-4 border-purple-600 rounded-2xl p-10 relative hover:shadow-2xl transition-all gradient-bg text-white">
+                    <div class="absolute top-0 right-0 bg-yellow-400 text-purple-900 px-4 py-1 rounded-bl-lg rounded-tr-lg font-bold text-sm">
+                        RECOMMENDED
+                    </div>
+                    <h3 class="text-2xl font-bold mb-2">Pro</h3>
+                    <p class="text-purple-100 mb-6">For daily users</p>
+                    <div class="mb-8">
+                        <span class="text-5xl font-bold">$29</span>
+                        <span class="text-purple-100">/month</span>
+                    </div>
+                    <ul class="space-y-4 mb-8">
+                        <li class="flex items-start">
+                            <svg class="w-6 h-6 text-yellow-300 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                            </svg>
+                            <span><strong class="text-yellow-300">Unlimited analyses</strong></span>
+                        </li>
+                        <li class="flex items-start">
+                            <svg class="w-6 h-6 text-yellow-300 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                            </svg>
+                            <span>Priority processing</span>
+                        </li>
+                        <li class="flex items-start">
+                            <svg class="w-6 h-6 text-yellow-300 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                            </svg>
+                            <span>IEC→ANSI conversion <em class="text-purple-200">(coming soon)</em></span>
+                        </li>
+                        <li class="flex items-start">
+                            <svg class="w-6 h-6 text-yellow-300 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                            </svg>
+                            <span>Documentation generation <em class="text-purple-200">(coming soon)</em></span>
+                        </li>
+                    </ul>
+                    <a href="#" onclick="alert('Use /upgrade command in the Telegram bot'); return false;" class="block w-full text-center bg-white text-purple-700 px-8 py-4 rounded-lg font-bold text-lg hover:bg-gray-100 transition-all shadow-lg">
+                        Upgrade to Pro
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- FAQ Section -->
+    <div class="py-20 bg-gray-50">
+        <div class="container mx-auto px-6">
+            <div class="max-w-3xl mx-auto">
+                <h2 class="text-4xl lg:text-5xl font-bold text-gray-900 mb-12 text-center">
+                    Frequently Asked Questions
+                </h2>
+
+                <div class="space-y-6">
+                    <details class="bg-white rounded-lg p-6 shadow-md cursor-pointer group">
+                        <summary class="font-bold text-xl text-gray-900 list-none flex justify-between items-center">
+                            What types of panels can RIVET analyze?
+                            <svg class="w-6 h-6 text-purple-600 transform group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </summary>
+                        <p class="mt-4 text-gray-600 leading-relaxed">
+                            RIVET works with PLCs (Allen-Bradley, Siemens, Schneider), motor control centers, distribution panels, VFDs, and most industrial electrical equipment. If it has a nameplate or visible components, we can analyze it.
+                        </p>
+                    </details>
+
+                    <details class="bg-white rounded-lg p-6 shadow-md cursor-pointer group">
+                        <summary class="font-bold text-xl text-gray-900 list-none flex justify-between items-center">
+                            How accurate is the AI analysis?
+                            <svg class="w-6 h-6 text-purple-600 transform group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </summary>
+                        <p class="mt-4 text-gray-600 leading-relaxed">
+                            RIVET uses Claude Sonnet 4, trained on millions of technical documents and images. It identifies components with high accuracy and provides practical troubleshooting steps. However, always verify critical decisions with your own expertise and safety procedures.
+                        </p>
+                    </details>
+
+                    <details class="bg-white rounded-lg p-6 shadow-md cursor-pointer group">
+                        <summary class="font-bold text-xl text-gray-900 list-none flex justify-between items-center">
+                            Why Telegram instead of a website or app?
+                            <svg class="w-6 h-6 text-purple-600 transform group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </summary>
+                        <p class="mt-4 text-gray-600 leading-relaxed">
+                            Telegram works everywhere - factory floors, basements, anywhere you have cell service. No app downloads, no logins to remember, no complicated UI. Just snap and send. Plus, you have a full history of all your analyses in one chat.
+                        </p>
+                    </details>
+
+                    <details class="bg-white rounded-lg p-6 shadow-md cursor-pointer group">
+                        <summary class="font-bold text-xl text-gray-900 list-none flex justify-between items-center">
+                            Is my data secure and private?
+                            <svg class="w-6 h-6 text-purple-600 transform group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </summary>
+                        <p class="mt-4 text-gray-600 leading-relaxed">
+                            Yes. Photos are processed securely and not shared with third parties. We store anonymized analytics to improve the service, but your specific images and conversations remain private. You can delete your data anytime by contacting support.
+                        </p>
+                    </details>
+
+                    <details class="bg-white rounded-lg p-6 shadow-md cursor-pointer group">
+                        <summary class="font-bold text-xl text-gray-900 list-none flex justify-between items-center">
+                            Can I cancel my Pro subscription anytime?
+                            <svg class="w-6 h-6 text-purple-600 transform group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </summary>
+                        <p class="mt-4 text-gray-600 leading-relaxed">
+                            Absolutely. Cancel anytime from your Telegram bot with /upgrade command. You'll keep Pro access until the end of your billing period. No questions asked, no hidden fees.
+                        </p>
+                    </details>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CTA Section -->
+    <div class="gradient-bg text-white py-20">
+        <div class="container mx-auto px-6 text-center">
+            <h2 class="text-4xl lg:text-5xl font-bold mb-6">
+                Ready to troubleshoot faster?
+            </h2>
+            <p class="text-xl lg:text-2xl mb-10 text-purple-100 max-w-2xl mx-auto">
+                Join maintenance techs who are already saving time with RIVET Pro
+            </p>
+            <a href="https://t.me/YOUR_BOT_USERNAME" target="_blank" class="inline-block bg-white text-purple-700 px-12 py-5 rounded-lg font-bold text-xl hover:bg-gray-100 transition-all shadow-lg hover:shadow-xl transform hover:scale-105">
+                ⚡ Start Your Free Trial
+            </a>
+            <p class="mt-6 text-purple-100">
+                10 free analyses • No credit card required • Takes 30 seconds to start
+            </p>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-gray-900 text-gray-400 py-12">
+        <div class="container mx-auto px-6">
+            <div class="text-center">
+                <p class="text-lg font-bold text-white mb-2">RIVET Pro</p>
+                <p class="mb-4">Instant AI-powered troubleshooting for electrical panels</p>
+                <div class="flex justify-center space-x-6 mb-6">
+                    <a href="https://t.me/YOUR_BOT_USERNAME" target="_blank" class="hover:text-white transition-colors">Telegram Bot</a>
+                    <a href="mailto:support@rivetpro.com" class="hover:text-white transition-colors">Support</a>
+                    <a href="#" class="hover:text-white transition-colors">Privacy Policy</a>
+                    <a href="#" class="hover:text-white transition-colors">Terms of Service</a>
+                </div>
+                <p class="text-sm">© 2026 RIVET Pro. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Smooth scrolling for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+    </script>
+</body>
+</html>

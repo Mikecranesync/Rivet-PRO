@@ -23,8 +23,40 @@ class Settings(BaseSettings):
 
     # Telegram Configuration
     telegram_bot_token: str = Field(..., description="Telegram bot token from @BotFather")
-    telegram_webhook_url: Optional[str] = Field(None, description="Webhook URL for production")
-    telegram_webhook_secret: Optional[str] = Field(None, description="Webhook secret token")
+    telegram_bot_mode: Literal["polling", "webhook"] = Field(
+        "polling",
+        description="Bot mode: polling (dev) or webhook (production with HTTPS)"
+    )
+    telegram_webhook_url: Optional[str] = Field(
+        None,
+        description="Webhook URL for production (required when telegram_bot_mode=webhook)"
+    )
+    telegram_webhook_secret: Optional[str] = Field(None, description="Webhook secret token for security")
+    telegram_webhook_port: int = Field(8443, description="Port for webhook server")
+    n8n_webhook_url: str = Field(
+        "http://localhost:5678/webhook/photo-bot-v2",
+        description="n8n webhook URL for photo processing"
+    )
+    n8n_manual_hunter_url: str = Field(
+        "http://localhost:5678/webhook/manual-hunter",
+        description="n8n webhook URL for manual search (Manual Hunter workflow)"
+    )
+    n8n_feedback_webhook_url: str = Field(
+        "http://localhost:5678/webhook/user-feedback",
+        description="n8n webhook URL for user feedback loop"
+    )
+    ralph_main_loop_url: str = Field(
+        "http://localhost:5678/webhook/ralph-main-loop",
+        description="Ralph main loop webhook for story execution"
+    )
+    feedback_max_per_hour: int = Field(
+        5,
+        description="Maximum feedback messages per user per hour"
+    )
+    feedback_approval_timeout_hours: int = Field(
+        24,
+        description="Hours before pending approvals expire"
+    )
 
     # WhatsApp Configuration (Future)
     whatsapp_phone_id: Optional[str] = None
@@ -45,6 +77,8 @@ class Settings(BaseSettings):
     google_api_key: Optional[str] = Field(None, description="Google API key for Gemini")
     anthropic_api_key: Optional[str] = Field(None, description="Anthropic API key for Claude")
     openai_api_key: Optional[str] = Field(None, description="OpenAI API key for GPT-4o")
+    deepseek_api_key: Optional[str] = Field(None, description="DeepSeek API key for LLM validation")
+    tavily_api_key: Optional[str] = Field(None, description="Tavily API key for web search (manual lookup)")
 
     # Orchestrator Configuration
     orchestrator_model: str = Field(
@@ -69,6 +103,11 @@ class Settings(BaseSettings):
 
     # Feature Flags
     beta_mode: bool = Field(True, description="Unlock all features during beta")
+
+    # Stripe Payment Configuration
+    stripe_api_key: Optional[str] = Field(None, description="Stripe secret API key")
+    stripe_webhook_secret: Optional[str] = Field(None, description="Stripe webhook endpoint secret")
+    stripe_price_id: Optional[str] = Field(None, description="Stripe price ID for Pro tier ($29/month)")
 
     # Web API Authentication
     jwt_secret_key: str = Field(..., description="JWT secret key for token signing")

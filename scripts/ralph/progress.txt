@@ -1,0 +1,46 @@
+# Ralph Progress Log
+Started: Tue, Jan 13, 2026  5:43:12 PM
+---
+
+=== Bug Fixes Round 1 ===
+Started: Tue, Jan 13, 2026  7:24:45 PM
+Branch: ralph/bug-fixes-round1
+Stories: FEEDBACK-LINK-001, FEEDBACK-USEREG-001, CRITICAL-MANUAL-001, FEEDBACK-LIMIT-001, CRITICAL-LOGGING-001
+---
+
+## 2026-01-13 - FEEDBACK-LINK-001
+- Fixed PDF links not opening on mobile (underscore escape)
+- Added plain URL fallback in backticks for copy/paste
+- Files changed: rivet_pro/core/utils/response_formatter.py
+- Commit: 2a49f63
+
+## 2026-01-13 - FEEDBACK-USEREG-001
+- Added user creation in /start command handler
+- Uses ON CONFLICT for idempotent behavior
+- Files changed: rivet_pro/adapters/telegram/bot.py
+- Commit: f6c7db7
+
+## 2026-01-13 - CRITICAL-MANUAL-001
+- Fixed misleading log message (now shows Tavily vs n8n)
+- Expanded URL pre-filter to include more doc paths
+- Files changed: rivet_pro/core/services/manual_service.py
+- Commit: 09bd082
+
+## 2026-01-13 - FEEDBACK-LIMIT-001
+- Already resolved: User 8445149012 set to Pro tier
+- usage_service.py correctly bypasses limits for Pro users
+- No code changes needed
+
+## 2026-01-13 - CRITICAL-LOGGING-001
+- Added interaction logging for ALL equipment lookups
+- Fixed telegram_id passed as integer (was string)
+- Updated interaction with equipment_id and outcome
+- Files changed: rivet_pro/adapters/telegram/bot.py
+- Commit: e61e628
+
+**Learnings for future iterations:**
+- Telegram Markdown requires escaping underscores in URLs: use url.replace('_', r'\_')
+- telegram_id in users table is bigint, pass as integer not string
+- Interactions should be logged early in flow, then updated as more data comes
+- Always provide fallback copy-able URLs for mobile users
+---

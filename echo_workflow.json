@@ -1,0 +1,255 @@
+{
+  "updatedAt": "2026-01-09T15:07:41.043Z",
+  "createdAt": "2026-01-09T15:07:41.043Z",
+  "id": "DUuWTD4FLTGnqeyD",
+  "name": "TEST - RIVET - Echo Webhook",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rivet-test-echo",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ],
+      "webhookId": "rivet-test-echo"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Echo back the received data with metadata\nconst receivedBody = $input.item.json.body || {};\nconst receivedQuery = $input.item.json.query || {};\nconst receivedHeaders = $input.item.json.headers || {};\n\nconst timestamp = new Date().toISOString();\n\nreturn {\n  json: {\n    status: \"success\",\n    test: \"echo\",\n    timestamp: timestamp,\n    received: {\n      body: receivedBody,\n      query: receivedQuery,\n      userAgent: receivedHeaders['user-agent'] || 'unknown'\n    },\n    message: \"Echo test successful - n8n is responding\"\n  }\n};"
+      },
+      "id": "process-echo",
+      "name": "Process Echo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json, null, 2) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        680,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Process Echo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Echo": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "0fca810a-6b92-4274-8095-86e6f28d3ee5",
+  "activeVersionId": "0fca810a-6b92-4274-8095-86e6f28d3ee5",
+  "versionCounter": 3,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-01-09T15:07:41.045Z",
+      "createdAt": "2026-01-09T15:07:41.045Z",
+      "role": "workflow:owner",
+      "workflowId": "DUuWTD4FLTGnqeyD",
+      "projectId": "LeroM2c3daethFFW",
+      "project": {
+        "updatedAt": "2025-08-25T02:01:30.700Z",
+        "createdAt": "2025-08-25T02:01:28.242Z",
+        "id": "LeroM2c3daethFFW",
+        "name": "Mike Harper <mike@cranesync.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "2cf5d340-a1c7-4bc6-a403-629cd1ef7433",
+        "projectRelations": [
+          {
+            "updatedAt": "2025-08-25T02:01:28.242Z",
+            "createdAt": "2025-08-25T02:01:28.242Z",
+            "userId": "2cf5d340-a1c7-4bc6-a403-629cd1ef7433",
+            "projectId": "LeroM2c3daethFFW",
+            "user": {
+              "updatedAt": "2026-01-10T05:31:45.000Z",
+              "createdAt": "2025-08-25T02:01:26.748Z",
+              "id": "2cf5d340-a1c7-4bc6-a403-629cd1ef7433",
+              "email": "mike@cranesync.com",
+              "firstName": "Mike",
+              "lastName": "Harper",
+              "personalizationAnswers": null,
+              "settings": {
+                "userActivated": true,
+                "easyAIWorkflowOnboarded": true,
+                "userClaimedAiCredits": true,
+                "firstSuccessfulWorkflowId": "VHOxsRQD9VanhuKC",
+                "userActivatedAt": 1759215503709,
+                "npsSurvey": {
+                  "responded": true,
+                  "lastShownAt": 1759960688435
+                }
+              },
+              "disabled": false,
+              "mfaEnabled": false,
+              "lastActiveAt": "2026-01-10",
+              "isPending": false
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-01-09T20:23:19.000Z",
+    "createdAt": "2026-01-09T15:07:41.071Z",
+    "versionId": "0fca810a-6b92-4274-8095-86e6f28d3ee5",
+    "workflowId": "DUuWTD4FLTGnqeyD",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "rivet-test-echo",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "id": "webhook-trigger",
+        "name": "Webhook Trigger",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          240,
+          300
+        ],
+        "webhookId": "rivet-test-echo"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Echo back the received data with metadata\nconst receivedBody = $input.item.json.body || {};\nconst receivedQuery = $input.item.json.query || {};\nconst receivedHeaders = $input.item.json.headers || {};\n\nconst timestamp = new Date().toISOString();\n\nreturn {\n  json: {\n    status: \"success\",\n    test: \"echo\",\n    timestamp: timestamp,\n    received: {\n      body: receivedBody,\n      query: receivedQuery,\n      userAgent: receivedHeaders['user-agent'] || 'unknown'\n    },\n    message: \"Echo test successful - n8n is responding\"\n  }\n};"
+        },
+        "id": "process-echo",
+        "name": "Process Echo",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          460,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ JSON.stringify($json, null, 2) }}",
+          "options": {
+            "responseCode": 200,
+            "responseHeaders": {
+              "entries": [
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            }
+          }
+        },
+        "id": "webhook-response",
+        "name": "Webhook Response",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.1,
+        "position": [
+          680,
+          300
+        ]
+      }
+    ],
+    "connections": {
+      "Webhook Trigger": {
+        "main": [
+          [
+            {
+              "node": "Process Echo",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Process Echo": {
+        "main": [
+          [
+            {
+              "node": "Webhook Response",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "Mike Harper",
+    "name": "Version 1",
+    "description": "new\n",
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-01-09T20:23:19.508Z",
+        "id": 23,
+        "workflowId": "DUuWTD4FLTGnqeyD",
+        "versionId": "0fca810a-6b92-4274-8095-86e6f28d3ee5",
+        "event": "activated",
+        "userId": "2cf5d340-a1c7-4bc6-a403-629cd1ef7433"
+      }
+    ]
+  }
+}

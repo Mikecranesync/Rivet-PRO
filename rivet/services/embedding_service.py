@@ -120,6 +120,16 @@ class EmbeddingService:
             return embedding
 
         except OpenAIError as e:
+            error_str = str(e)
+
+            # Skip retries immediately on quota exhaustion (no point retrying)
+            if "insufficient_quota" in error_str or "quota" in error_str.lower():
+                logger.error(
+                    f"OpenAI quota exceeded - skipping retries (no point waiting). "
+                    f"Add funds at https://platform.openai.com/account/billing"
+                )
+                raise
+
             # Retry on rate limits or transient errors
             if retry_count < self.max_retries:
                 logger.warning(

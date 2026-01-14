@@ -1,0 +1,30 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "```json\n{\n  \"completeness\": 1,\n  \"technical_accuracy\": 6,\n  \"clarity\": 5,\n  \"troubleshooting_usefulness\": 2,\n  \"metadata_quality\": 7,\n  \"feedback\": \"This manual is severely incomplete for an industrial electric motor. It provides only basic specifications"
+          }
+        ],
+        "role": "model"
+      },
+      "finishReason": "MAX_TOKENS",
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 253,
+    "candidatesTokenCount": 76,
+    "totalTokenCount": 1049,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 253
+      }
+    ],
+    "thoughtsTokenCount": 720
+  },
+  "modelVersion": "gemini-2.5-flash",
+  "responseId": "bz5iaYfMKoKymtkPktiSkAY"
+}

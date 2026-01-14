@@ -1,0 +1,8 @@
+```json
+{
+  "completeness": 1,
+  "technical_accuracy": 6,
+  "clarity": 5,
+  "troubleshooting_usefulness": 2,
+  "metadata_quality": 7,
+  "feedback": "This manual is severely incomplete for an industrial electric motor. It provides only basic specifications

@@ -1,0 +1,86 @@
+{
+  "project": "RIVET Pro",
+  "branchName": "ralph/bug-fixes-round1",
+  "description": "Bug Fixes Round 1 - Fix critical user-reported issues: PDF links, user registration, manual search, and interaction logging",
+  "userStories": [
+    {
+      "id": "FEEDBACK-LINK-001",
+      "title": "Fix Manual PDF Link Not Opening",
+      "description": "User clicked manual PDF link from bot and it did not work. URL is valid (HTTP 200 server-side). Possible issues: Telegram link formatting, mobile client PDF handling, or URL encoding. Fix the link formatting in format_equipment_response() in response_formatter.py to ensure PDF URLs open correctly on mobile.",
+      "acceptanceCriteria": [
+        "Check format_equipment_response() in rivet_pro/core/utils/response_formatter.py",
+        "Ensure PDF URLs are properly formatted for Telegram (no special characters breaking link)",
+        "Test with actual Rockwell URL: https://literature.rockwellautomation.com/idc/groups/literature/documents/in/2080-in009_-en-p.pdf",
+        "If URL has issues, provide alternative: plain text URL user can copy, or shortened link",
+        "Add fallback message: 'If link doesn't open, copy and paste URL into browser'",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Fixed: Escape underscores, added fallback URL in backticks. Commit 2a49f63"
+    },
+    {
+      "id": "FEEDBACK-USEREG-001",
+      "title": "Fix /start Command Not Creating User",
+      "description": "When user sends /start, bot logs it but doesn't create user record in database. This breaks usage tracking and subscriptions. Fix start_command handler in bot.py to INSERT user or use get_or_create pattern.",
+      "acceptanceCriteria": [
+        "Find start_command handler in rivet_pro/adapters/telegram/bot.py",
+        "Add database INSERT or get_or_create for user with telegram_id",
+        "Set defaults: subscription_tier='free', subscription_status='active'",
+        "Make idempotent - duplicate /start should not error or create duplicate",
+        "Log user creation: 'User created | telegram_id=X | tier=free'",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Fixed: Added INSERT with ON CONFLICT in start_command. Commit f6c7db7"
+    },
+    {
+      "id": "CRITICAL-MANUAL-001",
+      "title": "Fix Manual Search Not Finding New Manuals",
+      "description": "Manual search shows cache MISS but never attempts external search. Check manual_service.py - the _search_external() method may not be called, or Tavily API key missing. Ensure cache miss triggers Tavily search, validates result, and caches it.",
+      "acceptanceCriteria": [
+        "Check rivet_pro/core/services/manual_service.py search_manual() method",
+        "Verify _search_external() is called after cache miss",
+        "Confirm TAVILY_API_KEY is loaded from settings",
+        "Add logging: 'Searching Tavily for {manufacturer} {model}'",
+        "Test with Siemens 3RV2011-1CA20 - should find and cache manual",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Fixed: Improved logging, expanded URL pre-filter. Commit 09bd082"
+    },
+    {
+      "id": "FEEDBACK-LIMIT-001",
+      "title": "Bypass Usage Limits for Testing Account",
+      "description": "User 8445149012 (frankumbria) is the owner and should never hit free tier limits. Already set to Pro tier manually, but verify the code path respects subscription_tier='pro' in usage_service.py.",
+      "acceptanceCriteria": [
+        "Verify user 8445149012 has subscription_tier='pro' in database",
+        "Check rivet_pro/core/services/usage_service.py is_pro_user() method",
+        "Ensure can_use_service() returns (True, count, 'pro') for Pro users",
+        "Test: Pro user should never see 'Free Limit Reached' message",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Already resolved - user set to Pro tier, code correctly bypasses limits"
+    },
+    {
+      "id": "CRITICAL-LOGGING-001",
+      "title": "Fix Interactions Table Not Recording Lookups",
+      "description": "Equipment lookups are tracked in usage_tracking but interactions table is empty. The _handle_photo method in bot.py should log interactions after successful OCR. This is needed for analytics and KB learning.",
+      "acceptanceCriteria": [
+        "Find _handle_photo method in rivet_pro/adapters/telegram/bot.py",
+        "Add interaction logging after successful OCR result",
+        "Insert to interactions table with: telegram_user_id, interaction_type='equipment_lookup', equipment_id (if matched), ocr_confidence, timestamp",
+        "Also log text queries in _handle_text method",
+        "Verify interactions table populated after photo lookup",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Fixed: Added interaction logging for ALL lookups. Commit e61e628"
+    }
+  ]
+}

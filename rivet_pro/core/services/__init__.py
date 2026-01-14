@@ -9,6 +9,9 @@ from .equipment_taxonomy import (
     identify_issue_type,
     identify_urgency,
 )
+from .usage_service import UsageService, FREE_TIER_LIMIT
+from .stripe_service import StripeService, send_telegram_confirmation
+from .manual_service import ManualService
 
 __all__ = [
     # OCR
@@ -23,4 +26,12 @@ __all__ = [
     "extract_model_number",
     "identify_issue_type",
     "identify_urgency",
+    # Usage Tracking
+    "UsageService",
+    "FREE_TIER_LIMIT",
+    # Stripe Payments
+    "StripeService",
+    "send_telegram_confirmation",
+    # Manual Search
+    "ManualService",
 ]

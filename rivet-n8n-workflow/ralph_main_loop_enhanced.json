@@ -1,0 +1,469 @@
+{
+  "name": "Ralph - Main Loop (Enhanced with Single-Story Mode)",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "ralph-main-loop",
+        "options": {
+          "responseMode": "lastNode"
+        }
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check execution mode: 'full_queue' (default) or 'single_story'\nconst input = $input.first().json.body || $input.first().json;\nconst mode = input.execution_mode || 'full_queue';\nconst story_id = input.story_id || null;\nconst triggered_by = input.triggered_by || 'system';\n\nreturn {\n  execution_mode: mode,\n  story_id: story_id,\n  triggered_by: triggered_by,\n  project_id: 1\n};"
+      },
+      "id": "check-mode",
+      "name": "Check Execution Mode",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [370, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "8445149012",
+        "text": "RALPH STARTING\nMode: {{ $json.execution_mode }}\nProject: RIVET Pro\nTriggered by: {{ $json.triggered_by }}"
+      },
+      "id": "send-start",
+      "name": "Send Start",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [550, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot",
+          "name": "Rivet Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO ralph_executions (project_id, status, triggered_by, execution_mode) VALUES ({{ $json.project_id }}, 'running', '{{ $json.triggered_by }}', '{{ $json.execution_mode }}') RETURNING id"
+      },
+      "id": "create-execution",
+      "name": "Create Execution",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [750, 300],
+      "credentials": {
+        "postgres": {
+          "id": "neon-database",
+          "name": "Neon Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.execution_mode }}",
+              "operation": "equals",
+              "value2": "single_story"
+            }
+          ]
+        }
+      },
+      "id": "is-single-story",
+      "name": "Is Single Story Mode?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [950, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM ralph_stories WHERE story_id = '{{ $('Check Execution Mode').first().json.story_id }}' AND project_id = {{ $('Check Execution Mode').first().json.project_id }}"
+      },
+      "id": "get-single-story",
+      "name": "Get Single Story",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1150, 200],
+      "credentials": {
+        "postgres": {
+          "id": "neon-database",
+          "name": "Neon Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM ralph_stories WHERE project_id = {{ $('Check Execution Mode').first().json.project_id }} AND status = 'todo' AND retry_count < 3 AND (approval_status = 'auto_approved' OR approval_status = 'approved') ORDER BY priority ASC LIMIT 1"
+      },
+      "id": "get-next-story",
+      "name": "Get Next Story (Queue)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1150, 400],
+      "credentials": {
+        "postgres": {
+          "id": "neon-database",
+          "name": "Neon Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge both paths - single story or queue story\nconst rows = $input.first().json;\nconst story = Array.isArray(rows) ? rows[0] : rows;\nconst execution = $('Create Execution').first().json;\nconst execId = Array.isArray(execution) ? execution[0].id : execution.id;\nconst mode = $('Check Execution Mode').first().json.execution_mode;\n\nif (!story || !story.id) {\n  return [{\n    json: {\n      continue_loop: false,\n      reason: mode === 'single_story' ? 'Story not found' : 'All stories completed!',\n      execution_id: execId,\n      execution_mode: mode\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    continue_loop: true,\n    story: story,\n    iteration: 1,\n    execution_id: execId,\n    execution_mode: mode\n  }\n}];"
+      },
+      "id": "merge-stories",
+      "name": "Merge Story Paths",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1350, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.continue_loop }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "should-continue",
+      "name": "Should Continue",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1550, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE ralph_stories SET status = 'in_progress', started_at = NOW() WHERE id = {{ $json.story.id }}"
+      },
+      "id": "mark-in-progress",
+      "name": "Mark In Progress",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1750, 200],
+      "credentials": {
+        "postgres": {
+          "id": "neon-database",
+          "name": "Neon Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const story = $json.story;\nconst criteriaList = Array.isArray(story.acceptance_criteria) \n  ? story.acceptance_criteria.map((c, i) => (i+1) + '. ' + c).join('\\n')\n  : JSON.stringify(story.acceptance_criteria);\n\nconst prompt = `# IMPLEMENT THIS STORY\n\n## ${story.story_id}: ${story.title}\n\n${story.description}\n\n## Acceptance Criteria\n${criteriaList}\n\n## RIVET Pro Context\n- Repository: C:\\\\Users\\\\hharp\\\\OneDrive\\\\Desktop\\\\Rivet-PRO\n- Branch: ralph/mvp-phase1\n- Neon PostgreSQL database\n- Telegram bot token available\n- Keep code SIMPLE\n\n## Instructions\n1. Implement completely\n2. Keep it simple\n3. Test your implementation\n4. Commit with message: feat(${story.story_id}): ${story.title}\n\nReturn ONLY JSON:\n{\"success\": true, \"commit_hash\": \"abc123\", \"files_changed\": [\"file.py\"], \"notes\": \"what was done\"}\n\nOr if blocked:\n{\"success\": false, \"error_message\": \"what went wrong\"}`;\n\nreturn {\n  prompt_text: prompt,\n  story_db_id: story.id,\n  story_id: story.story_id,\n  story_title: story.title,\n  iteration: 1,\n  execution_id: $json.execution_id,\n  execution_mode: $json.execution_mode\n};"
+      },
+      "id": "build-prompt",
+      "name": "Build Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1950, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "8445149012",
+        "text": "▶️ STARTING: {{ $json.story_id }}\n{{ $json.story_title }}\n\nMode: {{ $json.execution_mode }}"
+      },
+      "id": "story-start",
+      "name": "Story Start Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2150, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot",
+          "name": "Rivet Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-3-5-sonnet-20241022"
+            },
+            {
+              "name": "max_tokens",
+              "value": "8000"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": \"{{ $json.prompt_text }}\"}]"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "call-claude",
+      "name": "Call Claude (Ralph)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2350, 200],
+      "credentials": {
+        "anthropicApi": {
+          "id": "anthropic-api",
+          "name": "Anthropic API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Claude response and extract result\nconst data = $input.first().json;\nconst prev = $('Build Claude Prompt').first().json;\n\nlet result;\ntry {\n  const content = data.content[0].text;\n  \n  // Try to extract JSON from markdown code blocks\n  const jsonMatch = content.match(/```(?:json)?\\s*([\\s\\S]*?)```/) || [null, content];\n  result = JSON.parse(jsonMatch[1].trim());\n  \n} catch (e) {\n  // Fallback if parsing fails\n  result = {\n    success: false,\n    error_message: `Failed to parse Claude response: ${e.message}`,\n    raw_response: data.content[0].text.substring(0, 500)\n  };\n}\n\nreturn {\n  ...prev,\n  result,\n  raw_claude_response: data.content[0].text,\n  usage: data.usage\n};"
+      },
+      "id": "parse-result",
+      "name": "Parse Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2550, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.result.success }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-success",
+      "name": "Check Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [2750, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE ralph_stories SET status = 'done', completed_at = NOW(), commit_hash = '{{ $json.result.commit_hash }}' WHERE id = {{ $json.story_db_id }}"
+      },
+      "id": "mark-done",
+      "name": "Mark Done",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2950, 150],
+      "credentials": {
+        "postgres": {
+          "id": "neon-database",
+          "name": "Neon Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "8445149012",
+        "text": "✅ COMPLETED: {{ $json.story_id }}\n{{ $json.story_title }}\n\nCommit: {{ $json.result.commit_hash }}\nFiles changed: {{ $json.result.files_changed.length }}\n\nMode: {{ $json.execution_mode }}"
+      },
+      "id": "story-done",
+      "name": "Story Done Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [3150, 150],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot",
+          "name": "Rivet Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE ralph_stories SET status = 'failed', error_message = '{{ $json.result.error_message }}', retry_count = retry_count + 1 WHERE id = {{ $json.story_db_id }}"
+      },
+      "id": "mark-failed",
+      "name": "Mark Failed",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2950, 250],
+      "credentials": {
+        "postgres": {
+          "id": "neon-database",
+          "name": "Neon Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "8445149012",
+        "text": "❌ FAILED: {{ $json.story_id }}\n{{ $json.story_title }}\n\nError: {{ $json.result.error_message }}\n\nMode: {{ $json.execution_mode }}"
+      },
+      "id": "story-failed",
+      "name": "Story Failed Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [3150, 250],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot",
+          "name": "Rivet Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $('Merge Story Paths').first().json.execution_mode }}",
+              "operation": "equals",
+              "value2": "single_story"
+            }
+          ]
+        }
+      },
+      "id": "is-single-mode-after",
+      "name": "Is Single Story Mode?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [3350, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE ralph_executions SET status = 'completed', completed_at = NOW() WHERE id = {{ $('Create Execution').first().json[0].id }}"
+      },
+      "id": "complete-execution",
+      "name": "Complete Execution",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [3550, 200],
+      "credentials": {
+        "postgres": {
+          "id": "neon-database",
+          "name": "Neon Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "8445149012",
+        "text": "🏁 RALPH FINISHED\nMode: {{ $('Check Execution Mode').first().json.execution_mode }}\nReason: {{ $json.reason || 'Story completed' }}"
+      },
+      "id": "send-finish",
+      "name": "Send Finish",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1750, 400],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot",
+          "name": "Rivet Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{"node": "Check Execution Mode", "type": "main", "index": 0}]]
+    },
+    "Check Execution Mode": {
+      "main": [[{"node": "Send Start", "type": "main", "index": 0}]]
+    },
+    "Send Start": {
+      "main": [[{"node": "Create Execution", "type": "main", "index": 0}]]
+    },
+    "Create Execution": {
+      "main": [[{"node": "Is Single Story Mode?", "type": "main", "index": 0}]]
+    },
+    "Is Single Story Mode?": {
+      "main": [
+        [{"node": "Get Single Story", "type": "main", "index": 0}],
+        [{"node": "Get Next Story (Queue)", "type": "main", "index": 0}]
+      ]
+    },
+    "Get Single Story": {
+      "main": [[{"node": "Merge Story Paths", "type": "main", "index": 0}]]
+    },
+    "Get Next Story (Queue)": {
+      "main": [[{"node": "Merge Story Paths", "type": "main", "index": 0}]]
+    },
+    "Merge Story Paths": {
+      "main": [[{"node": "Should Continue", "type": "main", "index": 0}]]
+    },
+    "Should Continue": {
+      "main": [
+        [{"node": "Mark In Progress", "type": "main", "index": 0}],
+        [{"node": "Send Finish", "type": "main", "index": 0}]
+      ]
+    },
+    "Mark In Progress": {
+      "main": [[{"node": "Build Claude Prompt", "type": "main", "index": 0}]]
+    },
+    "Build Claude Prompt": {
+      "main": [[{"node": "Story Start Notification", "type": "main", "index": 0}]]
+    },
+    "Story Start Notification": {
+      "main": [[{"node": "Call Claude (Ralph)", "type": "main", "index": 0}]]
+    },
+    "Call Claude (Ralph)": {
+      "main": [[{"node": "Parse Result", "type": "main", "index": 0}]]
+    },
+    "Parse Result": {
+      "main": [[{"node": "Check Success", "type": "main", "index": 0}]]
+    },
+    "Check Success": {
+      "main": [
+        [{"node": "Mark Done", "type": "main", "index": 0}],
+        [{"node": "Mark Failed", "type": "main", "index": 0}]
+      ]
+    },
+    "Mark Done": {
+      "main": [[{"node": "Story Done Notification", "type": "main", "index": 0}]]
+    },
+    "Story Done Notification": {
+      "main": [[{"node": "Is Single Story Mode?", "type": "main", "index": 0}]]
+    },
+    "Mark Failed": {
+      "main": [[{"node": "Story Failed Notification", "type": "main", "index": 0}]]
+    },
+    "Story Failed Notification": {
+      "main": [[{"node": "Is Single Story Mode?", "type": "main", "index": 0}]]
+    },
+    "Is Single Story Mode?": {
+      "main": [
+        [{"node": "Complete Execution", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "ralph",
+      "id": "ralph-system"
+    },
+    {
+      "name": "feedback-loop",
+      "id": "feedback"
+    }
+  ],
+  "pinData": {},
+  "versionId": "2.0.0"
+}

@@ -1,0 +1,595 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.0.xsd">
+
+    <!--
+        BASELINE CHANGESET
+        Mirrors existing Python migrations (001-009) to establish Liquibase baseline.
+        Uses preConditions to skip if tables already exist.
+    -->
+
+    <!-- Enable UUID extension -->
+    <changeSet id="001-baseline-uuid-extension" author="rivet">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(*) FROM pg_extension WHERE extname = 'uuid-ossp'
+            </sqlCheck>
+        </preConditions>
+        <sql>CREATE EXTENSION IF NOT EXISTS "uuid-ossp"</sql>
+    </changeSet>
+
+    <!-- ==================================================================== -->
+    <!-- Migration 001: SaaS Layer (Teams, Users, Subscription Limits)       -->
+    <!-- ==================================================================== -->
+
+    <changeSet id="001-baseline-teams" author="rivet">
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="teams"/></not>
+        </preConditions>
+        <createTable tableName="teams">
+            <column name="id" type="uuid" defaultValueComputed="gen_random_uuid()">
+                <constraints primaryKey="true"/>
+            </column>
+            <column name="name" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="owner_id" type="uuid"/>
+            <column name="subscription_tier" type="varchar(20)" defaultValue="free">
+                <constraints nullable="false"/>
+            </column>
+            <column name="max_seats" type="integer" defaultValue="1"/>
+            <column name="created_at" type="timestamp with time zone" defaultValueComputed="NOW()"/>
+            <column name="updated_at" type="timestamp with time zone" defaultValueComputed="NOW()"/>
+        </createTable>
+        <addCheckConstraint tableName="teams" constraintName="check_subscription_tier"
+            checkConstraint="subscription_tier IN ('free', 'pro', 'team')"/>
+    </changeSet>
+
+    <changeSet id="001-baseline-users" author="rivet">
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="users"/></not>
+        </preConditions>
+        <createTable tableName="users">
+            <column name="id" type="uuid" defaultValueComputed="gen_random_uuid()">
+                <constraints primaryKey="true"/>
+            </column>
+            <column name="telegram_id" type="bigint">
+                <constraints unique="true"/>
+            </column>
+            <column name="whatsapp_id" type="varchar(20)">
+                <constraints unique="true"/>
+            </column>
+            <column name="name" type="varchar(255)"/>
+            <column name="email" type="varchar(255)"/>
+            <column name="company" type="varchar(255)"/>
+            <column name="subscription_tier" type="varchar(20)" defaultValue="free"/>
+            <column name="team_id" type="uuid"/>
+            <column name="monthly_lookup_count" type="integer" defaultValue="0"/>
+            <column name="lookup_count_reset_date" type="date" defaultValueComputed="CURRENT_DATE"/>
+            <column name="created_at" type="timestamp with time zone" defaultValueComputed="NOW()"/>
+            <column name="last_active_at" type="timestamp with time zone" defaultValueComputed="NOW()"/>
+            <!-- Web auth fields (from migration 007) -->
+            <column name="password_hash" type="varchar(255)"/>
+            <column name="email_verified" type="boolean" defaultValue="false"/>
+            <column name="last_login_at" type="timestamp with time zone"/>
+        </createTable>
+        <addCheckConstraint tableName="users" constraintName="check_subscription_tier"
+            checkConstraint="subscription_tier IN ('free', 'pro', 'team')"/>
+        <addCheckConstraint tableName="users" constraintName="check_platform_id"
+            checkConstraint="telegram_id IS NOT NULL OR whatsapp_id IS NOT NULL"/>
+        <addForeignKeyConstraint baseTableName="users" baseColumnNames="team_id"
+            constraintName="fk_users_team"
+            referencedTableName="teams" referencedColumnNames="id"
+            onDelete="SET NULL"/>
+    </changeSet>
+
+    <!-- Add foreign key for team owner (circular reference) -->
+    <changeSet id="001-baseline-teams-fk-owner" author="rivet">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <foreignKeyConstraintExists foreignKeyName="fk_team_owner"/>
+            </not>
+        </preConditions>
+        <addForeignKeyConstraint baseTableName="teams" baseColumnNames="owner_id"
+            constraintName="fk_team_owner"
+            referencedTableName="users" referencedColumnNames="id"
+            onDelete="CASCADE"/>
+    </changeSet>
+
+    <changeSet id="001-baseline-subscription-limits" author="rivet">
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="subscription_limits"/></not>
+        </preConditions>
+        <createTable tableName="subscription_limits">
+            <column name="tier" type="varchar(20)">
+                <constraints primaryKey="true"/>
+            </column>
+            <column name="manual_lookups_per_month" type="integer"/>
+            <column name="chat_with_pdf" type="boolean" defaultValue="false"/>
+            <column name="chat_with_prints" type="boolean" defaultValue="false"/>
+            <column name="personal_cmms" type="boolean" defaultValue="false"/>
+            <column name="upload_docs_per_month" type="integer" defaultValue="0"/>
+            <column name="tribal_knowledge_write" type="boolean" defaultValue="false"/>
+            <column name="plc_io_panel" type="boolean" defaultValue="false"/>
+            <column name="seats" type="integer" defaultValue="1"/>
+        </createTable>
+        <addCheckConstraint tableName="subscription_limits" constraintName="check_tier"
+            checkConstraint="tier IN ('free', 'pro', 'team')"/>
+    </changeSet>
+
+    <changeSet id="001-baseline-subscription-limits-data" author="rivet">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(*) FROM subscription_limits
+            </sqlCheck>
+        </preConditions>
+        <insert tableName="subscription_limits">
+            <column name="tier" value="free"/>
+            <column name="manual_lookups_per_month" value="10"/>
+            <column name="chat_with_pdf" valueBoolean="false"/>
+            <column name="chat_with_prints" valueBoolean="false"/>
+            <column name="personal_cmms" valueBoolean="false"/>
+            <column name="upload_docs_per_month" value="0"/>
+            <column name="tribal_knowledge_write" valueBoolean="false"/>
+            <column name="plc_io_panel" valueBoolean="false"/>
+            <column name="seats" value="1"/>
+        </insert>
+        <insert tableName="subscription_limits">
+            <column name="tier" value="pro"/>
+            <column name="manual_lookups_per_month" value="-1"/>
+            <column name="chat_with_pdf" valueBoolean="true"/>
+            <column name="chat_with_prints" valueBoolean="true"/>
+            <column name="personal_cmms" valueBoolean="true"/>
+            <column name="upload_docs_per_month" value="50"/>
+            <column name="tribal_knowledge_write" valueBoolean="true"/>
+            <column name="plc_io_panel" valueBoolean="false"/>
+            <column name="seats" value="1"/>
+        </insert>
+        <insert tableName="subscription_limits">
+            <column name="tier" value="team"/>
+            <column name="manual_lookups_per_month" value="-1"/>
+            <column name="chat_with_pdf" valueBoolean="true"/>
+            <column name="chat_with_prints" valueBoolean="true"/>
+            <column name="personal_cmms" valueBoolean="true"/>
+            <column name="upload_docs_per_month" value="-1"/>
+            <column name="tribal_knowledge_write" valueBoolean="true"/>
+            <column name="plc_io_panel" valueBoolean="true"/>
+            <column name="seats" value="10"/>
+        </insert>
+    </changeSet>
+
+    <!-- Indexes for users and teams -->
+    <changeSet id="001-baseline-indexes" author="rivet">
+        <createIndex tableName="users" indexName="idx_users_telegram_id">
+            <column name="telegram_id"/>
+        </createIndex>
+        <createIndex tableName="users" indexName="idx_users_whatsapp_id">
+            <column name="whatsapp_id"/>
+        </createIndex>
+        <createIndex tableName="users" indexName="idx_users_team_id">
+            <column name="team_id"/>
+        </createIndex>
+        <createIndex tableName="users" indexName="idx_users_subscription_tier">
+            <column name="subscription_tier"/>
+        </createIndex>
+        <createIndex tableName="users" indexName="idx_users_last_active">
+            <column name="last_active_at"/>
+        </createIndex>
+        <createIndex tableName="users" indexName="idx_users_email">
+            <column name="email"/>
+        </createIndex>
+    </changeSet>
+
+    <!-- ==================================================================== -->
+    <!-- Migration 002: Knowledge Base (Manufacturers, Equipment Models)     -->
+    <!-- ==================================================================== -->
+
+    <changeSet id="002-baseline-manufacturers" author="rivet">
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="manufacturers"/></not>
+        </preConditions>
+        <createTable tableName="manufacturers">
+            <column name="id" type="uuid" defaultValueComputed="gen_random_uuid()">
+                <constraints primaryKey="true"/>
+            </column>
+            <column name="name" type="varchar(255)">
+                <constraints nullable="false" unique="true"/>
+            </column>
+            <column name="aliases" type="text[]"/>
+            <column name="created_at" type="timestamp with time zone" defaultValueComputed="NOW()"/>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="002-baseline-equipment-models" author="rivet">
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="equipment_models"/></not>
+        </preConditions>
+        <createTable tableName="equipment_models">
+            <column name="id" type="uuid" defaultValueComputed="gen_random_uuid()">
+                <constraints primaryKey="true"/>
+            </column>
+            <column name="manufacturer_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="model_number" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="equipment_type" type="varchar(100)"/>
+            <column name="description" type="text"/>
+            <column name="created_at" type="timestamp with time zone" defaultValueComputed="NOW()"/>
+        </createTable>
+        <addForeignKeyConstraint baseTableName="equipment_models" baseColumnNames="manufacturer_id"
+            constraintName="fk_equipment_models_manufacturer"
+            referencedTableName="manufacturers" referencedColumnNames="id"
+            onDelete="CASCADE"/>
+        <addUniqueConstraint tableName="equipment_models"
+            columnNames="manufacturer_id,model_number"
+            constraintName="uq_manufacturer_model"/>
+    </changeSet>
+
+    <changeSet id="002-baseline-manuals" author="rivet">
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="manuals"/></not>
+        </preConditions>
+        <createTable tableName="manuals">
+            <column name="id" type="uuid" defaultValueComputed="gen_random_uuid()">
+                <constraints primaryKey="true"/>
+            </column>
+            <column name="equipment_model_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="title" type="varchar(500)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="manual_type" type="varchar(50)"/>
+            <column name="file_path" type="varchar(1000)"/>
+            <column name="file_url" type="varchar(1000)"/>
+            <column name="page_count" type="integer"/>
+            <column name="created_at" type="timestamp with time zone" defaultValueComputed="NOW()"/>
+        </createTable>
+        <addForeignKeyConstraint baseTableName="manuals" baseColumnNames="equipment_model_id"
+            constraintName="fk_manuals_equipment_model"
+            referencedTableName="equipment_models" referencedColumnNames="id"
+            onDelete="CASCADE"/>
+    </changeSet>
+
+    <!-- ==================================================================== -->
+    <!-- Migration 003: CMMS Equipment Table                                 -->
+    <!-- ==================================================================== -->
+
+    <!-- Create criticality enum -->
+    <changeSet id="003-baseline-criticality-enum" author="rivet">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(*) FROM pg_type WHERE typname = 'criticality_level'
+            </sqlCheck>
+        </preConditions>
+        <sql>CREATE TYPE criticality_level AS ENUM ('low', 'medium', 'high', 'critical')</sql>
+    </changeSet>
+
+    <!-- Equipment sequence -->
+    <changeSet id="003-baseline-equipment-seq" author="rivet">
+        <preConditions onFail="MARK_RAN">
+            <not><sequenceExists sequenceName="equipment_seq"/></not>
+        </preConditions>
+        <createSequence sequenceName="equipment_seq" startValue="1"/>
+    </changeSet>
+
+    <changeSet id="003-baseline-cmms-equipment" author="rivet">
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="cmms_equipment"/></not>
+        </preConditions>
+        <createTable tableName="cmms_equipment">
+            <column name="id" type="uuid" defaultValueComputed="gen_random_uuid()">
+                <constraints primaryKey="true"/>
+            </column>
+            <column name="equipment_number" type="varchar(50)">
+                <constraints nullable="false" unique="true"/>
+            </column>
+            <column name="equipment_model_id" type="uuid"/>
+            <column name="manufacturer" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="model_number" type="varchar(255)"/>
+            <column name="serial_number" type="varchar(255)"/>
+            <column name="equipment_type" type="varchar(100)"/>
+            <column name="location" type="varchar(500)"/>
+            <column name="department" type="varchar(255)"/>
+            <column name="criticality" type="criticality_level" defaultValue="medium"/>
+            <column name="owned_by_user_id" type="uuid"/>
+            <column name="machine_id" type="uuid"/>
+            <column name="description" type="text"/>
+            <column name="photo_file_id" type="varchar(500)"/>
+            <column name="installation_date" type="date"/>
+            <column name="last_maintenance_date" type="date"/>
+            <column name="work_order_count" type="integer" defaultValue="0"/>
+            <column name="total_downtime_hours" type="float" defaultValue="0.0"/>
+            <column name="last_reported_fault" type="varchar(100)"/>
+            <column name="last_work_order_at" type="timestamp with time zone"/>
+            <column name="created_at" type="timestamp with time zone" defaultValueComputed="NOW()">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp with time zone" defaultValueComputed="NOW()">
+                <constraints nullable="false"/>
+            </column>
+            <column name="first_reported_by" type="uuid"/>
+        </createTable>
+        <addForeignKeyConstraint baseTableName="cmms_equipment" baseColumnNames="equipment_model_id"
+            constraintName="fk_cmms_equipment_model"
+            referencedTableName="equipment_models" referencedColumnNames="id"
+            onDelete="SET NULL"/>
+        <addForeignKeyConstraint baseTableName="cmms_equipment" baseColumnNames="owned_by_user_id"
+            constraintName="fk_cmms_equipment_user"
+            referencedTableName="users" referencedColumnNames="id"
+            onDelete="SET NULL"/>
+        <addForeignKeyConstraint baseTableName="cmms_equipment" baseColumnNames="first_reported_by"
+            constraintName="fk_cmms_equipment_reporter"
+            referencedTableName="users" referencedColumnNames="id"
+            onDelete="SET NULL"/>
+    </changeSet>
+
+    <!-- Equipment indexes -->
+    <changeSet id="003-baseline-equipment-indexes" author="rivet">
+        <createIndex tableName="cmms_equipment" indexName="idx_cmms_equipment_manufacturer">
+            <column name="manufacturer"/>
+        </createIndex>
+        <createIndex tableName="cmms_equipment" indexName="idx_cmms_equipment_model">
+            <column name="model_number"/>
+        </createIndex>
+        <createIndex tableName="cmms_equipment" indexName="idx_cmms_equipment_serial">
+            <column name="serial_number"/>
+        </createIndex>
+        <createIndex tableName="cmms_equipment" indexName="idx_cmms_equipment_user">
+            <column name="owned_by_user_id"/>
+        </createIndex>
+        <createIndex tableName="cmms_equipment" indexName="idx_cmms_equipment_location">
+            <column name="location"/>
+        </createIndex>
+        <createIndex tableName="cmms_equipment" indexName="idx_cmms_equipment_criticality">
+            <column name="criticality"/>
+        </createIndex>
+    </changeSet>
+
+    <!-- ==================================================================== -->
+    <!-- Migration 004: Work Orders Table                                    -->
+    <!-- ==================================================================== -->
+
+    <!-- Create work order enums -->
+    <changeSet id="004-baseline-work-order-enums" author="rivet">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(*) FROM pg_type WHERE typname IN ('source_type', 'route_type', 'work_order_status', 'priority_level')
+            </sqlCheck>
+        </preConditions>
+        <sql>
+            CREATE TYPE source_type AS ENUM (
+                'telegram_text', 'telegram_voice', 'telegram_photo',
+                'telegram_print_qa', 'telegram_manual_gap',
+                'whatsapp_text', 'whatsapp_voice', 'whatsapp_photo'
+            );
+            CREATE TYPE route_type AS ENUM ('A', 'B', 'C', 'D');
+            CREATE TYPE work_order_status AS ENUM ('open', 'in_progress', 'completed', 'cancelled');
+            CREATE TYPE priority_level AS ENUM ('low', 'medium', 'high', 'critical');
+        </sql>
+    </changeSet>
+
+    <!-- Work order sequence -->
+    <changeSet id="004-baseline-work-order-seq" author="rivet">
+        <preConditions onFail="MARK_RAN">
+            <not><sequenceExists sequenceName="work_order_seq"/></not>
+        </preConditions>
+        <createSequence sequenceName="work_order_seq" startValue="1"/>
+    </changeSet>
+
+    <changeSet id="004-baseline-work-orders" author="rivet">
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="work_orders"/></not>
+        </preConditions>
+        <createTable tableName="work_orders">
+            <column name="id" type="uuid" defaultValueComputed="gen_random_uuid()">
+                <constraints primaryKey="true"/>
+            </column>
+            <column name="work_order_number" type="varchar(50)">
+                <constraints nullable="false" unique="true"/>
+            </column>
+            <column name="user_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="telegram_username" type="varchar(255)"/>
+            <column name="created_by_agent" type="varchar(100)"/>
+            <column name="source" type="source_type">
+                <constraints nullable="false"/>
+            </column>
+            <column name="equipment_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="equipment_number" type="varchar(50)"/>
+            <column name="manufacturer" type="varchar(255)"/>
+            <column name="model_number" type="varchar(255)"/>
+            <column name="serial_number" type="varchar(255)"/>
+            <column name="equipment_type" type="varchar(100)"/>
+            <column name="machine_id" type="uuid"/>
+            <column name="location" type="varchar(500)"/>
+            <column name="title" type="varchar(500)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="description" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="fault_codes" type="text[]"/>
+            <column name="symptoms" type="text[]"/>
+            <column name="answer_text" type="text"/>
+            <column name="confidence_score" type="float"/>
+            <column name="route_taken" type="route_type"/>
+            <column name="suggested_actions" type="text[]"/>
+            <column name="safety_warnings" type="text[]"/>
+            <column name="cited_kb_atoms" type="text[]"/>
+            <column name="manual_links" type="text[]"/>
+            <column name="status" type="work_order_status" defaultValue="open"/>
+            <column name="priority" type="priority_level" defaultValue="medium"/>
+            <column name="trace_id" type="uuid"/>
+            <column name="conversation_id" type="uuid"/>
+            <column name="research_triggered" type="boolean" defaultValue="false"/>
+            <column name="enrichment_triggered" type="boolean" defaultValue="false"/>
+            <column name="created_at" type="timestamp with time zone" defaultValueComputed="NOW()">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp with time zone" defaultValueComputed="NOW()">
+                <constraints nullable="false"/>
+            </column>
+            <column name="completed_at" type="timestamp with time zone"/>
+        </createTable>
+        <addForeignKeyConstraint baseTableName="work_orders" baseColumnNames="user_id"
+            constraintName="fk_work_orders_user"
+            referencedTableName="users" referencedColumnNames="id"
+            onDelete="CASCADE"/>
+        <addForeignKeyConstraint baseTableName="work_orders" baseColumnNames="equipment_id"
+            constraintName="fk_work_orders_equipment"
+            referencedTableName="cmms_equipment" referencedColumnNames="id"
+            onDelete="CASCADE"/>
+    </changeSet>
+
+    <!-- Work order indexes -->
+    <changeSet id="004-baseline-work-order-indexes" author="rivet">
+        <createIndex tableName="work_orders" indexName="idx_work_orders_user">
+            <column name="user_id"/>
+        </createIndex>
+        <createIndex tableName="work_orders" indexName="idx_work_orders_equipment">
+            <column name="equipment_id"/>
+        </createIndex>
+        <createIndex tableName="work_orders" indexName="idx_work_orders_status">
+            <column name="status"/>
+        </createIndex>
+        <createIndex tableName="work_orders" indexName="idx_work_orders_priority">
+            <column name="priority"/>
+        </createIndex>
+        <createIndex tableName="work_orders" indexName="idx_work_orders_created">
+            <column name="created_at" descending="true"/>
+        </createIndex>
+    </changeSet>
+
+    <!-- ==================================================================== -->
+    <!-- Triggers and Functions                                              -->
+    <!-- ==================================================================== -->
+
+    <changeSet id="baseline-triggers" author="rivet">
+        <sql>
+            -- Auto-update timestamps trigger function
+            CREATE OR REPLACE FUNCTION update_updated_at_column()
+            RETURNS TRIGGER AS $$
+            BEGIN
+                NEW.updated_at = NOW();
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+
+            -- Equipment number generation
+            CREATE OR REPLACE FUNCTION generate_equipment_number()
+            RETURNS VARCHAR(50) AS $$
+            DECLARE
+                year_prefix VARCHAR(4);
+                seq_num INTEGER;
+                padded_num VARCHAR(6);
+            BEGIN
+                year_prefix := TO_CHAR(NOW(), 'YYYY');
+                seq_num := nextval('equipment_seq');
+                padded_num := LPAD(seq_num::TEXT, 6, '0');
+                RETURN 'EQ-' || year_prefix || '-' || padded_num;
+            END;
+            $$ LANGUAGE plpgsql;
+
+            -- Work order number generation
+            CREATE OR REPLACE FUNCTION generate_work_order_number()
+            RETURNS VARCHAR(50) AS $$
+            DECLARE
+                year_prefix VARCHAR(4);
+                seq_num INTEGER;
+                padded_num VARCHAR(6);
+            BEGIN
+                year_prefix := TO_CHAR(NOW(), 'YYYY');
+                seq_num := nextval('work_order_seq');
+                padded_num := LPAD(seq_num::TEXT, 6, '0');
+                RETURN 'WO-' || year_prefix || '-' || padded_num;
+            END;
+            $$ LANGUAGE plpgsql;
+
+            -- Equipment number trigger
+            CREATE OR REPLACE FUNCTION set_equipment_number_trigger()
+            RETURNS TRIGGER AS $$
+            BEGIN
+                IF NEW.equipment_number IS NULL THEN
+                    NEW.equipment_number := generate_equipment_number();
+                END IF;
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+
+            -- Work order number trigger
+            CREATE OR REPLACE FUNCTION set_work_order_number_trigger()
+            RETURNS TRIGGER AS $$
+            BEGIN
+                IF NEW.work_order_number IS NULL THEN
+                    NEW.work_order_number := generate_work_order_number();
+                END IF;
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+
+            -- Update equipment stats when work order created
+            CREATE OR REPLACE FUNCTION update_equipment_on_work_order()
+            RETURNS TRIGGER AS $$
+            BEGIN
+                IF NEW.equipment_id IS NOT NULL THEN
+                    UPDATE cmms_equipment
+                    SET
+                        work_order_count = work_order_count + 1,
+                        last_work_order_at = NOW(),
+                        updated_at = NOW()
+                    WHERE id = NEW.equipment_id;
+                END IF;
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+
+            -- Create triggers
+            CREATE TRIGGER set_equipment_number
+                BEFORE INSERT ON cmms_equipment
+                FOR EACH ROW
+                EXECUTE FUNCTION set_equipment_number_trigger();
+
+            CREATE TRIGGER cmms_equipment_updated_at
+                BEFORE UPDATE ON cmms_equipment
+                FOR EACH ROW
+                EXECUTE FUNCTION update_updated_at_column();
+
+            CREATE TRIGGER set_work_order_number
+                BEFORE INSERT ON work_orders
+                FOR EACH ROW
+                EXECUTE FUNCTION set_work_order_number_trigger();
+
+            CREATE TRIGGER work_order_updated_at
+                BEFORE UPDATE ON work_orders
+                FOR EACH ROW
+                EXECUTE FUNCTION update_updated_at_column();
+
+            CREATE TRIGGER work_order_equipment_stats
+                AFTER INSERT ON work_orders
+                FOR EACH ROW
+                EXECUTE FUNCTION update_equipment_on_work_order();
+
+            CREATE TRIGGER update_users_updated_at
+                BEFORE UPDATE ON users
+                FOR EACH ROW
+                EXECUTE FUNCTION update_updated_at_column();
+
+            CREATE TRIGGER update_teams_updated_at
+                BEFORE UPDATE ON teams
+                FOR EACH ROW
+                EXECUTE FUNCTION update_updated_at_column();
+        </sql>
+    </changeSet>
+
+</databaseChangeLog>

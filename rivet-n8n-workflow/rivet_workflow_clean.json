@@ -1,0 +1,707 @@
+{
+  "name": "RIVET Pro - Photo to Manual",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ]
+      },
+      "id": "telegram_trigger",
+      "name": "Telegram Photo Received",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        250
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "photo_check",
+              "leftValue": "={{ $json.message.photo }}",
+              "rightValue": "",
+              "operator": {
+                "type": "exists",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check_photo",
+      "name": "Has Photo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        250,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $json.message.chat.id }}",
+        "text": "📸 Please send a photo of the equipment nameplate, panel, or error display.\n\nI'll:\n• Extract the manufacturer and model\n• Find the manual for you\n• Save it to your CMMS",
+        "additionalFields": {}
+      },
+      "id": "no_photo_response",
+      "name": "Request Photo",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        500,
+        400
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getFile",
+        "fileId": "={{ $json.message.photo.slice(-1)[0].file_id }}"
+      },
+      "id": "get_file",
+      "name": "Get Telegram File",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        500,
+        100
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.telegram.org/file/bot{{ $credentials.telegramApi.accessToken }}/{{ $json.result.file_path }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "download_file",
+      "name": "Download Photo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        750,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\": [{\n    \"parts\": [\n      {\"text\": \"Extract from this equipment photo: manufacturer, model number, serial number, any error codes or fault displays. Return ONLY valid JSON with these exact keys: manufacturer, model, serial, errors, confidence (0-100). Example: {\\\"manufacturer\\\":\\\"Siemens\\\",\\\"model\\\":\\\"S7-1200\\\",\\\"serial\\\":\\\"6ES7214\\\",\\\"errors\\\":null,\\\"confidence\\\":95}\"},\n      {\"inline_data\": {\"mime_type\": \"image/jpeg\", \"data\": \"{{ $binary.data.toString('base64') }}\"}}\n    ]\n  }]\n}",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "key",
+                "value": "={{ $vars.GOOGLE_API_KEY }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ocr_gemini",
+      "name": "Gemini Vision OCR",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Parse Gemini response and extract structured data\nconst response = $input.item.json;\nconst text = response.candidates?.[0]?.content?.parts?.[0]?.text || '';\n\n// Try to parse JSON from response\nlet extracted = {};\ntry {\n  // Find JSON in response (handles markdown code blocks)\n  const jsonMatch = text.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    extracted = JSON.parse(jsonMatch[0]);\n  }\n} catch (e) {\n  // Fallback: extract with regex if JSON parsing fails\n  extracted = {\n    manufacturer: text.match(/manufacturer[:\\s]+([\\w\\s&.-]+)/i)?.[1]?.trim() || 'Unknown',\n    model: text.match(/model[:\\s]+([\\w\\s\\-\\/]+)/i)?.[1]?.trim() || 'Unknown',\n    serial: text.match(/serial[:\\s]+([\\w\\s\\-]+)/i)?.[1]?.trim() || 'Unknown',\n    errors: text.match(/error[s]?[:\\s]+([\\w\\d\\s]+)/i)?.[1]?.trim() || null,\n    confidence: 50\n  };\n}\n\n// Ensure confidence is a number\nif (typeof extracted.confidence === 'string') {\n  extracted.confidence = parseInt(extracted.confidence, 10) || 50;\n}\n\n// Get chat_id from original trigger\nconst chatId = $('Telegram Photo Received').item.json.message.chat.id;\n\nreturn {\n  json: {\n    ...extracted,\n    raw_text: text,\n    chat_id: chatId\n  }\n};"
+      },
+      "id": "parse_ocr",
+      "name": "Parse OCR Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "conf_check",
+              "leftValue": "={{ $json.confidence }}",
+              "rightValue": 70,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "confidence_check",
+      "name": "Confidence >= 70%?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chat_id }}",
+        "text": "=🔍 I couldn't read the equipment info clearly ({{ $json.confidence }}% confidence).\n\nI found:\n• Manufacturer: {{ $json.manufacturer || 'unclear' }}\n• Model: {{ $json.model || 'unclear' }}\n• Serial: {{ $json.serial || 'unclear' }}\n\nCould you:\n1. Take a clearer photo of the nameplate\n2. Or type the info: Manufacturer - Model Number",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "ask_clarification",
+      "name": "Ask for Clarification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1750,
+        250
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $vars.ATLAS_CMMS_URL }}/api/equipment",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "manufacturer",
+              "value": "={{ $json.manufacturer }}"
+            },
+            {
+              "name": "model",
+              "value": "={{ $json.model }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cmms_search",
+      "name": "Search Atlas CMMS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1750,
+        -50
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "asset_check",
+              "leftValue": "={{ $json.data && $json.data.length > 0 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "asset_exists",
+      "name": "Asset Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        -50
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.ATLAS_CMMS_URL }}/api/equipment",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"manufacturer\": \"{{ $('Parse OCR Response').item.json.manufacturer }}\",\n  \"model_number\": \"{{ $('Parse OCR Response').item.json.model }}\",\n  \"serial_number\": \"{{ $('Parse OCR Response').item.json.serial }}\",\n  \"created_via\": \"telegram_bot\",\n  \"status\": \"operational\"\n}",
+        "options": {}
+      },
+      "id": "create_asset",
+      "name": "Create Asset",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2250,
+        50
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $vars.ATLAS_CMMS_URL }}/api/equipment/{{ $json.data[0].id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"last_seen\": \"{{ new Date().toISOString() }}\",\n  \"serial_number\": \"{{ $('Parse OCR Response').item.json.serial }}\"\n}",
+        "options": {}
+      },
+      "id": "update_asset",
+      "name": "Update Asset",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2250,
+        -150
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.tavily.com/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"query\": \"{{ $('Parse OCR Response').item.json.manufacturer }} {{ $('Parse OCR Response').item.json.model }} user manual PDF filetype:pdf\",\n  \"search_depth\": \"basic\",\n  \"include_answer\": false,\n  \"max_results\": 5\n}",
+        "options": {}
+      },
+      "id": "quick_search",
+      "name": "Quick Manual Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2500,
+        -50
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "pdf_check",
+              "leftValue": "={{ $json.results && $json.results.filter(r => r.url && (r.url.toLowerCase().includes('.pdf') || r.url.toLowerCase().includes('manual'))).length > 0 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "pdf_found",
+      "name": "PDF Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2750,
+        -50
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $('Parse OCR Response').item.json.chat_id }}",
+        "text": "=📋 **Manual Found!**\n\n**Equipment:** {{ $('Parse OCR Response').item.json.manufacturer }} {{ $('Parse OCR Response').item.json.model }}\n**Serial:** {{ $('Parse OCR Response').item.json.serial }}\n\n📥 [Download Manual]({{ $json.results.filter(r => r.url && (r.url.toLowerCase().includes('.pdf') || r.url.toLowerCase().includes('manual')))[0].url }})\n\n✅ _Asset saved to CMMS_",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "send_pdf_link",
+      "name": "Send PDF Link",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3000,
+        -150
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.tavily.com/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"query\": \"site:{{ $('Parse OCR Response').item.json.manufacturer.toLowerCase().replace(/\\\\s/g, '').replace(/[^a-z0-9]/g, '') }}.com {{ $('Parse OCR Response').item.json.model }} manual PDF download\",\n  \"search_depth\": \"advanced\",\n  \"include_answer\": false,\n  \"max_results\": 10\n}",
+        "options": {}
+      },
+      "id": "deep_search",
+      "name": "Deep Search - Manufacturer Site",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3000,
+        50
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "deep_pdf_check",
+              "leftValue": "={{ $json.results && $json.results.filter(r => r.url && (r.url.toLowerCase().includes('.pdf') || r.url.toLowerCase().includes('manual') || r.url.toLowerCase().includes('download'))).length > 0 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "deep_pdf_found",
+      "name": "Deep Search Found PDF?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3250,
+        50
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $('Parse OCR Response').item.json.chat_id }}",
+        "text": "=📋 **Manual Found (Deep Search)**\n\n**Equipment:** {{ $('Parse OCR Response').item.json.manufacturer }} {{ $('Parse OCR Response').item.json.model }}\n**Serial:** {{ $('Parse OCR Response').item.json.serial }}\n\n📥 [Download Manual]({{ $json.results.filter(r => r.url && (r.url.toLowerCase().includes('.pdf') || r.url.toLowerCase().includes('manual') || r.url.toLowerCase().includes('download')))[0].url }})\n\n✅ _Asset saved to CMMS_",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "send_deep_result",
+      "name": "Send Deep Search Result",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3500,
+        -50
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $('Parse OCR Response').item.json.chat_id }}",
+        "text": "=⚠️ **Manual Not Found**\n\n**Equipment:** {{ $('Parse OCR Response').item.json.manufacturer }} {{ $('Parse OCR Response').item.json.model }}\n**Serial:** {{ $('Parse OCR Response').item.json.serial }}\n\nI couldn't find a PDF manual automatically. Try:\n• Check manufacturer's support site directly\n• Search: \"{{ $('Parse OCR Response').item.json.model }} manual PDF\"\n• Contact manufacturer support\n\n✅ _Asset saved to CMMS_",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "send_not_found",
+      "name": "Send Not Found",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3500,
+        150
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "CONFIGURE_AFTER_IMPORT",
+          "name": "Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Photo Received": {
+      "main": [
+        [
+          {
+            "node": "Has Photo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Photo?": {
+      "main": [
+        [
+          {
+            "node": "Get Telegram File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Request Photo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Telegram File": {
+      "main": [
+        [
+          {
+            "node": "Download Photo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Photo": {
+      "main": [
+        [
+          {
+            "node": "Gemini Vision OCR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Vision OCR": {
+      "main": [
+        [
+          {
+            "node": "Parse OCR Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse OCR Response": {
+      "main": [
+        [
+          {
+            "node": "Confidence >= 70%?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confidence >= 70%?": {
+      "main": [
+        [
+          {
+            "node": "Search Atlas CMMS",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ask for Clarification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Atlas CMMS": {
+      "main": [
+        [
+          {
+            "node": "Asset Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Asset Exists?": {
+      "main": [
+        [
+          {
+            "node": "Update Asset",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Asset",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Asset": {
+      "main": [
+        [
+          {
+            "node": "Quick Manual Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Asset": {
+      "main": [
+        [
+          {
+            "node": "Quick Manual Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quick Manual Search": {
+      "main": [
+        [
+          {
+            "node": "PDF Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PDF Found?": {
+      "main": [
+        [
+          {
+            "node": "Send PDF Link",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Deep Search - Manufacturer Site",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deep Search - Manufacturer Site": {
+      "main": [
+        [
+          {
+            "node": "Deep Search Found PDF?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deep Search Found PDF?": {
+      "main": [
+        [
+          {
+            "node": "Send Deep Search Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Not Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "versionId": "1"
+}

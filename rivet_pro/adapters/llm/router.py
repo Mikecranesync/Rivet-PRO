@@ -49,19 +49,20 @@ class ProviderConfig:
 
 
 # Cost-optimized provider chain for vision tasks
+# NOTE: Groq first (Gemini API key currently leaked - 403 errors waste 1-2s)
 VISION_PROVIDER_CHAIN: List[ProviderConfig] = [
     ProviderConfig(
-        name="gemini",
-        model="gemini-2.5-flash",  # Updated to Gemini 2.5 (1.5 deprecated)
-        cost_per_1k_input=0.000075,  # $0.075 per 1M - CHEAPEST
-        cost_per_1k_output=0.0003,
+        name="groq",
+        model="meta-llama/llama-4-scout-17b-16e-instruct",  # Llama 4 Scout - 460 tokens/s, FAST
+        cost_per_1k_input=0.00011,  # $0.11 per 1M
+        cost_per_1k_output=0.00034,
         max_image_size_mb=20,
     ),
     ProviderConfig(
-        name="groq",
-        model="meta-llama/llama-4-scout-17b-16e-instruct",  # Llama 4 Scout - 460 tokens/s
-        cost_per_1k_input=0.00011,  # $0.11 per 1M
-        cost_per_1k_output=0.00034,
+        name="gemini",
+        model="gemini-2.5-flash",  # Updated to Gemini 2.5 (1.5 deprecated)
+        cost_per_1k_input=0.000075,  # $0.075 per 1M - CHEAPEST (when key works)
+        cost_per_1k_output=0.0003,
         max_image_size_mb=20,
     ),
     ProviderConfig(

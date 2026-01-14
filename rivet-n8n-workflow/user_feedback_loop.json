@@ -1,0 +1,355 @@
+{
+  "name": "User Feedback Loop",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "user-feedback",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-receive",
+      "name": "Webhook - Receive Feedback",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "user-feedback"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate required fields\nconst data = $input.first().json.body;\n\nconst required = ['interaction_id', 'telegram_user_id', 'feedback_text', 'feedback_type'];\nconst missing = required.filter(field => !data[field]);\n\nif (missing.length > 0) {\n  throw new Error(`Missing required fields: ${missing.join(', ')}`);\n}\n\nreturn {\n  interaction_id: data.interaction_id,\n  telegram_user_id: data.telegram_user_id,\n  feedback_text: data.feedback_text,\n  feedback_type: data.feedback_type,\n  context: data.context || {}\n};"
+      },
+      "id": "validate-input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, telegram_user_id, username FROM users WHERE telegram_user_id = '{{ $json.telegram_user_id }}'",
+        "options": {}
+      },
+      "id": "get-user",
+      "name": "Get User",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [680, 300],
+      "credentials": {
+        "postgres": {
+          "id": "neon-database",
+          "name": "Neon Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate story ID: FEEDBACK-{type}-{timestamp}\nconst input = $input.first().json;\nconst type = input.feedback_type.toUpperCase().replace('_', '-');\nconst timestamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);\nconst story_id = `FEEDBACK-${type}-${timestamp}`;\n\nreturn {\n  ...input,\n  story_id,\n  project_id: 1\n};"
+      },
+      "id": "generate-story-id",
+      "name": "Generate Story ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build prompt for Claude\nconst data = $input.first().json;\nconst ctx = data.context;\n\nconst prompt = `# USER FEEDBACK - FIX PROPOSAL\n\n## Issue Report\nFeedback: \"${data.feedback_text}\"\nType: ${data.feedback_type}\n\n## Context\nEquipment: ${ctx.equipment_number || 'Unknown'}\nManufacturer: ${ctx.manufacturer || 'Unknown'}\nModel: ${ctx.model || 'Unknown'}\nManual URL: ${ctx.manual_url || 'N/A'}\n\n## Task\n1. Analyze the issue based on the feedback\n2. Propose a specific fix that addresses the root cause\n3. Identify all files that need to be changed\n4. Write clear acceptance criteria for testing\n\n## Response Format (JSON only, no markdown):\n{\n  \"analysis\": \"What went wrong and why\",\n  \"proposed_fix\": \"Specific solution with implementation details\",\n  \"files_to_change\": [\"path/to/file1.py\", \"path/to/file2.py\"],\n  \"estimated_effort\": \"low|medium|high\",\n  \"acceptance_criteria\": [\n    \"Criterion 1: Expected behavior after fix\",\n    \"Criterion 2: How to verify the fix works\"\n  ],\n  \"priority\": 2\n}\n\nBe specific and actionable. The fix will be implemented automatically by an AI agent.`;\n\nreturn {\n  ...data,\n  prompt_text: prompt\n};"
+      },
+      "id": "build-prompt",
+      "name": "Build Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-3-5-sonnet-20241022"
+            },
+            {
+              "name": "max_tokens",
+              "value": "1000"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": \"{{ $json.prompt_text }}\"}]"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "call-claude",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 300],
+      "credentials": {
+        "anthropicApi": {
+          "id": "anthropic-api",
+          "name": "Anthropic API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Claude response\nconst data = $input.first().json;\nconst prev = $('Build Claude Prompt').first().json;\n\nlet proposal;\ntry {\n  const content = data.content[0].text;\n  \n  // Try to extract JSON from markdown code blocks\n  const jsonMatch = content.match(/```(?:json)?\\s*([\\s\\S]*?)```/) || [null, content];\n  proposal = JSON.parse(jsonMatch[1].trim());\n  \n} catch (e) {\n  // Fallback if parsing fails\n  proposal = {\n    analysis: \"Failed to parse Claude response\",\n    proposed_fix: data.content[0].text,\n    files_to_change: [],\n    estimated_effort: \"medium\",\n    acceptance_criteria: [\"Manual review required\"],\n    priority: 2\n  };\n}\n\nreturn {\n  ...prev,\n  proposal,\n  raw_claude_response: data.content[0].text\n};"
+      },
+      "id": "parse-response",
+      "name": "Parse Claude Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO ralph_stories (\n  story_id,\n  project_id,\n  title,\n  description,\n  acceptance_criteria,\n  status,\n  priority,\n  feedback_interaction_id,\n  approval_status,\n  proposal_text,\n  feedback_type,\n  created_at\n)\nVALUES (\n  '{{ $json.story_id }}',\n  {{ $json.project_id }},\n  'Fix: {{ $json.feedback_type }}',\n  '{{ $json.proposal.analysis }}\\n\\n{{ $json.proposal.proposed_fix }}',\n  '{{ JSON.stringify($json.proposal.acceptance_criteria) }}',\n  'pending_approval',\n  {{ $json.proposal.priority }},\n  '{{ $json.interaction_id }}',\n  'pending_approval',\n  '{{ $json.proposal.proposed_fix }}',\n  '{{ $json.feedback_type }}',\n  NOW()\n)\nRETURNING id;",
+        "options": {}
+      },
+      "id": "create-story",
+      "name": "Create Ralph Story",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1780, 300],
+      "credentials": {
+        "postgres": {
+          "id": "neon-database",
+          "name": "Neon Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE interactions\nSET story_id = '{{ $('Parse Claude Response').first().json.story_id }}',\n    outcome = 'proposal_generated'\nWHERE id = '{{ $('Parse Claude Response').first().json.interaction_id }}';",
+        "options": {}
+      },
+      "id": "link-interaction",
+      "name": "Link to Interaction",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2000, 300],
+      "credentials": {
+        "postgres": {
+          "id": "neon-database",
+          "name": "Neon Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format Telegram message with proposal\nconst data = $('Parse Claude Response').first().json;\nconst p = data.proposal;\n\nconst effort_emoji = {\n  low: '🟢',\n  medium: '🟡',\n  high: '🔴'\n}[p.estimated_effort] || '⚪';\n\nconst message = `🔧 <b>Fix Proposal</b> (${data.story_id})\n\n<b>Issue:</b>\n${p.analysis}\n\n<b>Proposed Solution:</b>\n${p.proposed_fix}\n\n<b>Files to Change:</b>\n${p.files_to_change.map(f => `• <code>${f}</code>`).join('\\n') || 'None specified'}\n\n<b>Effort:</b> ${effort_emoji} ${p.estimated_effort}\n\n<b>Acceptance Criteria:</b>\n${p.acceptance_criteria.map((c, i) => `${i+1}. ${c}`).join('\\n')}\n\n<i>Review the proposal and approve to begin implementation.</i>`;\n\nreturn {\n  ...data,\n  message_text: message\n};"
+      },
+      "id": "format-message",
+      "name": "Format Telegram Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2220, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.telegram_user_id }}",
+        "text": "={{ $json.message_text }}",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "reply_markup": {
+            "inline_keyboard": [
+              [
+                {
+                  "text": "👍 Approve Fix",
+                  "callback_data": "approve_fix:{{ $json.story_id }}"
+                },
+                {
+                  "text": "👎 Reject",
+                  "callback_data": "reject_fix:{{ $json.story_id }}"
+                }
+              ]
+            ]
+          }
+        }
+      },
+      "id": "send-proposal",
+      "name": "Send Proposal to User",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2440, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot",
+          "name": "Rivet Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": true, \"story_id\": $json.story_id, \"message\": \"Proposal sent to user\" } }}"
+      },
+      "id": "respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2660, 300]
+    }
+  ],
+  "connections": {
+    "Webhook - Receive Feedback": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Get User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get User": {
+      "main": [
+        [
+          {
+            "node": "Generate Story ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Story ID": {
+      "main": [
+        [
+          {
+            "node": "Build Claude Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude Prompt": {
+      "main": [
+        [
+          {
+            "node": "Call Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude API": {
+      "main": [
+        [
+          {
+            "node": "Parse Claude Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Claude Response": {
+      "main": [
+        [
+          {
+            "node": "Create Ralph Story",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Ralph Story": {
+      "main": [
+        [
+          {
+            "node": "Link to Interaction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Link to Interaction": {
+      "main": [
+        [
+          {
+            "node": "Format Telegram Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Telegram Message": {
+      "main": [
+        [
+          {
+            "node": "Send Proposal to User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Proposal to User": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "feedback",
+      "id": "feedback-loop"
+    },
+    {
+      "name": "ralph",
+      "id": "ralph-system"
+    }
+  ],
+  "pinData": {},
+  "versionId": "1.0.0"
+}

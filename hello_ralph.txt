@@ -1,0 +1,8 @@
+Hello! This is a test to show Claude Code is already working.
+
+You don't need the Ralph plugin to get work done - I can help you right now with any task you need!
+
+The Ralph plugin just makes me run autonomously in loops without your input. But for now, we can work together interactively.
+
+- Created: 2026-01-11
+- By: Claude Code (that's me!)

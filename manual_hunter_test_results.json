@@ -1,0 +1,32 @@
+[
+  {
+    "test": "Test 1: Valid PDF URL (Tier 1)",
+    "status": "FAIL",
+    "found": false,
+    "destination": null
+  },
+  {
+    "test": "Test 2: Valid HTML URL (Tier 1)",
+    "status": "FAIL",
+    "found": false,
+    "destination": null
+  },
+  {
+    "test": "Test 3: Common Equipment (Tier 1)",
+    "status": "FAIL",
+    "found": false,
+    "destination": null
+  },
+  {
+    "test": "Test 4: Less Common Equipment",
+    "status": "FAIL",
+    "found": false,
+    "destination": null
+  },
+  {
+    "test": "Test 5: Very Specific Model",
+    "status": "FAIL",
+    "found": false,
+    "destination": null
+  }
+]

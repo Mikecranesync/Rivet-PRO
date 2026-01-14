@@ -1,0 +1,113 @@
+{
+  "name": "Ralph - Implement Single Story",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "execute-workflow-trigger",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\n\nif (!input.story_id || !input.prompt_text) {\n  return [{\n    json: {\n      success: false,\n      error_message: 'Missing story_id or prompt_text',\n      story_id: input.story_id || 0,\n      story_code: input.story_code || 'UNKNOWN',\n      tokens_used: 0,\n      iteration: input.iteration || 0,\n      execution_id: input.execution_id || 0\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    ...input,\n    start_time: Date.now(),\n    valid: true\n  }\n}];"
+      },
+      "id": "validate-input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.valid }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-valid",
+      "name": "Check Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"{{ $json.ai_model }}\",\n  \"max_tokens\": 16000,\n  \"messages\": [{\"role\": \"user\", \"content\": \"{{ $json.prompt_text }}\"}]\n}",
+        "options": {
+          "timeout": 180000,
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "call-claude",
+      "name": "Call Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 200],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst input = $('Validate Input').first().json;\nconst duration = Math.round((Date.now() - input.start_time) / 1000);\n\n// API error\nif (response.error || !response.content) {\n  return [{\n    json: {\n      success: false,\n      story_id: input.story_id,\n      story_code: input.story_code,\n      error_message: response.error?.message || 'No response',\n      commit_hash: null,\n      tokens_used: 0,\n      duration_seconds: duration,\n      iteration: input.iteration,\n      execution_id: input.execution_id\n    }\n  }];\n}\n\nconst content = response.content[0]?.text || '';\nconst tokens = (response.usage?.input_tokens || 0) + (response.usage?.output_tokens || 0);\n\n// Parse JSON from response\nlet result;\ntry {\n  const match = content.match(/```json\\s*([\\s\\S]*?)\\s*```/) ||\n                content.match(/(\\{[\\s\\S]*\"success\"[\\s\\S]*\\})/);\n  result = JSON.parse(match[1] || match[0]);\n} catch (e) {\n  result = {\n    success: false,\n    error_message: 'Could not parse response',\n    notes: content.substring(0, 500)\n  };\n}\n\nreturn [{\n  json: {\n    success: result.success === true,\n    story_id: input.story_id,\n    story_code: input.story_code,\n    commit_hash: result.commit_hash || null,\n    error_message: result.error_message || null,\n    files_changed: result.files_changed || [],\n    notes: result.notes || '',\n    tokens_used: tokens,\n    duration_seconds: duration,\n    iteration: input.iteration,\n    execution_id: input.execution_id\n  }\n}];"
+      },
+      "id": "parse-response",
+      "name": "Parse Claude Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 200]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [[{ "node": "Validate Input", "type": "main", "index": 0 }]]
+    },
+    "Validate Input": {
+      "main": [[{ "node": "Check Valid", "type": "main", "index": 0 }]]
+    },
+    "Check Valid": {
+      "main": [
+        [{ "node": "Call Claude", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Call Claude": {
+      "main": [[{ "node": "Parse Claude Response", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-10T00:00:00.000Z",
+  "versionId": "1"
+}

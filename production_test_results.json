@@ -1,0 +1,34 @@
+{
+  "endpoint": "https://mikecranesync.app.n8n.cloud/webhook/rivet-url-validator-prod",
+  "timestamp": "2026-01-10T01:03:25.621420",
+  "results": [
+    {
+      "url": "https://example.com",
+      "valid": true,
+      "score": 6,
+      "error": null,
+      "content_type": "text/html"
+    },
+    {
+      "url": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+      "valid": true,
+      "score": 9,
+      "error": null,
+      "content_type": "application/pdf; qs=0.001"
+    },
+    {
+      "url": "",
+      "valid": false,
+      "score": 0,
+      "error": "URL is required",
+      "content_type": ""
+    },
+    {
+      "url": "not-a-url",
+      "valid": false,
+      "score": 0,
+      "error": "URL must start with http:// or https://",
+      "content_type": ""
+    }
+  ]
+}

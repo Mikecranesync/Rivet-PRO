@@ -276,3 +276,130 @@ def synthesize_response(
 
     # Combine
     return text + safety_section
+
+
+def format_equipment_response(
+    equipment: Dict[str, Any],
+    manual: Dict[str, Any] = None
+) -> str:
+    """
+    Format equipment identification response with optional manual link.
+
+    Creates beautiful Telegram Markdown v2 compatible response for equipment lookups.
+
+    Args:
+        equipment: Dict with equipment info:
+            - manufacturer: str
+            - model: str
+            - serial: str (optional)
+            - error_code: str (optional)
+        manual: Optional dict with manual info:
+            - url: str
+            - title: str
+            - source: str
+            - cached: bool
+
+    Returns:
+        Formatted Markdown string ready for Telegram
+
+    Example (with manual):
+        >>> equipment = {
+        ...     'manufacturer': 'Siemens',
+        ...     'model': 'G120 VFD',
+        ...     'serial': '6SL3244-0BB12-1BA1'
+        ... }
+        >>> manual = {
+        ...     'url': 'https://example.com/manual.pdf',
+        ...     'title': 'Siemens G120 Operating Instructions',
+        ...     'source': 'tavily'
+        ... }
+        >>> print(format_equipment_response(equipment, manual))
+        📋 *Equipment Identified*
+
+        *Manufacturer:* Siemens
+        *Model:* G120 VFD
+        *Serial:* 6SL3244-0BB12-1BA1
+
+        📖 *User Manual*
+        [Siemens G120 Operating Instructions](https://example.com/manual.pdf)
+
+        💡 _Bookmark this for offline access._
+
+    Example (without manual):
+        >>> equipment = {'manufacturer': 'Unknown', 'model': 'XYZ-500'}
+        >>> print(format_equipment_response(equipment))
+        📋 *Equipment Identified*
+
+        *Manufacturer:* Unknown
+        *Model:* XYZ-500
+
+        📖 *Manual Not Found*
+
+        Try searching: Unknown XYZ-500 manual PDF
+
+        _Send a clearer photo if the ID looks wrong._
+    """
+    # Start with equipment identification
+    response = "📋 *Equipment Identified*\n\n"
+
+    # Add manufacturer
+    mfr = equipment.get('manufacturer', 'Unknown')
+    response += f"*Manufacturer:* {mfr}\n"
+
+    # Add model
+    model = equipment.get('model', 'Unknown')
+    response += f"*Model:* {model}\n"
+
+    # Add serial if available
+    if equipment.get('serial'):
+        response += f"*Serial:* {equipment['serial']}\n"
+
+    # Add error code if detected
+    if equipment.get('error_code'):
+        response += f"⚠️ *Error Code:* {equipment['error_code']}\n"
+
+    # Add manual section
+    response += "\n"
+
+    if manual and manual.get('url'):
+        # Manual found
+        response += "📖 *User Manual*\n"
+
+        title = manual.get('title', f"{mfr} {model} Manual")
+        url = manual['url']
+        confidence = manual.get('confidence', 1.0)
+
+        # Escape underscores in URL for Telegram Markdown compatibility
+        # Telegram Markdown treats _ as italic marker, breaking URLs with underscores
+        url_escaped = url.replace('_', r'\_')
+
+        # Create clickable Markdown link with escaped URL
+        response += f"[{title}]({url_escaped})\n\n"
+
+        # Add plain URL as fallback (some mobile clients have issues with links)
+        response += f"📎 _If link doesn't work, copy this URL:_\n`{url}`\n\n"
+
+        # Add confidence indicator if medium confidence (0.5-0.7)
+        if 0.5 <= confidence < 0.7:
+            response += "⚠️ _Link quality uncertain - please verify before use._\n\n"
+        elif confidence >= 0.7:
+            # High confidence - add helpful tip
+            response += "💡 _Tap link or copy URL to browser._\n"
+
+        # Add source attribution if available
+        if manual.get('source') and manual.get('source') != 'cache':
+            source = manual['source'].capitalize()
+            response += f"\n_Source: {source}_"
+
+    else:
+        # Manual not found
+        response += "📖 *Manual Not Found*\n\n"
+
+        # Suggest manual search query
+        search_query = f"{mfr} {model} manual PDF"
+        response += f"Try searching: {search_query}\n\n"
+
+        # Helpful tip
+        response += "_Send a clearer photo if the ID looks wrong._"
+
+    return response

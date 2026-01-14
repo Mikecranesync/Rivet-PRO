@@ -1,0 +1,109 @@
+name: Ralph Story Tests
+
+on:
+  push:
+    branches:
+      - 'ralph/**'  # Triggers on any branch starting with ralph/
+  workflow_dispatch:
+    inputs:
+      story_id:
+        description: 'Story ID to test (e.g., KB-006)'
+        required: true
+      commit_hash:
+        description: 'Commit hash to test'
+        required: false
+
+jobs:
+  test-ralph-story:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for git analysis
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio pytest-benchmark ruff mypy
+
+      - name: Extract story ID from commit
+        id: story
+        run: |
+          # Try to extract story ID from commit message
+          STORY_ID=$(git log -1 --pretty=%B | grep -oE '(RALPH|KB|RIVET|FEEDBACK|CRITICAL)-[A-Z0-9-]+' | head -1)
+
+          if [ -z "$STORY_ID" ]; then
+            STORY_ID="${{ github.event.inputs.story_id }}"
+          fi
+
+          echo "story_id=$STORY_ID" >> $GITHUB_OUTPUT
+          echo "Detected Story ID: $STORY_ID"
+
+      - name: Run Ralph Test Harness
+        run: |
+          python tests/ralph/ralph_test_harness.py \
+            "${{ steps.story.outputs.story_id }}" \
+            "${{ github.sha }}"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results-${{ steps.story.outputs.story_id }}
+          path: |
+            test-results/
+            coverage/
+
+      - name: Comment test results on commit
+        if: always()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const story_id = '${{ steps.story.outputs.story_id }}';
+
+            // Read test results (if available)
+            let comment = `## Ralph Test Results: ${story_id}\n\n`;
+            comment += `**Commit:** \`${{ github.sha }}\`\n`;
+            comment += `**Branch:** \`${{ github.ref_name }}\`\n\n`;
+
+            // This would be populated from test harness output
+            comment += `Tests completed. Check Actions tab for details.`;
+
+            github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body: comment
+            });
+
+      - name: Notify Telegram on failure
+        if: failure()
+        run: |
+          curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}" \
+            -d "text=❌ Ralph tests FAILED for ${{ steps.story.outputs.story_id }} (commit ${{ github.sha }})" \
+            -d "parse_mode=Markdown"
+
+      - name: Notify Telegram on success
+        if: success()
+        run: |
+          curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}" \
+            -d "text=✅ Ralph tests PASSED for ${{ steps.story.outputs.story_id }} (commit ${{ github.sha }})" \
+            -d "parse_mode=Markdown"

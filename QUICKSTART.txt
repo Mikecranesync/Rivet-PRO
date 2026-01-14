@@ -1,0 +1,62 @@
+========================================
+  RIVET-PRO CMMS BOT - QUICK START
+========================================
+
+Your browser should have opened to: http://localhost:3001
+
+STEP 1: CREATE CMMS ACCOUNT (2 minutes)
+----------------------------------------
+In the web page that opened:
+
+1. Click "Sign Up" (top right)
+2. Fill in the form:
+   - Email: anything@example.com (remember this!)
+   - Password: anything123 (remember this!)
+   - First Name: Your name
+   - Last Name: Your last name
+   - Company: Rivet Pro
+3. Click "Create Account"
+4. You're now logged in!
+
+STEP 2: CREATE A TEST ASSET (Optional - 1 minute)
+--------------------------------------------------
+While you're in the CMMS:
+
+1. Click "Assets" in the left menu
+2. Click "+ New Asset"
+3. Enter a name: "Test Motor"
+4. Click "Save"
+
+STEP 3: START THE BOT (30 seconds)
+-----------------------------------
+Double-click this file:
+  START_BOT.bat
+
+It will:
+- Check CMMS is running ✓
+- Ask for your email and password (from Step 1)
+- Test the connection
+- Save your credentials
+- Start the bot!
+
+STEP 4: TEST IN TELEGRAM
+-------------------------
+1. Open Telegram on your phone or desktop
+2. Find your bot (search for it in your bot list)
+3. Send: /start
+4. You'll see a menu with buttons!
+5. Click "View Assets" to see your test motor
+
+========================================
+
+THAT'S IT! The bot is now connected to your CMMS.
+
+Any work orders or assets you create in Telegram will appear in the web UI at http://localhost:3001
+
+Questions? Check BOT_READY.md for detailed help.
+
+========================================
+
+READY TO START?
+
+Double-click: START_BOT.bat
