@@ -21,7 +21,7 @@ from rivet_pro.infra.observability import get_logger
 from rivet_pro.core.services.ocr_service import analyze_image
 from rivet_pro.core.services.equipment_service import EquipmentService
 from rivet_pro.core.services.usage_service import UsageService
-from rivet_pro.core.services.response_formatter import format_with_actions
+# from rivet_pro.core.utils.response_formatter import format_with_actions
 from rivet_pro.core.services.manual_matcher_service import ManualMatcherService
 
 # KB integration imports (KB-003, KB-004, KB-005)
@@ -516,7 +516,9 @@ class PhotoService:
             actions.append("Create work order: /wo create")
             actions.append("Add more equipment: Send another photo")
 
-            message = format_with_actions(base_message, actions)
+            # Simple inline formatting instead of format_with_actions
+            actions_text = "\n".join(f"• {action}" for action in actions)
+            message = f"{base_message}\n\n{actions_text}"
             result["message"] = message
 
             logger.info(

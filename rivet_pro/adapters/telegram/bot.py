@@ -6,6 +6,7 @@ Handles all Telegram-specific interaction logic.
 from typing import Optional
 from uuid import UUID
 from datetime import time as datetime_time
+import asyncio
 import pytz
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -1563,15 +1564,19 @@ class TelegramBot:
         await self.application.start()
 
         # Schedule daily KB health report at 9 AM EST (KB-009)
-        est = pytz.timezone('America/New_York')
-        report_time = datetime_time(hour=9, minute=0, tzinfo=est)
+        # Only if job_queue is available (requires pip install "python-telegram-bot[job-queue]")
+        if self.application.job_queue is not None:
+            est = pytz.timezone('America/New_York')
+            report_time = datetime_time(hour=9, minute=0, tzinfo=est)
 
-        self.application.job_queue.run_daily(
-            callback=self._send_daily_kb_report,
-            time=report_time,
-            name='kb_daily_health_report'
-        )
-        logger.info("Scheduled daily KB health report at 9:00 AM EST")
+            self.application.job_queue.run_daily(
+                callback=self._send_daily_kb_report,
+                time=report_time,
+                name='kb_daily_health_report'
+            )
+            logger.info("Scheduled daily KB health report at 9:00 AM EST")
+        else:
+            logger.warning("JobQueue not available - daily KB health reports disabled. Install with: pip install 'python-telegram-bot[job-queue]'")
 
         # Start bot based on configured mode
         if settings.telegram_bot_mode == "webhook":

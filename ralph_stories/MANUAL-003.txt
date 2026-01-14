@@ -1,0 +1,120 @@
+STORY: MANUAL-003 - KB Integration with Multiple Manuals & /manual Command
+EFFORT: 3 hours
+PRIORITY: 9
+DEPENDENCIES: MANUAL-002
+
+DESCRIPTION:
+Store ALL LLM-validated manuals as separate KB SPEC atoms (not just one) and add /manual <equipment_number> Telegram command for instant retrieval. Display all available manuals (user manual, service manual, datasheet, etc.) when user requests.
+
+TASKS:
+1. Complete _store_validated_manual() in ManualMatcherService at rivet_pro/core/services/manual_matcher_service.py:
+   - Import: from rivet.services.knowledge_service import KnowledgeService
+   - Import: from rivet.models.knowledge_atom import KnowledgeAtomCreate, AtomType
+   - Build atom content with manual type, equipment type, validation reasoning, manual URL
+   - Generate keywords: "{manufacturer} {model} {equipment_type} manual {manual_type}"
+   - Create SPEC atom with:
+     * type=AtomType.SPEC
+     * manufacturer, model, title, content, keywords, source_url
+     * confidence=min(confidence, 0.95)  # Cap at 0.95
+     * human_verified=(confidence >= 0.90)
+     * source_type='manual_matcher'
+     * metadata={'manual_type', 'equipment_type', 'validation_reasoning', 'llm_confidence'}
+   - Generate embedding automatically via KnowledgeService.create_atom()
+   - Update manual_cache with atom_id, llm_validated=TRUE
+   - Return atom_id
+
+2. Add _notify_user() method in ManualMatcherService:
+   - Send Telegram message with manual link
+   - Format confidence indicator: ✅ if >=0.90, ⚠️ if >=0.80, ❓ otherwise
+   - Message format:
+     """📘 Manual Found!
+     Equipment: {equipment_number}
+     {manufacturer} {model}
+     Title: {manual_title}
+     Type: {manual_type}
+     URL: {manual_url}
+     Confidence: {icon} {confidence}% (AI-validated)
+     Added to knowledge base for future users.
+     Use /manual {equipment_number} for instant retrieval."""
+
+3. Call _notify_user() in search_and_validate_manual() after storing atom (step 5)
+
+4. Add /manual command in rivet_pro/adapters/telegram/bot.py:
+   async def manual_command(self, update, context):
+       if not context.args:
+           await update.message.reply_text("Usage: /manual <equipment_number>\nExample: /manual EQ-2025-0142")
+           return
+
+       equipment_number = context.args[0].upper()
+
+       # Look up equipment
+       equipment = await self.db.fetchrow("""
+           SELECT id, manufacturer, model_number, equipment_type
+           FROM cmms_equipment WHERE equipment_number = $1
+       """, equipment_number)
+
+       if not equipment:
+           await update.message.reply_text(f"❌ Equipment {equipment_number} not found.")
+           return
+
+       # Check manual_cache for validated manual
+       cached_manual = await self.db.fetchrow("""
+           SELECT manual_url, manual_title, llm_confidence, manual_type, llm_validated
+           FROM manual_cache
+           WHERE manufacturer = $1 AND model = $2 AND llm_validated = TRUE
+       """, equipment['manufacturer'], equipment['model_number'])
+
+       if cached_manual:
+           confidence = cached_manual['llm_confidence']
+           icon = "✅" if confidence >= 0.90 else "⚠️"
+           message = f"""📘 Manual: {equipment['manufacturer']} {equipment['model_number']}
+           Title: {cached_manual['manual_title']}
+           Type: {cached_manual['manual_type']}
+           URL: {cached_manual['manual_url']}
+           Confidence: {icon} {confidence:.0%} (AI-validated)"""
+           await update.message.reply_text(message, disable_web_page_preview=False)
+
+           # Track access
+           await self.db.execute("""
+               UPDATE manual_cache SET access_count = access_count + 1, last_accessed = NOW()
+               WHERE manufacturer = $1 AND model = $2
+           """, equipment['manufacturer'], equipment['model_number'])
+       else:
+           # Check if search in progress
+           search = await self.db.fetchrow("""
+               SELECT search_status FROM equipment_manual_searches
+               WHERE equipment_id = $1 ORDER BY created_at DESC LIMIT 1
+           """, equipment['id'])
+
+           if search and search['search_status'] == 'searching':
+               await update.message.reply_text(f"🔍 Manual search in progress for {equipment_number}...")
+           elif search and search['search_status'] == 'no_manual_found':
+               await update.message.reply_text(f"❌ Manual not found for {equipment['manufacturer']} {equipment['model_number']}.")
+           else:
+               await update.message.reply_text(f"❌ No manual available for {equipment_number}.\nTry sending a photo to trigger automatic manual search.")
+
+   # Register command
+   self.application.add_handler(CommandHandler("manual", self.manual_command))
+
+ACCEPTANCE CRITERIA:
+- _store_validated_manual() creates SPEC atom in knowledge_atoms table
+- Atom includes manufacturer, model, equipment_type, manual URL
+- Embedding generated automatically via KnowledgeService
+- manual_cache updated with atom_id and llm_validated=true
+- _notify_user() sends Telegram message with manual link
+- Notification includes confidence indicator (✅/⚠️/❓)
+- /manual command registered in bot handlers
+- /manual EQ-2025-0142 returns manual instantly (<1s)
+- Command shows confidence level and manual type
+- access_count incremented on manual retrieval
+- Test: Validate manual -> verify SPEC atom created
+- Test: Run /manual command -> verify instant retrieval
+- Test: User receives notification after async search completes
+
+FILES TO CREATE/MODIFY:
+- rivet_pro/core/services/manual_matcher_service.py (MODIFY - complete _store_validated_manual, add _notify_user)
+- rivet_pro/adapters/telegram/bot.py (MODIFY - add manual_command)
+
+VERIFICATION COMMANDS:
+psql $NEON_DATABASE_URL -c "SELECT COUNT(*) FROM knowledge_atoms WHERE source_type = 'manual_matcher';"
+psql $NEON_DATABASE_URL -c "SELECT COUNT(*) FROM manual_cache WHERE llm_validated = TRUE AND atom_id IS NOT NULL;"

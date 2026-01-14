@@ -1,3 +1,55 @@
+# RALPH WIGGUM - AUTONOMOUS DEVELOPMENT LOOP
+
+## When to Use Ralph
+
+**Use Ralph for large features that require multiple stories/iterations.**
+
+Ralph is an autonomous coding agent that:
+- Reads stories from the `ralph_stories` PostgreSQL table
+- Implements one story at a time
+- Commits changes with proper messages
+- Updates database status
+- Loops until all stories are complete
+
+## How to Start Ralph
+
+### Option 1: Run Directly in Claude Code (Recommended)
+1. Read `scripts/ralph/prd.json` for current PRD and stories
+2. Read `scripts/ralph/prompt.md` for agent instructions
+3. Connect to database using `DATABASE_URL` from `.env`
+4. Query: `SELECT * FROM ralph_stories WHERE status = 'todo' ORDER BY priority`
+5. Implement one story following the prompt instructions
+6. Update status in database when complete
+7. Repeat until all stories are done
+
+### Option 2: Use Python Script
+```bash
+cd C:\Users\hharp\OneDrive\Desktop\Rivet-PRO
+python scripts/ralph/ralph_local.py --max 5
+```
+
+## Ralph File Locations
+
+| File | Purpose |
+|------|---------|
+| `scripts/ralph/prd.json` | Current PRD with user stories |
+| `scripts/ralph/prompt.md` | Agent instructions and quality checks |
+| `scripts/ralph/progress.txt` | Append-only progress log |
+| `ralph_stories` table | Database story tracking |
+
+## Creating New Ralph Work
+
+1. Write a PRD with user stories
+2. Insert stories into `ralph_stories` table:
+   ```sql
+   INSERT INTO ralph_stories (project_id, story_id, title, description, acceptance_criteria, priority, status)
+   VALUES (1, 'FEATURE-001', 'Title', 'Description', '["criteria1", "criteria2"]'::jsonb, 1, 'todo');
+   ```
+3. Update `scripts/ralph/prd.json` with the new PRD
+4. Start Ralph using one of the methods above
+
+---
+
 # CLAUDE.md - Rivet Pro
 
 ## MISSION

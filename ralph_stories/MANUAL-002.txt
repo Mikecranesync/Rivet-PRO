@@ -1,0 +1,103 @@
+STORY: MANUAL-002 - LLM Manual Validation with Multiple Manuals & Retry Logic
+EFFORT: 6 hours
+PRIORITY: 10
+DEPENDENCIES: MANUAL-001
+
+DESCRIPTION:
+Create ManualMatcherService that searches multiple sources for equipment manuals, then uses LLM (Groq primary, Claude fallback) to validate if manuals match equipment. Store ALL validated manuals (not just one), handle inconclusive results with human verification, and implement persistent retry logic for failed searches.
+
+TASKS:
+1. Install dependency: pip install PyPDF2>=3.0.0 and add to requirements.txt
+
+2. Create rivet_pro/core/services/manual_matcher_service.py with complete ManualMatcherService class including:
+   - search_and_validate_manual() - main orchestrator
+   - _validate_with_llm() - Groq primary (llama-3.3-70b-versatile), Claude Sonnet 3.5 fallback
+   - _get_pdf_title() - extract PDF metadata with PyPDF2
+   - _extract_pdf_first_pages() - extract text from first 2 pages
+   - _handle_inconclusive_result() - send Telegram inline keyboard for 0.70-0.85 confidence
+   - _schedule_retry() - exponential backoff: 1h, 6h, 24h, 7d, 30d
+   - _update_search_record() - update equipment_manual_searches with manuals_found JSONB
+   - _mark_search_no_manual() - mark as no_manual_found
+   - _mark_search_failed() - mark as failed with error
+   - _store_validated_manual() - stub for now (returns None, complete in MANUAL-003)
+
+   LLM Prompt format:
+   """You are validating if an equipment manual matches specific equipment.
+   Equipment: {manufacturer} {model} {equipment_type}
+   Manual: {url} {title} {first_2_pages}
+   Respond with ONLY valid JSON: {"matches": bool, "confidence": 0.0-1.0, "reasoning": str, "manual_type": str}
+   Strict: Model must match exactly, equipment type must match, manual must be specific not generic.
+   Return matches=false if: search results page, different model, generic overview."""
+
+   Confidence routing:
+   - >= 0.85: Auto-store all manuals, notify user
+   - 0.70-0.85: Send human verification inline keyboard
+   - < 0.70: Schedule retry with exponential backoff
+
+3. Update PhotoService._trigger_manual_search() to call ManualMatcherService:
+   from rivet_pro.core.services.manual_matcher_service import ManualMatcherService
+   self.manual_matcher = ManualMatcherService(self.db)  # in __init__
+
+   result = await self.manual_matcher.search_and_validate_manual(
+       equipment_id=equipment_id,
+       manufacturer=manufacturer,
+       model=model,
+       equipment_type=equipment_type,
+       telegram_chat_id=telegram_chat_id
+   )
+
+4. Add callback handler in rivet_pro/adapters/telegram/bot.py:
+   async def manual_verification_callback(self, update, context):
+       query = update.callback_query
+       await query.answer()
+       action, equipment_id = query.data.split(":", 1)
+       equipment_id = UUID(equipment_id)
+
+       if action == "verify_yes":
+           await self.db.execute("""
+               UPDATE equipment_manual_searches
+               SET requires_human_verification = FALSE,
+                   best_manual_confidence = 0.95,
+                   search_status = 'completed'
+               WHERE equipment_id = $1
+           """, equipment_id)
+           await query.edit_message_text("✅ Thank you! Manual verified and added to knowledge base.")
+
+       elif action == "verify_no":
+           await self.manual_matcher._schedule_retry(equipment_id, "human_rejected", 0)
+           await query.edit_message_text("❌ Got it. We'll keep searching for a better manual.")
+
+   self.application.add_handler(CallbackQueryHandler(self.manual_verification_callback, pattern="^verify_(yes|no):"))
+
+5. Store multiple manuals in manuals_found JSONB array:
+   [{"url": "...", "title": "...", "confidence": 0.94, "reasoning": "...", "manual_type": "user_manual", "atom_id": "..."}]
+
+ACCEPTANCE CRITERIA:
+- ManualMatcherService class created with all methods
+- Multiple manuals support: ALL manuals with confidence >=0.70 stored in manuals_found JSONB
+- _validate_with_llm() returns structured JSON validation
+- Groq used as primary LLM judge (2-3s latency)
+- Claude Sonnet 3.5 as fallback if Groq fails
+- PDF title extraction works (PyPDF2)
+- First 2 pages text extraction works
+- Confidence routing logic: >=0.85 auto-store, 0.70-0.85 human verify, <0.70 retry
+- Human verification flow: Inline keyboard with Yes/No buttons
+- Callback handler processes user verification response
+- Retry scheduling: exponential backoff (1h, 6h, 24h, 7d, 30d)
+- equipment_manual_searches record updated with manuals_found, best_manual_url, retry tracking
+- manual_cache updated with llm_validated=true for each manual
+- Test: Known good manual -> confidence >=0.85, auto-stored
+- Test: Inconclusive manual (0.75) -> human verification request sent
+- Test: Low confidence (<0.70) -> retry scheduled
+- Test: Multiple manuals found -> all stored in manuals_found array
+
+FILES TO CREATE/MODIFY:
+- rivet_pro/core/services/manual_matcher_service.py (NEW)
+- rivet_pro/core/services/photo_service.py (MODIFY - integrate ManualMatcherService)
+- rivet_pro/adapters/telegram/bot.py (MODIFY - add callback handler)
+- requirements.txt (ADD PyPDF2>=3.0.0)
+
+VERIFICATION COMMANDS:
+psql $NEON_DATABASE_URL -c "SELECT search_status, COUNT(*) FROM equipment_manual_searches GROUP BY search_status;"
+psql $NEON_DATABASE_URL -c "SELECT COUNT(*) FROM equipment_manual_searches WHERE manuals_found IS NOT NULL;"
+psql $NEON_DATABASE_URL -c "SELECT COUNT(*) FROM manual_cache WHERE llm_validated = TRUE;"

@@ -1,0 +1,115 @@
+STORY: MANUAL-001 - Background Manual Search
+EFFORT: 4 hours
+PRIORITY: 10
+DEPENDENCIES: None
+
+DESCRIPTION:
+After equipment identified in PhotoService.process_photo(), trigger async manual search that doesn't block user response. Create tracking table to store search status and enable later notification.
+
+TASKS:
+1. Create migration file: rivet_pro/migrations/017_manual_matching.sql
+   - Create equipment_manual_searches table with schema:
+     * id UUID PRIMARY KEY
+     * equipment_id UUID REFERENCES cmms_equipment(id)
+     * telegram_chat_id BIGINT NOT NULL
+     * search_status VARCHAR(20) DEFAULT 'pending'
+     * search_started_at TIMESTAMPTZ
+     * search_completed_at TIMESTAMPTZ
+     * manuals_found JSONB
+     * best_manual_url TEXT
+     * best_manual_confidence FLOAT
+     * requires_human_verification BOOLEAN DEFAULT FALSE
+     * retry_count INTEGER DEFAULT 0
+     * last_retry_at TIMESTAMPTZ
+     * next_retry_at TIMESTAMPTZ
+     * retry_reason TEXT
+     * search_duration_ms INTEGER
+     * sources_searched TEXT[]
+     * error_message TEXT
+     * created_at TIMESTAMPTZ DEFAULT NOW()
+     * updated_at TIMESTAMPTZ DEFAULT NOW()
+     * CONSTRAINT check_search_status CHECK (search_status IN ('pending', 'searching', 'completed', 'failed', 'no_manual_found', 'pending_human_verification', 'retrying'))
+
+   - Create indexes:
+     * idx_ems_equipment ON equipment_manual_searches(equipment_id)
+     * idx_ems_status ON equipment_manual_searches(search_status)
+     * idx_ems_pending ON equipment_manual_searches(search_status, created_at) WHERE search_status = 'pending'
+     * idx_ems_chat ON equipment_manual_searches(telegram_chat_id)
+
+   - Extend manual_cache table:
+     * ALTER TABLE manual_cache ADD COLUMN IF NOT EXISTS llm_validated BOOLEAN DEFAULT FALSE
+     * ALTER TABLE manual_cache ADD COLUMN IF NOT EXISTS llm_confidence FLOAT
+     * ALTER TABLE manual_cache ADD COLUMN IF NOT EXISTS validation_reasoning TEXT
+     * ALTER TABLE manual_cache ADD COLUMN IF NOT EXISTS manual_type VARCHAR(50)
+     * ALTER TABLE manual_cache ADD COLUMN IF NOT EXISTS atom_id UUID REFERENCES knowledge_atoms(atom_id)
+     * CREATE INDEX idx_manual_cache_validated ON manual_cache(llm_validated) WHERE llm_validated = TRUE
+
+   - Run migration: psql $NEON_DATABASE_URL -f rivet_pro/migrations/017_manual_matching.sql
+
+2. Modify PhotoService at rivet_pro/core/services/photo_service.py (around line 400)
+   - Add method _trigger_manual_search():
+     async def _trigger_manual_search(
+         self,
+         equipment_id: UUID,
+         manufacturer: str,
+         model: str,
+         equipment_type: str,
+         telegram_chat_id: int
+     ) -> None:
+         """Trigger async manual search after equipment identification. Does not block user response."""
+         try:
+             # Create search record
+             search_record = await self.db.execute("""
+                 INSERT INTO equipment_manual_searches
+                 (equipment_id, telegram_chat_id, search_status)
+                 VALUES ($1, $2, 'pending')
+                 RETURNING id
+             """, equipment_id, telegram_chat_id)
+
+             search_id = search_record[0]['id']
+
+             # Update status to 'searching'
+             await self.db.execute("""
+                 UPDATE equipment_manual_searches
+                 SET search_status = 'searching', search_started_at = NOW()
+                 WHERE id = $1
+             """, search_id)
+
+             logger.info(f"Manual search triggered for equipment {equipment_id}")
+         except Exception as e:
+             logger.error(f"Failed to trigger manual search: {e}")
+
+   - Integrate into process_photo() method after equipment creation:
+     if equipment_id:
+         asyncio.create_task(
+             self._trigger_manual_search(
+                 equipment_id=equipment_id,
+                 manufacturer=equipment.manufacturer,
+                 model=equipment.model_number,
+                 equipment_type=equipment.equipment_type,
+                 telegram_chat_id=telegram_user_id
+             )
+         )
+
+3. Test the integration:
+   - Send equipment photo via Telegram
+   - Verify immediate response (<3s) with equipment details
+   - Check database: SELECT * FROM equipment_manual_searches WHERE search_status = 'pending'
+   - Verify search record created with correct equipment_id and telegram_chat_id
+
+ACCEPTANCE CRITERIA:
+- Migration 017 creates equipment_manual_searches table
+- PhotoService._trigger_manual_search() method exists
+- Method called via asyncio.create_task() after equipment identification
+- Search record created with status='pending'
+- User response time remains <3s (not blocked by manual search)
+- telegram_chat_id stored for later notification
+- Test: Send photo, verify immediate response + search record in DB
+
+FILES TO CREATE/MODIFY:
+- rivet_pro/migrations/017_manual_matching.sql (NEW)
+- rivet_pro/core/services/photo_service.py (MODIFY - add _trigger_manual_search)
+
+VERIFICATION COMMANDS:
+psql $NEON_DATABASE_URL -c "SELECT COUNT(*) FROM equipment_manual_searches;"
+psql $NEON_DATABASE_URL -c "SELECT search_status, COUNT(*) FROM equipment_manual_searches GROUP BY search_status;"

@@ -1,0 +1,127 @@
+STORY: MANUAL-004 - Background Gap Filler with User Notifications
+EFFORT: 2 hours
+PRIORITY: 8
+DEPENDENCIES: MANUAL-003
+
+DESCRIPTION:
+Create daily background job that identifies equipment without manuals and runs manual search + validation for top 10 highest priority. Priority based on work_order count, knowledge gap occurrence, recency, and vendor importance. Notify users when manuals are indexed.
+
+PRIORITY FORMULA:
+priority = (work_order_count * 2.0) + (gap_occurrence_count * 1.5) + (recency_score * 1.0) + (vendor_boost * 1.2)
+- Vendor boost: 1.5 for Siemens/Rockwell/ABB/Schneider/Mitsubishi/Yaskawa, 1.0 otherwise
+- Recency: 10.0 if work_order today, decay to 0 over 90 days
+
+TASKS:
+1. Create rivet_pro/workers/__init__.py (empty file)
+
+2. Create rivet_pro/workers/manual_gap_filler.py with ManualGapFiller class:
+   - PRIORITY_VENDORS = ['siemens', 'rockwell automation', 'allen bradley', 'abb', 'schneider electric', 'mitsubishi', 'yaskawa']
+   - fill_gaps_daily(limit=10) - main job, returns results dict
+   - get_high_priority_equipment_without_manuals(limit) - SQL query with priority calculation
+   - _mark_gap_resolved(manufacturer, model, atom_id) - update knowledge_gaps
+   - _notify_user_of_indexed_manual(equipment_id, equipment_number, manufacturer, model, manuals_found) - send Telegram notification
+   - process_pending_retries() - query equipment with next_retry_at < NOW(), retry manual search
+
+   SQL for high-priority equipment:
+   WITH equipment_priority AS (
+       SELECT e.id, e.equipment_number, e.manufacturer, e.model_number, e.equipment_type,
+              e.work_order_count, COALESCE(kg.occurrence_count, 0) as gap_count,
+              e.last_work_order_at,
+              CASE WHEN e.last_work_order_at IS NULL THEN 0
+                   ELSE GREATEST(0, 10.0 * (1.0 - EXTRACT(EPOCH FROM (NOW() - e.last_work_order_at)) / (90 * 86400)))
+              END as recency_score,
+              CASE WHEN LOWER(e.manufacturer) IN ('siemens', 'rockwell automation', 'allen bradley', 'abb', 'schneider electric', 'mitsubishi', 'yaskawa')
+                   THEN 1.5 ELSE 1.0
+              END as vendor_boost
+       FROM cmms_equipment e
+       LEFT JOIN knowledge_gaps kg ON LOWER(kg.manufacturer) = LOWER(e.manufacturer) AND LOWER(kg.model) = LOWER(e.model_number)
+       WHERE NOT EXISTS (SELECT 1 FROM manual_cache mc WHERE LOWER(mc.manufacturer) = LOWER(e.manufacturer) AND LOWER(mc.model) = LOWER(e.model_number) AND mc.llm_validated = TRUE AND mc.found_at > NOW() - INTERVAL '90 days')
+       AND NOT EXISTS (SELECT 1 FROM equipment_manual_searches ems WHERE ems.equipment_id = e.id AND ems.search_status = 'no_manual_found' AND ems.created_at > NOW() - INTERVAL '30 days')
+   )
+   SELECT id, equipment_number, manufacturer, model_number, equipment_type, work_order_count, gap_count, recency_score, vendor_boost,
+          (work_order_count * 2.0) + (gap_count * 1.5) + (recency_score * 1.0) + (vendor_boost * 1.2) as priority
+   FROM equipment_priority
+   ORDER BY priority DESC LIMIT $1
+
+   Notification message format:
+   """📚 Manual Indexed: {equipment_number}
+   {manufacturer} {model}
+   Great news! We found and validated {count} manual(s) for this equipment:
+   • {manual_type}: {title}
+     {url} ({confidence}% confidence)
+   You can now:
+   • Use /manual {equipment_number} for instant access
+   • Chat with the manual content (coming soon)
+   • Share with your team
+   This equipment is now in the knowledge base for all future users."""
+
+   Find recent user query:
+   SELECT i.telegram_user_id, u.full_name FROM interactions i
+   JOIN users u ON u.user_id = i.user_id
+   WHERE i.context_data->>'equipment_id' = $1
+   ORDER BY i.created_at DESC LIMIT 1
+
+3. Create scripts/run_manual_gap_filler.py:
+   #!/usr/bin/env python3
+   import asyncio, sys
+   from pathlib import Path
+   sys.path.insert(0, str(Path(__file__).parent.parent))
+   from rivet_pro.core.database import Database
+   from rivet_pro.workers.manual_gap_filler import ManualGapFiller
+   from rivet.utils.logger import get_logger
+
+   logger = get_logger(__name__)
+
+   async def main():
+       db = Database()
+       await db.connect()
+       try:
+           filler = ManualGapFiller(db)
+           results = await filler.fill_gaps_daily(limit=10)
+           logger.info(f"Gap filler results: {results}")
+           print(f"✅ Processed {results['total_processed']} equipment")
+           print(f"📘 Found {results['manuals_found']} manuals")
+           print(f"✅ Validated {results['manuals_validated']} manuals")
+           print(f"🔍 Resolved {results['gaps_resolved']} knowledge gaps")
+           if results['errors'] > 0:
+               print(f"❌ Errors: {results['errors']}")
+               return 1
+           return 0
+       finally:
+           await db.close()
+
+   if __name__ == "__main__":
+       exit_code = asyncio.run(main())
+       sys.exit(exit_code)
+
+4. Document cron job setup (manual):
+   0 2 * * * cd /opt/Rivet-PRO && /opt/Rivet-PRO/rivet_pro/venv/bin/python scripts/run_manual_gap_filler.py >> /var/log/rivet/gap_filler.log 2>&1
+
+5. Rate limiting: 5 seconds between searches (await asyncio.sleep(5))
+
+ACCEPTANCE CRITERIA:
+- ManualGapFiller class created with fill_gaps_daily() method
+- get_high_priority_equipment_without_manuals() returns correct SQL query
+- Priority calculation implemented (work_orders + gaps + recency + vendor)
+- Vendor boost applied for OEM manufacturers (1.5x)
+- Recency score decays from 10 to 0 over 90 days
+- fill_gaps_daily() processes top 10 equipment
+- Resolved manuals mark knowledge_gap as 'completed'
+- Rate limiting: 5 seconds between searches (avoid API throttling)
+- Command-line script run_manual_gap_filler.py works
+- _notify_user_of_indexed_manual() sends notification to recent user
+- Notification includes manual list and /manual command
+- process_pending_retries() processes equipment with next_retry_at < NOW()
+- Logs show: "Manual gap filler: processed 10, found 7 manuals"
+- Test: Run manually -> verify high-priority equipment get manuals
+- Test: User receives "📚 Manual Indexed" notification
+- Test: Resolved gaps marked in knowledge_gaps table
+
+FILES TO CREATE/MODIFY:
+- rivet_pro/workers/__init__.py (NEW)
+- rivet_pro/workers/manual_gap_filler.py (NEW)
+- scripts/run_manual_gap_filler.py (NEW)
+
+VERIFICATION COMMANDS:
+python scripts/run_manual_gap_filler.py
+psql $NEON_DATABASE_URL -c "SELECT COUNT(*) FROM knowledge_gaps WHERE research_status = 'completed' AND resolved_atom_id IS NOT NULL;"

@@ -48,3 +48,23 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+
+# Backups
+.env.backup.*
+*.bak
+*.bak2
+*.backup
+
+# Temporary files
+temp_*.json
+update_*.json
+nul
+
+# Logs (additional patterns)
+*_logs.txt
+
+# MCP artifacts
+.playwright-mcp/
+
+# Archive (local only - contains historical docs with secrets)
+archive/
