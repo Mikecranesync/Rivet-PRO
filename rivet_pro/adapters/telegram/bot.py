@@ -59,9 +59,42 @@ class TelegramBot:
         """
         Handle /start command.
         This is the only slash command - used for initial registration.
+        Creates user in database if not exists (idempotent).
         """
         user = update.effective_user
         logger.info(f"User started bot | user_id={user.id} | username={user.username}")
+
+        # Create or get user in database (idempotent - won't error on duplicate)
+        try:
+            from datetime import datetime, timedelta
+
+            result = await self.db.fetchrow(
+                """
+                INSERT INTO users (telegram_id, full_name, username, subscription_tier, subscription_status, created_at)
+                VALUES ($1, $2, $3, 'free', 'active', NOW())
+                ON CONFLICT (telegram_id) DO UPDATE SET
+                    full_name = EXCLUDED.full_name,
+                    username = EXCLUDED.username,
+                    last_active = NOW()
+                RETURNING id, subscription_tier, created_at
+                """,
+                user.id,
+                user.full_name or user.first_name,
+                user.username
+            )
+
+            if result:
+                # Check if user was just created (within last 5 seconds)
+                is_new = result['created_at'].replace(tzinfo=None) > (
+                    datetime.utcnow() - timedelta(seconds=5)
+                )
+                if is_new:
+                    logger.info(f"User created | telegram_id={user.id} | tier=free")
+                else:
+                    logger.info(f"User exists | telegram_id={user.id} | tier={result['subscription_tier']}")
+
+        except Exception as e:
+            logger.error(f"Failed to create/get user | telegram_id={user.id} | error={e}")
 
         welcome_message = (
             f"👋 Hey {user.first_name}, I'm RIVET.\n\n"
