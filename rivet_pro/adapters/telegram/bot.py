@@ -643,12 +643,16 @@ class TelegramBot:
         Usage:
           /wo list - List your work orders
           /wo view <work_order_number> - View work order details
+          /wo create <equipment_number> <description> - Create new work order
         """
         user_id = f"telegram_{update.effective_user.id}"
         args = context.args or []
 
         try:
-            if not args or args[0] == "list":
+            if args and args[0] == "create":
+                await self._wo_create(update, context, user_id, args[1:])
+                return
+            elif not args or args[0] == "list":
                 # List work orders
                 work_orders = await self.work_order_service.list_work_orders_by_user(
                     user_id=user_id,
@@ -1470,6 +1474,248 @@ class TelegramBot:
                 "❌ Error processing your response. Please try again or contact support."
             )
 
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Handle /help command.
+        Show all available commands and usage.
+        """
+        help_text = """📚 *RIVET Bot Commands*
+
+*Equipment Management*
+• `/equip list` - List your equipment
+• `/equip search <query>` - Search equipment
+• `/equip view <number>` - View equipment details
+
+*Work Orders*
+• `/wo list` - List your work orders
+• `/wo view <number>` - View work order details
+• `/wo create <equip> <desc>` - Create work order
+
+*Manuals & Information*
+• `/manual <equipment_number>` - Get equipment manual
+• `/library` - Browse machine library
+
+*Account & Stats*
+• `/stats` - View your CMMS statistics
+• `/upgrade` - Upgrade to Pro
+
+*Session*
+• `/menu` - Show interactive menu
+• `/reset` - Clear current session
+• `/done` - Exit troubleshooting mode
+• `/help` - Show this help message
+
+*Quick Start*
+Send a 📷 photo of any equipment nameplate and I'll identify it and find the manual!"""
+
+        await update.message.reply_text(help_text, parse_mode="Markdown")
+
+    async def menu_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Handle /menu command.
+        Show interactive menu with inline buttons.
+        """
+        keyboard = [
+            [
+                InlineKeyboardButton("📦 Equipment", callback_data="menu_equip"),
+                InlineKeyboardButton("🔧 Work Orders", callback_data="menu_wo"),
+            ],
+            [
+                InlineKeyboardButton("📘 Manual Lookup", callback_data="menu_manual"),
+                InlineKeyboardButton("📚 Library", callback_data="menu_library"),
+            ],
+            [
+                InlineKeyboardButton("📊 Stats", callback_data="menu_stats"),
+                InlineKeyboardButton("❓ Help", callback_data="menu_help"),
+            ],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await update.message.reply_text(
+            "🤖 *RIVET Main Menu*\n\nWhat would you like to do?",
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
+
+    async def library_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Handle /library command.
+        Browse the machine library.
+
+        Usage:
+          /library - Show library categories
+          /library search <query> - Search library
+        """
+        args = context.args or []
+
+        try:
+            if args and args[0] == "search":
+                if len(args) < 2:
+                    await update.message.reply_text(
+                        "Usage: `/library search <query>`\nExample: `/library search siemens motor`",
+                        parse_mode="Markdown"
+                    )
+                    return
+
+                query = " ".join(args[1:])
+
+                # Search machine_library table
+                results = await self.db.fetch(
+                    """
+                    SELECT manufacturer, model, equipment_type, manual_url
+                    FROM machine_library
+                    WHERE manufacturer ILIKE $1
+                       OR model ILIKE $1
+                       OR equipment_type ILIKE $1
+                    LIMIT 10
+                    """,
+                    f"%{query}%"
+                )
+
+                if not results:
+                    await update.message.reply_text(
+                        f"🔍 No results found for: *{query}*\n\n"
+                        "Try a different search term or send a photo of the equipment nameplate.",
+                        parse_mode="Markdown"
+                    )
+                    return
+
+                response = f"📚 *Library Search: {query}*\n\n"
+                for r in results:
+                    has_manual = "📘" if r['manual_url'] else "❌"
+                    response += f"{has_manual} {r['manufacturer']} {r['model']}\n"
+                    response += f"  └─ Type: {r['equipment_type'] or 'Unknown'}\n"
+
+                await update.message.reply_text(response, parse_mode="Markdown")
+
+            else:
+                # Show library overview
+                stats = await self.db.fetchrow(
+                    """
+                    SELECT
+                        COUNT(*) as total,
+                        COUNT(DISTINCT manufacturer) as manufacturers,
+                        COUNT(DISTINCT equipment_type) as types,
+                        COUNT(*) FILTER (WHERE manual_url IS NOT NULL) as with_manuals
+                    FROM machine_library
+                    """
+                )
+
+                response = """📚 *Machine Library*
+
+*Statistics*
+• Total entries: {total}
+• Manufacturers: {manufacturers}
+• Equipment types: {types}
+• With manuals: {with_manuals}
+
+*Commands*
+• `/library search <query>` - Search library
+
+💡 Send a photo to auto-lookup equipment!""".format(
+                    total=stats['total'] if stats else 0,
+                    manufacturers=stats['manufacturers'] if stats else 0,
+                    types=stats['types'] if stats else 0,
+                    with_manuals=stats['with_manuals'] if stats else 0
+                )
+
+                await update.message.reply_text(response, parse_mode="Markdown")
+
+        except Exception as e:
+            logger.error(f"Error in /library command: {e}", exc_info=True)
+            await update.message.reply_text("❌ An error occurred. Please try again.")
+
+    async def reset_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Handle /reset command.
+        Clear current session/context.
+        """
+        user_id = str(update.effective_user.id)
+
+        # Clear any user data stored in context
+        context.user_data.clear()
+
+        await update.message.reply_text(
+            "🔄 *Session Reset*\n\n"
+            "Your session has been cleared. Ready for a fresh start!\n\n"
+            "Send a photo or type a question to begin.",
+            parse_mode="Markdown"
+        )
+
+        logger.info(f"Session reset | user_id={user_id}")
+
+    async def done_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Handle /done command.
+        Exit troubleshooting mode and return to normal operation.
+        """
+        user_id = str(update.effective_user.id)
+
+        # Clear troubleshooting state if any
+        if 'troubleshooting' in context.user_data:
+            del context.user_data['troubleshooting']
+
+        await update.message.reply_text(
+            "✅ *Troubleshooting Complete*\n\n"
+            "Exited troubleshooting mode. What would you like to do next?\n\n"
+            "• Send a photo for equipment lookup\n"
+            "• Use `/help` for available commands",
+            parse_mode="Markdown"
+        )
+
+        logger.info(f"Exited troubleshooting | user_id={user_id}")
+
+    async def menu_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Handle menu button callbacks.
+        """
+        query = update.callback_query
+        await query.answer()
+
+        action = query.data
+
+        if action == "menu_equip":
+            await query.edit_message_text(
+                "📦 *Equipment Commands*\n\n"
+                "`/equip list` - List your equipment\n"
+                "`/equip search <query>` - Search equipment\n"
+                "`/equip view <number>` - View details",
+                parse_mode="Markdown"
+            )
+        elif action == "menu_wo":
+            await query.edit_message_text(
+                "🔧 *Work Order Commands*\n\n"
+                "`/wo list` - List your work orders\n"
+                "`/wo view <number>` - View details\n"
+                "`/wo create <equip> <desc>` - Create new",
+                parse_mode="Markdown"
+            )
+        elif action == "menu_manual":
+            await query.edit_message_text(
+                "📘 *Manual Lookup*\n\n"
+                "Usage: `/manual <equipment_number>`\n"
+                "Example: `/manual EQ-2025-0142`\n\n"
+                "Or simply send a 📷 photo of the nameplate!",
+                parse_mode="Markdown"
+            )
+        elif action == "menu_library":
+            await query.edit_message_text(
+                "📚 *Machine Library*\n\n"
+                "`/library` - View library stats\n"
+                "`/library search <query>` - Search library",
+                parse_mode="Markdown"
+            )
+        elif action == "menu_stats":
+            await query.edit_message_text(
+                "📊 Use `/stats` command to see your statistics.",
+                parse_mode="Markdown"
+            )
+        elif action == "menu_help":
+            await query.edit_message_text(
+                "❓ Use `/help` command to see all available commands.",
+                parse_mode="Markdown"
+            )
+
     async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
         Handle errors in the bot.
@@ -1500,12 +1746,25 @@ class TelegramBot:
 
         # Register command handlers
         self.application.add_handler(CommandHandler("start", self.start_command))
+        self.application.add_handler(CommandHandler("help", self.help_command))
+        self.application.add_handler(CommandHandler("menu", self.menu_command))
         self.application.add_handler(CommandHandler("equip", self.equip_command))
         self.application.add_handler(CommandHandler("wo", self.wo_command))
-        self.application.add_handler(CommandHandler("manual", self.manual_command))  # MANUAL-003
+        self.application.add_handler(CommandHandler("manual", self.manual_command))
+        self.application.add_handler(CommandHandler("library", self.library_command))
         self.application.add_handler(CommandHandler("stats", self.stats_command))
         self.application.add_handler(CommandHandler("kb_stats", self.kb_stats_command))
         self.application.add_handler(CommandHandler("upgrade", self.upgrade_command))
+        self.application.add_handler(CommandHandler("reset", self.reset_command))
+        self.application.add_handler(CommandHandler("done", self.done_command))
+
+        # Register callback handler for menu buttons
+        self.application.add_handler(
+            CallbackQueryHandler(
+                self.menu_callback,
+                pattern=r'^menu_'
+            )
+        )
 
         # Register callback handler for inline keyboard buttons (approve/reject)
         # IMPORTANT: Must be registered BEFORE message handler
