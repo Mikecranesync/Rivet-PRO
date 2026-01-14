@@ -28,6 +28,7 @@ except ImportError:
 
 from rivet_pro.infra.observability import get_logger
 from rivet_pro.core.services.manual_service import ManualService
+from rivet_pro.core.feature_flags import FeatureFlagManager
 
 # LLM imports
 try:
@@ -69,6 +70,7 @@ class ManualMatcherService:
         self.db = db
         self.manual_service = ManualService(db)
         self.http_client = httpx.AsyncClient(timeout=30.0)
+        self.flags = FeatureFlagManager()
 
     async def search_and_validate_manual(
         self,
@@ -82,6 +84,68 @@ class ManualMatcherService:
         Main orchestration: search → validate → store → notify.
 
         Returns dict with status, manual_url, confidence, atom_id.
+        """
+        # Feature flag check: Use LLM-enhanced matching or classic approach
+        use_llm_validation = self.flags.is_enabled('rivet.migration.manual_matcher_v2')
+        logger.info(f"Manual matching using {'LLM-validated' if use_llm_validation else 'classic'} approach")
+
+        if use_llm_validation:
+            return await self._search_and_validate_v2(
+                equipment_id, manufacturer, model, equipment_type, telegram_chat_id
+            )
+        else:
+            return await self._search_classic_v1(
+                equipment_id, manufacturer, model, equipment_type, telegram_chat_id
+            )
+
+    async def _search_classic_v1(
+        self,
+        equipment_id: UUID,
+        manufacturer: str,
+        model: str,
+        equipment_type: Optional[str],
+        telegram_chat_id: int
+    ) -> Dict[str, Any]:
+        """
+        Classic manual search (v1): Simple search without LLM validation.
+
+        This is the fallback path when the feature flag is disabled.
+        """
+        logger.info(f"Using classic manual search for {manufacturer} {model}")
+
+        try:
+            # Basic search using ManualService
+            manual_result = await self.manual_service.search_manual(
+                manufacturer=manufacturer,
+                model=model
+            )
+
+            if not manual_result or not manual_result.get('manual_url'):
+                return {"status": "no_manual_found"}
+
+            # Return result without LLM validation
+            return {
+                "status": "manual_found",
+                "manual_url": manual_result['manual_url'],
+                "confidence": 0.75,  # Fixed confidence for classic approach
+                "method": "classic_search"
+            }
+        except Exception as e:
+            logger.error(f"Classic search error: {e}")
+            return {"status": "error", "error": str(e)}
+
+    async def _search_and_validate_v2(
+        self,
+        equipment_id: UUID,
+        manufacturer: str,
+        model: str,
+        equipment_type: Optional[str],
+        telegram_chat_id: int
+    ) -> Dict[str, Any]:
+        """
+        LLM-enhanced manual search (v2): Multi-source search with validation.
+
+        This is the new implementation with LLM validation and advanced features.
         """
         start_time = time.time()
 
@@ -253,37 +317,13 @@ class ManualMatcherService:
         manual_title = await self._get_pdf_title(url)
         first_pages = await self._extract_pdf_first_pages(url, max_pages=2)
 
-        prompt = f"""You are validating if an equipment manual matches specific equipment.
+        prompt = f"""Does this manual match {manufacturer} {model} ({equipment_type})?
+Manual: {manual_title} | {url}
+Text: {first_pages[:1500]}
 
-Equipment:
-- Manufacturer: {manufacturer}
-- Model: {model}
-- Type: {equipment_type}
+Return JSON only: {{"matches":true/false,"confidence":0.0-1.0,"reasoning":"brief","manual_type":"user_manual|service_manual|datasheet|quick_start|unknown"}}
 
-Manual:
-- URL: {url}
-- Title: {manual_title}
-- First 2 pages text: {first_pages[:2000]}
-
-Does this manual match this specific equipment?
-
-Respond with ONLY valid JSON (no markdown, no explanation):
-{{
-  "matches": true/false,
-  "confidence": 0.0-1.0,
-  "reasoning": "brief explanation focusing on model number match",
-  "manual_type": "user_manual" | "service_manual" | "datasheet" | "quick_start" | "unknown"
-}}
-
-Strict matching criteria:
-- Model number MUST match exactly or be clear variant
-- Equipment type MUST match (VFD manual for VFD, not catalog)
-- Manual MUST be specific to this equipment, not generic family
-
-Return matches=false and confidence <0.5 if:
-- URL is search results page or catalog listing
-- Manual is for different model (even same family)
-- Manual is generic overview, not specific documentation"""
+STRICT: Model must match exactly. matches=false if search page, wrong model, or generic doc."""
 
         # Try Groq first (fast) - fallback to Claude
         if not ANTHROPIC_AVAILABLE:

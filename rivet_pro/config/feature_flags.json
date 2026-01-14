@@ -1,0 +1,26 @@
+{
+  "rivet.migration.manual_matcher_v2": {
+    "description": "Enable improved manual matching algorithm with LLM validation and multi-source search",
+    "default_enabled": false,
+    "category": "migration",
+    "environments": {
+      "dev": true,
+      "stage": true,
+      "prod": false
+    },
+    "created_date": "2026-01-14",
+    "owner": "system"
+  },
+  "rivet.experiment.new_ocr": {
+    "description": "Test new OCR engine with improved nameplate recognition",
+    "default_enabled": false,
+    "category": "experiment",
+    "environments": {
+      "dev": false,
+      "stage": false,
+      "prod": false
+    },
+    "created_date": "2026-01-14",
+    "owner": "system"
+  }
+}

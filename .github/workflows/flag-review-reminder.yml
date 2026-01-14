@@ -1,0 +1,166 @@
+name: Monthly Feature Flag Review
+
+on:
+  schedule:
+    # Run at 9 AM on the 1st of every month (UTC)
+    - cron: '0 9 1 * *'
+  workflow_dispatch:  # Allow manual trigger for testing
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  create-review-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Read feature flags
+        id: read-flags
+        run: |
+          python3 << 'EOF'
+          import json
+          from pathlib import Path
+          from datetime import datetime, timedelta
+
+          config_path = Path('rivet_pro/config/feature_flags.json')
+
+          if not config_path.exists():
+              print("::set-output name=flag_list::No feature flags found")
+              exit(0)
+
+          with open(config_path, 'r') as f:
+              flags = json.load(f)
+
+          # Build flag list with analysis
+          flag_list = []
+          today = datetime.now()
+
+          for flag_name, config in flags.items():
+              created_date = config.get('created_date', 'unknown')
+              default_enabled = config.get('default_enabled', False)
+              category = config.get('category', 'unknown')
+              owner = config.get('owner', 'unknown')
+              description = config.get('description', 'No description')
+
+              # Calculate age
+              if created_date != 'unknown':
+                  try:
+                      created = datetime.strptime(created_date, '%Y-%m-%d')
+                      age_days = (today - created).days
+                      age_str = f"{age_days} days"
+                  except:
+                      age_str = "unknown"
+              else:
+                  age_str = "unknown"
+
+              # Determine action needed
+              action = ""
+              if default_enabled and age_str != "unknown":
+                  age_days = int(age_str.split()[0])
+                  if age_days >= 30:
+                      action = "⚠️ Consider cleanup (enabled for 30+ days)"
+                  else:
+                      action = "✅ Recently enabled, monitor"
+              elif not default_enabled:
+                  action = "📊 Still testing, check progress"
+
+              flag_list.append(f"""
+          ### {flag_name}
+          - **Category**: {category}
+          - **Description**: {description}
+          - **Created**: {created_date} ({age_str} ago)
+          - **Enabled**: {'Yes' if default_enabled else 'No'}
+          - **Owner**: @{owner if owner != 'system' else 'team'}
+          - **Action**: {action}
+          """)
+
+          # Save to output
+          output = "\n".join(flag_list)
+          # Escape output for GitHub Actions
+          output = output.replace('%', '%25').replace('\n', '%0A').replace('\r', '%0D')
+          print(f"::set-output name=flag_list::{output}")
+          print(f"::set-output name=flag_count::{len(flags)}")
+          EOF
+
+      - name: Create review issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const flagList = '${{ steps.read-flags.outputs.flag_list }}'.replace(/%0A/g, '\n').replace(/%0D/g, '\r').replace(/%25/g, '%');
+            const flagCount = '${{ steps.read-flags.outputs.flag_count }}';
+
+            const issueBody = `# Monthly Feature Flag Review
+
+            **Review Period**: ${new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+            **Total Flags**: ${flagCount}
+
+            ## 📋 Current Feature Flags
+
+            ${flagList}
+
+            ## ✅ Review Checklist
+
+            For each flag, verify:
+
+            - [ ] **Purpose is clear**: Does this flag still serve its intended purpose?
+            - [ ] **Rollout status**: Is this fully rolled out or still in testing?
+            - [ ] **Cleanup needed**: Has this been enabled for 30+ days?
+            - [ ] **Monitoring**: Are there any errors or issues related to this flag?
+            - [ ] **Documentation**: Is the flag documented properly?
+
+            ## 🧹 Flags Ready for Cleanup
+
+            Flags enabled for 30+ days should be considered for cleanup:
+            1. Review the [Flag Cleanup Checklist](../docs/FLAG_CLEANUP_CHECKLIST.md)
+            2. Verify no errors in logs
+            3. Create cleanup PR to remove old code path and flag definition
+
+            ## 📊 Flag Hygiene Tips
+
+            - **Target lifespan**: Remove flags within 30 days of full rollout
+            - **Avoid flag debt**: Don't let flags accumulate indefinitely
+            - **Keep it simple**: Less conditional logic = fewer bugs
+            - **Document changes**: Update docs when flags are added or removed
+
+            ## 🔗 Resources
+
+            - [Feature Flag Lifecycle Guide](../docs/FEATURE_FLAGS.md)
+            - [Flag Cleanup Checklist](../docs/FLAG_CLEANUP_CHECKLIST.md)
+            - [Migration Inventory](../docs/MIGRATION_INVENTORY.md)
+
+            ## 📝 Actions Required
+
+            Based on this review:
+            1. Update flags marked "Consider cleanup"
+            2. Check progress on testing flags
+            3. Update documentation as needed
+            4. Create cleanup PRs for old flags
+
+            ---
+            🤖 This issue was automatically created by the Monthly Flag Review workflow.
+            **Next review**: ${new Date(new Date().setMonth(new Date().getMonth() + 1)).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+            `;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Monthly Feature Flag Review - ${new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`,
+              body: issueBody,
+              labels: ['maintenance', 'feature-flags'],
+              assignees: context.repo.owner ? [context.repo.owner] : []
+            });
+
+      - name: Workflow summary
+        run: |
+          echo "### Monthly Flag Review Issue Created 📋" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Issue created with ${{ steps.read-flags.outputs.flag_count }} flags to review" >> $GITHUB_STEP_SUMMARY
+          echo "📅 Next review: $(date -d '+1 month' +'%B 1, %Y')" >> $GITHUB_STEP_SUMMARY

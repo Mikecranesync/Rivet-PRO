@@ -48,3 +48,13 @@ python -m harness.health_check
 - \`n8n_test_client.py\` - MCP test tools
 
 See AGENT3_COMPLETE.md for complete documentation.
+
+## Contributing
+
+We follow trunk-based development with short-lived feature branches and use feature flags for safe rollouts. Before contributing:
+
+- Read the [Branching & Merge Workflow Guide](docs/BRANCHING_GUIDE.md)
+- Understand our [Feature Flag Lifecycle](docs/FEATURE_FLAGS.md)
+- Follow the PR template when creating pull requests
+
+All changes to `main` require PR approval and passing CI checks.

@@ -1,0 +1,96 @@
+name: PR Quality Checks
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  quality-gate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install mypy ruff black
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f rivet_pro/requirements.txt ]; then pip install -r rivet_pro/requirements.txt; fi
+
+      - name: Run type checking
+        id: typecheck
+        run: |
+          echo "Running mypy type checking..."
+          mypy rivet_pro/ --ignore-missing-imports --no-error-summary || echo "TYPE_CHECK_FAILED=true" >> $GITHUB_ENV
+        continue-on-error: true
+
+      - name: Run linting
+        id: lint
+        run: |
+          echo "Running ruff linting..."
+          ruff check rivet_pro/ || echo "LINT_FAILED=true" >> $GITHUB_ENV
+        continue-on-error: true
+
+      - name: Run code formatting check
+        id: format
+        run: |
+          echo "Checking code formatting with black..."
+          black --check rivet_pro/ || echo "FORMAT_FAILED=true" >> $GITHUB_ENV
+        continue-on-error: true
+
+      - name: Run basic import test
+        id: imports
+        run: |
+          echo "Testing basic imports..."
+          python -c "import sys; sys.path.insert(0, '.'); import rivet_pro" || echo "IMPORT_FAILED=true" >> $GITHUB_ENV
+        continue-on-error: true
+
+      - name: Generate summary
+        run: |
+          echo "### PR Quality Check Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$TYPE_CHECK_FAILED" = "true" ]; then
+            echo "❌ Type checking failed" >> $GITHUB_STEP_SUMMARY
+            STATUS="failed"
+          else
+            echo "✅ Type checking passed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "$LINT_FAILED" = "true" ]; then
+            echo "❌ Linting failed" >> $GITHUB_STEP_SUMMARY
+            STATUS="failed"
+          else
+            echo "✅ Linting passed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "$FORMAT_FAILED" = "true" ]; then
+            echo "❌ Code formatting failed" >> $GITHUB_STEP_SUMMARY
+            STATUS="failed"
+          else
+            echo "✅ Code formatting passed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "$IMPORT_FAILED" = "true" ]; then
+            echo "❌ Import test failed" >> $GITHUB_STEP_SUMMARY
+            STATUS="failed"
+          else
+            echo "✅ Import test passed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "$STATUS" = "failed" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Status**: ❌ Quality checks failed - please fix issues before merging" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          else
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Status**: ✅ All quality checks passed" >> $GITHUB_STEP_SUMMARY
+          fi
