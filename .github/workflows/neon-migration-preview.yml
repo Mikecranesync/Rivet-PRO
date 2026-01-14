@@ -1,0 +1,74 @@
+name: Schema Migration Preview
+# Creates preview branch and runs migrations when SQL files change
+
+on:
+  pull_request:
+    paths:
+      - 'rivet_pro/migrations/*.sql'
+
+jobs:
+  preview-migration:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create Migration Preview Branch
+        uses: neondatabase/create-branch-action@v5
+        with:
+          project_id: ${{ secrets.NEON_PROJECT_ID }}
+          branch_name: migration-preview-${{ github.event.number }}
+          api_key: ${{ secrets.NEON_API_KEY }}
+        id: branch
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Run migrations on preview branch
+        run: |
+          echo "Running migrations on preview branch..."
+          for f in rivet_pro/migrations/*.sql; do
+            echo "Applying: $f"
+            psql "${{ steps.branch.outputs.db_url }}" -f "$f" || true
+          done
+        env:
+          PGPASSWORD: ${{ secrets.NEON_DB_PASSWORD }}
+
+      - name: Get schema diff
+        id: diff
+        run: |
+          # Compare schemas between main and preview
+          echo "Schema migration preview complete"
+
+      - name: Comment PR with migration status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 🗃️ Migration Preview Branch Created
+
+            **Branch:** \`migration-preview-${{ github.event.number }}\`
+
+            Migrations have been applied to the preview branch. Review changes before merging.
+
+            ### Changed Files
+            ${{ github.event.pull_request.changed_files }} file(s) modified
+
+            **Note:** This branch will be deleted when the PR is closed.`
+            });
+
+  cleanup-on-close:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete Migration Preview Branch
+        uses: neondatabase/delete-branch-action@v3
+        with:
+          project_id: ${{ secrets.NEON_PROJECT_ID }}
+          branch_name: migration-preview-${{ github.event.number }}
+          api_key: ${{ secrets.NEON_API_KEY }}

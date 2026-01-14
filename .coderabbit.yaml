@@ -1,0 +1,53 @@
+# CodeRabbit Configuration
+# AI-powered code review for every PR
+
+language: en-US
+
+reviews:
+  # Enable auto-review on all PRs
+  auto_review:
+    enabled: true
+    drafts: false  # Don't review draft PRs
+
+  # Path filters - exclude non-code files
+  path_filters:
+    - "!**/*.md"
+    - "!**/*.json"
+    - "!**/*.yaml"
+    - "!**/*.yml"
+    - "!**/requirements*.txt"
+    - "!**/.gitignore"
+    - "!**/LICENSE"
+
+  # Review instructions
+  path_instructions:
+    - path: "rivet_pro/**/*.py"
+      instructions: |
+        - Check for proper error handling and logging
+        - Verify async/await usage is correct
+        - Ensure database queries use parameterized statements
+        - Flag any hardcoded secrets or credentials
+
+    - path: "tests/**/*.py"
+      instructions: |
+        - Verify test coverage is adequate
+        - Check for proper async test setup
+        - Ensure mocks are properly configured
+
+    - path: ".github/workflows/**"
+      instructions: |
+        - Check for security best practices
+        - Verify secrets are not exposed
+        - Ensure proper error handling
+
+chat:
+  auto_reply: true
+
+# Knowledge base - help CodeRabbit understand the project
+knowledge_base:
+  learnings:
+    - "This is a CMMS (Computerized Maintenance Management System) bot"
+    - "Uses PostgreSQL (Neon) for database"
+    - "Telegram bot built with python-telegram-bot"
+    - "OCR uses Gemini Vision API"
+    - "Equipment and work orders are core entities"
