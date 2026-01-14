@@ -1,73 +1,46 @@
 # Ralph Progress Log
-Started: Sat, Jan 10, 2026 11:32:17 PM
-
-## Codebase Patterns
-- Use `IF NOT EXISTS` for all CREATE TABLE/INDEX migrations
-- Bot services are initialized after `db.connect()` in the `start()` method
-- Telegram user ID is accessed via `update.effective_user.id` (integer, not string)
-- Use `PYTHONPATH=.` when testing imports from the workspace root
-- Use HTML parse_mode for Telegram messages with special characters
-
+Started: Tue, Jan 13, 2026  5:43:12 PM
 ---
 
-## 2026-01-10 23:48 - RIVET-001
-Thread: https://ampcode.com/threads/T-019bab5f-236e-766c-a30d-e23a4908c839
-- Created usage_tracking table migration (011_usage_tracking.sql)
-- Created UsageService with get_usage_count(), record_lookup(), check_limit(), can_use_service()
-- Modified photo handler in bot.py to check limits before OCR processing
-- Added upgrade message when free limit (10 lookups) is hit
-- Shows remaining lookups for free tier users
-
-Files changed:
-- rivet_pro/migrations/011_usage_tracking.sql (new)
-- rivet_pro/core/services/usage_service.py (new)
-- rivet_pro/core/services/__init__.py (added exports)
-- rivet_pro/adapters/telegram/bot.py (added usage checking/recording)
-
-**Learnings:**
-- The users table already has subscription_tier column from 001_saas_layer.sql
-- Bot uses asyncpg with positional $1 parameters, not named params
-- Services use the shared Database instance passed to constructor
+=== Bug Fixes Round 1 ===
+Started: Tue, Jan 13, 2026  7:24:45 PM
+Branch: ralph/bug-fixes-round1
+Stories: FEEDBACK-LINK-001, FEEDBACK-USEREG-001, CRITICAL-MANUAL-001, FEEDBACK-LIMIT-001, CRITICAL-LOGGING-001
 ---
 
-## 2026-01-10 23:52 - RIVET-002
-Thread: https://ampcode.com/threads/T-019bab62-bc8b-701a-a770-1508b2cd7ed8
-- Created Stripe integration with StripeService class
-- Added stripe SDK to requirements.txt
-- Created migration 012_stripe_integration.sql (subscription_status, stripe_customer_id, stripe_subscription_id)
-- Added /upgrade command to Telegram bot
-- Created webhook endpoint at /api/stripe/webhook
-- Handles checkout.session.completed, subscription.updated, subscription.deleted, payment_failed events
+## 2026-01-13 - FEEDBACK-LINK-001
+- Fixed PDF links not opening on mobile (underscore escape)
+- Added plain URL fallback in backticks for copy/paste
+- Files changed: rivet_pro/core/utils/response_formatter.py
+- Commit: 2a49f63
 
-Files changed:
-- rivet_pro/requirements.txt (added stripe>=7.0.0)
-- rivet_pro/config/settings.py (added stripe_api_key, stripe_webhook_secret, stripe_price_id)
-- rivet_pro/migrations/012_stripe_integration.sql (new)
-- rivet_pro/core/services/stripe_service.py (new)
-- rivet_pro/core/services/__init__.py (exported StripeService)
-- rivet_pro/adapters/telegram/bot.py (added /upgrade command, stripe_service)
-- rivet_pro/adapters/web/routers/stripe.py (new webhook endpoint)
-- rivet_pro/adapters/web/main.py (included stripe router)
+## 2026-01-13 - FEEDBACK-USEREG-001
+- Added user creation in /start command handler
+- Uses ON CONFLICT for idempotent behavior
+- Files changed: rivet_pro/adapters/telegram/bot.py
+- Commit: f6c7db7
 
-**Learnings:**
-- Use IF NOT EXISTS for ALTER TABLE ADD COLUMN to make migrations idempotent
-- Stripe webhook signature must be verified with raw payload bytes
-- send_telegram_confirmation helper function allows webhook to notify user after payment
-- Settings uses pydantic-settings with Optional[str] for API keys that may not be configured initially
-- When generating Stripe checkout links inline, wrap in try/except and fallback to /upgrade command
----
+## 2026-01-13 - CRITICAL-MANUAL-001
+- Fixed misleading log message (now shows Tavily vs n8n)
+- Expanded URL pre-filter to include more doc paths
+- Files changed: rivet_pro/core/services/manual_service.py
+- Commit: 09bd082
 
-## 2026-01-11 00:00 - RIVET-003
-Thread: https://ampcode.com/threads/T-019bab67-bcbf-77d2-a85f-1f78e3ca9f0c
-- Modified _handle_photo to generate inline Stripe checkout link when limit reached
-- Free users at 10 lookups now see clickable "Subscribe now" link instead of just "/upgrade"
-- Falls back to /upgrade command if Stripe service fails
-- Pro users already bypassed via can_use_service() -> is_pro_user()
+## 2026-01-13 - FEEDBACK-LIMIT-001
+- Already resolved: User 8445149012 set to Pro tier
+- usage_service.py correctly bypasses limits for Pro users
+- No code changes needed
 
-Files changed:
-- rivet_pro/adapters/telegram/bot.py (modified limit-reached block)
+## 2026-01-13 - CRITICAL-LOGGING-001
+- Added interaction logging for ALL equipment lookups
+- Fixed telegram_id passed as integer (was string)
+- Updated interaction with equipment_id and outcome
+- Files changed: rivet_pro/adapters/telegram/bot.py
+- Commit: e61e628
 
-**Learnings:**
-- can_use_service() already handles Pro user detection via is_pro_user()
-- stripe_service is available in TelegramBot context for inline checkout generation
+**Learnings for future iterations:**
+- Telegram Markdown requires escaping underscores in URLs: use url.replace('_', r'\_')
+- telegram_id in users table is bigint, pass as integer not string
+- Interactions should be logged early in flow, then updated as more data comes
+- Always provide fallback copy-able URLs for mobile users
 ---

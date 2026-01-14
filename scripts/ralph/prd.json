@@ -1,88 +1,86 @@
 {
   "project": "RIVET Pro",
-  "branchName": "ralph/mvp-phase1",
-  "description": "Phase 1 MVP - Usage tracking, Stripe payment, freemium limits, and optimizations",
+  "branchName": "ralph/bug-fixes-round1",
+  "description": "Bug Fixes Round 1 - Fix critical user-reported issues: PDF links, user registration, manual search, and interaction logging",
   "userStories": [
     {
-      "id": "RIVET-001",
-      "title": "Usage Tracking System",
-      "description": "Track equipment lookups per user for freemium enforcement. Each photo upload counts as one lookup. Store user_id and timestamp to enforce 10 free lookups per user.",
+      "id": "FEEDBACK-LINK-001",
+      "title": "Fix Manual PDF Link Not Opening",
+      "description": "User clicked manual PDF link from bot and it did not work. URL is valid (HTTP 200 server-side). Possible issues: Telegram link formatting, mobile client PDF handling, or URL encoding. Fix the link formatting in format_equipment_response() in response_formatter.py to ensure PDF URLs open correctly on mobile.",
       "acceptanceCriteria": [
-        "Create usage_tracking table in Supabase with columns: id, user_id, telegram_user_id, lookup_timestamp, equipment_id",
-        "Add get_usage_count(telegram_user_id) function that returns count of lookups",
-        "Modify rivet_pro/bot/ photo handler to record each lookup",
-        "Block users at 10 lookups with upgrade message",
-        "Test with local bot - send 10 photos, verify 11th is blocked",
+        "Check format_equipment_response() in rivet_pro/core/utils/response_formatter.py",
+        "Ensure PDF URLs are properly formatted for Telegram (no special characters breaking link)",
+        "Test with actual Rockwell URL: https://literature.rockwellautomation.com/idc/groups/literature/documents/in/2080-in009_-en-p.pdf",
+        "If URL has issues, provide alternative: plain text URL user can copy, or shortened link",
+        "Add fallback message: 'If link doesn't open, copy and paste URL into browser'",
         "Typecheck passes"
       ],
       "priority": 1,
       "passes": true,
-      "notes": "Implemented usage_tracking table, UsageService with get_usage_count(), check_limit(), can_use_service(). Photo handler now checks limits before processing and records lookups after success. Free users blocked at 10 lookups with upgrade message."
+      "notes": "Fixed: Escape underscores, added fallback URL in backticks. Commit 2a49f63"
     },
     {
-      "id": "RIVET-002",
-      "title": "Stripe Payment Integration",
-      "description": "Connect Stripe for Pro tier at $29/month. Create checkout flow and handle webhooks to upgrade users.",
+      "id": "FEEDBACK-USEREG-001",
+      "title": "Fix /start Command Not Creating User",
+      "description": "When user sends /start, bot logs it but doesn't create user record in database. This breaks usage tracking and subscriptions. Fix start_command handler in bot.py to INSERT user or use get_or_create pattern.",
       "acceptanceCriteria": [
-        "Create Stripe product and price for 'RIVET Pro' at $29/month",
-        "Add create_checkout_session endpoint in rivet_pro/api/",
-        "Implement Stripe webhook handler for payment success",
-        "Update users table with subscription_status and stripe_customer_id columns",
-        "Send Telegram confirmation on successful payment",
-        "Test with Stripe test mode - verify checkout and webhook",
+        "Find start_command handler in rivet_pro/adapters/telegram/bot.py",
+        "Add database INSERT or get_or_create for user with telegram_id",
+        "Set defaults: subscription_tier='free', subscription_status='active'",
+        "Make idempotent - duplicate /start should not error or create duplicate",
+        "Log user creation: 'User created | telegram_id=X | tier=free'",
         "Typecheck passes"
       ],
       "priority": 2,
       "passes": true,
-      "notes": "Implemented StripeService with checkout session creation, webhook handler for subscription events. Added /upgrade command to bot. Created migration 012_stripe_integration.sql for subscription_status and stripe_customer_id columns. Webhook endpoint at /api/stripe/webhook."
+      "notes": "Fixed: Added INSERT with ON CONFLICT in start_command. Commit f6c7db7"
     },
     {
-      "id": "RIVET-003",
-      "title": "Free Tier Limit Enforcement",
-      "description": "Block lookups at 10 for free users and show upgrade prompt with Stripe link. Pro users get unlimited lookups.",
+      "id": "CRITICAL-MANUAL-001",
+      "title": "Fix Manual Search Not Finding New Manuals",
+      "description": "Manual search shows cache MISS but never attempts external search. Check manual_service.py - the _search_external() method may not be called, or Tavily API key missing. Ensure cache miss triggers Tavily search, validates result, and caches it.",
       "acceptanceCriteria": [
-        "Check subscription_status before processing photo",
-        "Return upgrade message with Stripe checkout link if limit hit and user is free",
-        "Allow Pro users (subscription_status='active') unlimited lookups",
-        "Upgrade message includes clear pricing and benefits",
-        "Test both free and pro user flows",
+        "Check rivet_pro/core/services/manual_service.py search_manual() method",
+        "Verify _search_external() is called after cache miss",
+        "Confirm TAVILY_API_KEY is loaded from settings",
+        "Add logging: 'Searching Tavily for {manufacturer} {model}'",
+        "Test with Siemens 3RV2011-1CA20 - should find and cache manual",
         "Typecheck passes"
       ],
       "priority": 3,
       "passes": true,
-      "notes": "Modified _handle_photo to generate inline Stripe checkout link when limit is reached. can_use_service() already checks is_pro_user() which checks subscription_tier. Pro users (subscription_tier='pro') get unlimited lookups. Free users blocked at 10 with direct checkout link."
+      "notes": "Fixed: Improved logging, expanded URL pre-filter. Commit 09bd082"
     },
     {
-      "id": "RIVET-004",
-      "title": "Shorten System Prompts",
-      "description": "Cut all RIVET prompts by 50% for faster field responses. Field techs need FAST responses - reduce token usage without losing quality.",
+      "id": "FEEDBACK-LIMIT-001",
+      "title": "Bypass Usage Limits for Testing Account",
+      "description": "User 8445149012 (frankumbria) is the owner and should never hit free tier limits. Already set to Pro tier manually, but verify the code path respects subscription_tier='pro' in usage_service.py.",
       "acceptanceCriteria": [
-        "Audit all prompts in rivet_pro/ (search for 'prompt' and 'system_message')",
-        "Reduce each prompt by at least 50% word count",
-        "Remove filler text and verbose explanations",
-        "Keep essential technical instructions",
-        "Test with sample equipment photos - verify quality maintained",
-        "Measure token reduction (log before/after)",
+        "Verify user 8445149012 has subscription_tier='pro' in database",
+        "Check rivet_pro/core/services/usage_service.py is_pro_user() method",
+        "Ensure can_use_service() returns (True, count, 'pro') for Pro users",
+        "Test: Pro user should never see 'Free Limit Reached' message",
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Already resolved - user set to Pro tier, code correctly bypasses limits"
     },
     {
-      "id": "RIVET-005",
-      "title": "Remove n8n Footer",
-      "description": "Remove n8n branding from Telegram bot messages. Users should see clean RIVET-branded responses.",
+      "id": "CRITICAL-LOGGING-001",
+      "title": "Fix Interactions Table Not Recording Lookups",
+      "description": "Equipment lookups are tracked in usage_tracking but interactions table is empty. The _handle_photo method in bot.py should log interactions after successful OCR. This is needed for analytics and KB learning.",
       "acceptanceCriteria": [
-        "Find where n8n footer is added to Telegram messages",
-        "Remove or override the footer text",
-        "Test all message types (equipment info, work orders, errors)",
-        "Verify no 'Powered by n8n' or similar branding appears",
+        "Find _handle_photo method in rivet_pro/adapters/telegram/bot.py",
+        "Add interaction logging after successful OCR result",
+        "Insert to interactions table with: telegram_user_id, interaction_type='equipment_lookup', equipment_id (if matched), ocr_confidence, timestamp",
+        "Also log text queries in _handle_text method",
+        "Verify interactions table populated after photo lookup",
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Fixed: Added interaction logging for ALL lookups. Commit e61e628"
     }
   ]
 }
