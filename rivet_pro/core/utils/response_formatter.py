@@ -369,15 +369,22 @@ def format_equipment_response(
         url = manual['url']
         confidence = manual.get('confidence', 1.0)
 
-        # Create clickable Markdown link
-        response += f"[{title}]({url})\n\n"
+        # Escape underscores in URL for Telegram Markdown compatibility
+        # Telegram Markdown treats _ as italic marker, breaking URLs with underscores
+        url_escaped = url.replace('_', r'\_')
+
+        # Create clickable Markdown link with escaped URL
+        response += f"[{title}]({url_escaped})\n\n"
+
+        # Add plain URL as fallback (some mobile clients have issues with links)
+        response += f"📎 _If link doesn't work, copy this URL:_\n`{url}`\n\n"
 
         # Add confidence indicator if medium confidence (0.5-0.7)
         if 0.5 <= confidence < 0.7:
             response += "⚠️ _Link quality uncertain - please verify before use._\n\n"
         elif confidence >= 0.7:
             # High confidence - add helpful tip
-            response += "💡 _Bookmark this for offline access._\n"
+            response += "💡 _Tap link or copy URL to browser._\n"
 
         # Add source attribution if available
         if manual.get('source') and manual.get('source') != 'cache':
