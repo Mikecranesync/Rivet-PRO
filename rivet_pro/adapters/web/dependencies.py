@@ -173,3 +173,29 @@ async def get_db() -> Database:
         Database instance (singleton)
     """
     return db
+
+
+async def admin_required(current_user: UserInDB = Depends(get_current_user)) -> dict:
+    """
+    Dependency that requires the user to have admin role.
+
+    Args:
+        current_user: The authenticated user
+
+    Returns:
+        User dict if admin
+
+    Raises:
+        HTTPException: If user is not an admin
+    """
+    if current_user.role != 'admin':
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+
+    return {
+        'id': str(current_user.id),
+        'email': current_user.email,
+        'role': current_user.role
+    }
