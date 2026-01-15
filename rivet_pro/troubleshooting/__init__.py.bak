@@ -3,19 +3,12 @@ RIVET Pro Troubleshooting Module
 
 Provides interactive troubleshooting tree navigation for equipment diagnostics.
 Includes Claude API fallback for dynamic troubleshooting when no tree exists.
-Includes draft system for saving Claude-generated guides as reviewable trees.
+Supports media display with captions for visual troubleshooting guides.
 """
 
 from .callback import encode_callback, decode_callback, CallbackData
-from .keyboard import build_navigation_keyboard, KeyboardLayoutStrategy
 from .mermaid_parser import MermaidParser, parse_mermaid
 from .history import NavigationHistory, NavigationSession, get_navigation_history
-from .formatting import (
-    format_node_text,
-    format_safety_warning,
-    is_safety_node,
-    SafetyFormatter,
-)
 from .fallback import (
     generate_troubleshooting_guide,
     generate_troubleshooting_guide_sync,
@@ -24,44 +17,44 @@ from .fallback import (
     ClaudeFallbackError,
     TroubleshootingGuide,
 )
-from .drafts import (
-    save_draft,
-    get_draft,
-    list_drafts,
-    approve_draft,
-    reject_draft,
-    delete_draft,
-    get_draft_stats,
-    DraftStatus,
+from .formatting import (
+    format_node_text,
+    format_safety_warning,
+    is_safety_node,
+    SafetyFormatter,
+)
+from .media_display import (
+    MediaDisplayError,
+    truncate_caption,
+    validate_media_node,
+    format_caption_with_fallback,
+    send_node_with_media,
+    update_node_with_media,
 )
 
 __all__ = [
     "encode_callback",
     "decode_callback",
-    "build_navigation_keyboard",
-    "KeyboardLayoutStrategy",
     "CallbackData",
     "MermaidParser",
     "parse_mermaid",
     "NavigationHistory",
     "NavigationSession",
     "get_navigation_history",
-    "format_node_text",
-    "format_safety_warning",
-    "is_safety_node",
-    "SafetyFormatter",
     "generate_troubleshooting_guide",
     "generate_troubleshooting_guide_sync",
     "get_or_generate_troubleshooting",
     "check_tree_exists",
     "ClaudeFallbackError",
     "TroubleshootingGuide",
-    "save_draft",
-    "get_draft",
-    "list_drafts",
-    "approve_draft",
-    "reject_draft",
-    "delete_draft",
-    "get_draft_stats",
-    "DraftStatus",
+    "format_node_text",
+    "format_safety_warning",
+    "is_safety_node",
+    "SafetyFormatter",
+    "MediaDisplayError",
+    "truncate_caption",
+    "validate_media_node",
+    "format_caption_with_fallback",
+    "send_node_with_media",
+    "update_node_with_media",
 ]

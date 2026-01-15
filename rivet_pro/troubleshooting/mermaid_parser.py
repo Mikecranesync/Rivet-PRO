@@ -14,16 +14,15 @@ class MermaidParser:
     """Parser for Mermaid flowchart syntax."""
 
     FLOWCHART_PATTERN = re.compile(r'flowchart\s+(TD|LR)', re.IGNORECASE)
-    NODE_RECTANGLE = re.compile(r'([A-Za-z0-9_]+)\[([^\]]+)\]')
-    NODE_RHOMBUS = re.compile(r'([A-Za-z0-9_]+)\{([^\}]+)\}')
-    NODE_CIRCLE = re.compile(r'([A-Za-z0-9_]+)\(\(([^\)]+)\)\)')
     
+    # More flexible edge pattern that captures everything
     EDGE_PATTERN = re.compile(
-        r'([A-Za-z0-9_]+)\s*'
-        r'(-{1,2}(?:\.|=){0,2}>)'
-        r'(?:\|([^\|]+)\|)?'
-        r'\s*([A-Za-z0-9_]+)'
-        r'(?:\[([^\]]+)\]|\{([^\}]+)\}|\(\(([^\)]+)\)\))?'
+        r'([A-Za-z0-9_]+)'  # From node ID
+        r'(?:\[([^\]]+)\]|\{([^\}]+)\}|\(\(([^\)]+)\)\))?'  # Optional from node definition
+        r'\s*(-{1,2}(?:\.|=){0,2}>)'  # Arrow
+        r'(?:\|([^\|]+)\|)?'  # Optional edge label
+        r'\s*([A-Za-z0-9_]+)'  # To node ID
+        r'(?:\[([^\]]+)\]|\{([^\}]+)\}|\(\(([^\)]+)\)\))?'  # Optional to node definition
     )
 
     def __init__(self):
@@ -42,9 +41,9 @@ class MermaidParser:
             line = line.strip()
             if not line or line.startswith('flowchart'):
                 continue
-            if self._parse_edge(line):
-                continue
-            self._parse_node(line)
+            
+            # Try to parse as edge (which may define nodes inline)
+            self._parse_edge(line)
         
         self._determine_root()
         
@@ -62,7 +61,9 @@ class MermaidParser:
         self.root = None
 
     def _clean_text(self, text: str) -> str:
-        text = re.sub(r'\s*$', '', text)
+        # Remove code block markers
+        text = re.sub(r'```mermaid\s*\n?', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'```\s*$', '', text)
         return text.strip()
 
     def _parse_flowchart_declaration(self, text: str):
@@ -72,51 +73,43 @@ class MermaidParser:
         else:
             self.orientation = 'TD'
 
-    def _parse_node(self, line: str) -> bool:
-        match = self.NODE_RECTANGLE.search(line)
-        if match:
-            node_id, label = match.groups()
-            self._add_node(node_id, label, 'action')
-            return True
-        
-        match = self.NODE_RHOMBUS.search(line)
-        if match:
-            node_id, label = match.groups()
-            self._add_node(node_id, label, 'decision')
-            return True
-        
-        match = self.NODE_CIRCLE.search(line)
-        if match:
-            node_id, label = match.groups()
-            self._add_node(node_id, label, 'terminal')
-            return True
-        
-        return False
-
     def _parse_edge(self, line: str) -> bool:
         match = self.EDGE_PATTERN.search(line)
         if not match:
             return False
         
         from_node = match.group(1)
-        edge_label = match.group(3)
-        to_node = match.group(4)
-        to_node_rect = match.group(5)
-        to_node_rhomb = match.group(6)
-        to_node_circle = match.group(7)
+        from_rect = match.group(2)
+        from_rhomb = match.group(3)
+        from_circle = match.group(4)
+        # arrow = match.group(5)  # Not currently used
+        edge_label = match.group(6)
+        to_node = match.group(7)
+        to_rect = match.group(8)
+        to_rhomb = match.group(9)
+        to_circle = match.group(10)
         
-        if from_node not in self.nodes:
+        # Add from_node
+        if from_rect:
+            self._add_node(from_node, from_rect, 'action')
+        elif from_rhomb:
+            self._add_node(from_node, from_rhomb, 'decision')
+        elif from_circle:
+            self._add_node(from_node, from_circle, 'terminal')
+        elif from_node not in self.nodes:
             self._add_node(from_node, from_node, 'action')
         
-        if to_node_rect:
-            self._add_node(to_node, to_node_rect, 'action')
-        elif to_node_rhomb:
-            self._add_node(to_node, to_node_rhomb, 'decision')
-        elif to_node_circle:
-            self._add_node(to_node, to_node_circle, 'terminal')
+        # Add to_node
+        if to_rect:
+            self._add_node(to_node, to_rect, 'action')
+        elif to_rhomb:
+            self._add_node(to_node, to_rhomb, 'decision')
+        elif to_circle:
+            self._add_node(to_node, to_circle, 'terminal')
         elif to_node not in self.nodes:
             self._add_node(to_node, to_node, 'action')
         
+        # Add edge
         self.edges.append({
             'from': from_node,
             'to': to_node,
