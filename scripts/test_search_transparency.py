@@ -133,11 +133,11 @@ async def test_python_search(manufacturer: str, model: str) -> TestResult:
 
     try:
         # Import here to avoid issues if dependencies missing
-        from rivet_pro.infra.database import DatabaseManager
+        from rivet_pro.infra.database import Database
         from rivet_pro.core.services.manual_service import ManualService
 
         # Initialize services
-        db = DatabaseManager()
+        db = Database()
         await db.connect()
 
         manual_service = ManualService(db)
@@ -185,9 +185,9 @@ async def test_n8n_search(manufacturer: str, model: str, chat_id: int = 12345) -
     result = TestResult("n8n", manufacturer, model)
     start_time = time.time()
 
-    # n8n webhook URL - use test endpoint that waits for response
-    # The production webhook is async (sends to Telegram), so we use the -test suffix
-    webhook_url = "https://mikecranesync.app.n8n.cloud/webhook-test/rivet-manual-hunter"
+    # n8n webhook URL - production endpoint
+    # Note: This sends results to Telegram, so we capture what we can from the response
+    webhook_url = "https://mikecranesync.app.n8n.cloud/webhook/rivet-manual-hunter"
 
     payload = {
         "chat_id": chat_id,
