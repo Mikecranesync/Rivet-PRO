@@ -1,0 +1,3 @@
+# This folder stores request traces for debugging and observability.
+# JSON files in this folder are gitignored.
+# See rivet_pro/infra/tracer.py for the tracing implementation.

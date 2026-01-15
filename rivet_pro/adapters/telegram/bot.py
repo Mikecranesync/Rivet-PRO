@@ -161,46 +161,79 @@ class TelegramBot:
     async def _handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
         Handle photo messages with OCR analysis and streaming responses.
+        Includes end-to-end tracing for debugging and observability.
         """
         from rivet_pro.core.services import analyze_image
+        from rivet_pro.infra.tracer import get_tracer
 
         user_id = str(update.effective_user.id)
         telegram_user_id = update.effective_user.id
+        user = update.effective_user
 
-        # Check usage limits before processing
-        allowed, count, reason = await self.usage_service.can_use_service(telegram_user_id)
-        
-        if not allowed:
-            # Generate Stripe checkout link inline for better conversion
-            try:
-                checkout_url = await self.stripe_service.create_checkout_session(telegram_user_id)
-                upgrade_cta = f'👉 <a href="{checkout_url}">Subscribe now</a>'
-            except Exception as e:
-                logger.warning(f"Could not generate checkout URL: {e}")
-                upgrade_cta = "Reply /upgrade to get started!"
-            
-            await update.message.reply_text(
-                f"⚠️ <b>Free Limit Reached</b>\n\n"
-                f"You've used all {FREE_TIER_LIMIT} free equipment lookups.\n\n"
-                f"🚀 <b>Upgrade to RIVET Pro</b> for:\n"
-                f"• Unlimited equipment lookups\n"
-                f"• PDF manual chat\n"
-                f"• Work order management\n"
-                f"• Priority support\n\n"
-                f"💰 <b>Just $29/month</b>\n\n"
-                f"{upgrade_cta}",
-                parse_mode="HTML",
-                disable_web_page_preview=True
-            )
-            return
+        # Start trace for this request
+        tracer = get_tracer()
+        trace = tracer.start_trace(
+            telegram_id=telegram_user_id,
+            username=user.username or user.first_name,
+            request_type="photo",
+            message_id=update.message.message_id
+        )
+        trace.add_step("message_received", "success", {
+            "message_id": update.message.message_id,
+            "chat_id": update.effective_chat.id
+        })
 
-        # Send initial message with streaming
-        msg = await update.message.reply_text("🔍 Analyzing nameplate...")
+        llm_cost = 0.0
+        outcome = "unknown"
 
         try:
+            # Check usage limits before processing
+            allowed, count, reason = await self.usage_service.can_use_service(telegram_user_id)
+            trace.add_step("usage_check", "success", {
+                "allowed": allowed,
+                "used": count,
+                "limit": FREE_TIER_LIMIT,
+                "reason": reason
+            })
+
+            if not allowed:
+                trace.add_step("rate_limited", "skipped", {"reason": "free_limit_reached"})
+                # Generate Stripe checkout link inline for better conversion
+                try:
+                    checkout_url = await self.stripe_service.create_checkout_session(telegram_user_id)
+                    upgrade_cta = f'👉 <a href="{checkout_url}">Subscribe now</a>'
+                except Exception as e:
+                    logger.warning(f"Could not generate checkout URL: {e}")
+                    upgrade_cta = "Reply /upgrade to get started!"
+
+                await update.message.reply_text(
+                    f"⚠️ <b>Free Limit Reached</b>\n\n"
+                    f"You've used all {FREE_TIER_LIMIT} free equipment lookups.\n\n"
+                    f"🚀 <b>Upgrade to RIVET Pro</b> for:\n"
+                    f"• Unlimited equipment lookups\n"
+                    f"• PDF manual chat\n"
+                    f"• Work order management\n"
+                    f"• Priority support\n\n"
+                    f"💰 <b>Just $29/month</b>\n\n"
+                    f"{upgrade_cta}",
+                    parse_mode="HTML",
+                    disable_web_page_preview=True
+                )
+                outcome = "rate_limited"
+                trace.complete(outcome=outcome, llm_cost=llm_cost)
+                await tracer.save_trace(trace, self.db.pool)
+                return
+
+            # Send initial message with streaming
+            msg = await update.message.reply_text("🔍 Analyzing nameplate...")
+
             # Download photo (get highest resolution)
             photo = await update.message.photo[-1].get_file()
             photo_bytes = await photo.download_as_bytearray()
+            trace.add_step("photo_download", "success", {
+                "size_bytes": len(photo_bytes),
+                "size_kb": round(len(photo_bytes) / 1024, 1)
+            })
 
             logger.info(f"Downloaded photo | user_id={user_id} | size={len(photo_bytes)} bytes")
 
@@ -213,12 +246,31 @@ class TelegramBot:
                 user_id=user_id
             )
 
+            # Track LLM cost from OCR
+            if hasattr(result, 'cost_usd') and result.cost_usd:
+                llm_cost += result.cost_usd
+
+            trace.add_step("ocr_analysis", "success", {
+                "provider": getattr(result, 'provider', 'unknown'),
+                "model": getattr(result, 'model_used', 'unknown'),
+                "cost_usd": getattr(result, 'cost_usd', 0),
+                "confidence": getattr(result, 'confidence', 0),
+                "manufacturer": result.manufacturer,
+                "model_number": result.model_number,
+                "serial_number": result.serial_number,
+                "equipment_type": getattr(result, 'equipment_type', None)
+            })
+
             # Handle OCR errors
             if hasattr(result, 'error') and result.error:
+                trace.add_step("ocr_error", "error", {"error": result.error})
                 await msg.edit_text(
                     f"❌ {result.error}\n\n"
                     "Try taking a clearer photo with good lighting and focus on the nameplate."
                 )
+                outcome = "ocr_error"
+                trace.complete(outcome=outcome, llm_cost=llm_cost)
+                await tracer.save_trace(trace, self.db.pool)
                 return
 
             # Log interaction for EVERY equipment lookup (CRITICAL-LOGGING-001)
@@ -260,6 +312,12 @@ class TelegramBot:
                     location=None,  # Can be added later via conversation
                     user_id=f"telegram_{user_id}"
                 )
+                trace.add_step("equipment_match", "success", {
+                    "action": "created" if is_new else "matched",
+                    "equipment_id": str(equipment_id) if equipment_id else None,
+                    "equipment_number": equipment_number,
+                    "is_new": is_new
+                })
                 logger.info(
                     f"Equipment {'created' if is_new else 'matched'} | "
                     f"equipment_number={equipment_number} | user_id={user_id}"
@@ -281,6 +339,7 @@ class TelegramBot:
                         logger.warning(f"Failed to update interaction with equipment: {e}")
 
             except Exception as e:
+                trace.add_step("equipment_match", "error", {"error": str(e)})
                 logger.error(f"Failed to create/match equipment: {e}", exc_info=True)
                 # Continue anyway - OCR succeeded even if CMMS failed
 
@@ -305,6 +364,12 @@ class TelegramBot:
 
                     if kb_result:
                         confidence = kb_result.get('confidence', 0.0)
+                        trace.add_step("kb_search", "success", {
+                            "hit": True,
+                            "confidence": confidence,
+                            "atom_id": kb_result.get('atom_id'),
+                            "confidence_tier": "high" if confidence >= 0.85 else ("medium" if confidence >= 0.40 else "low")
+                        })
 
                         # High confidence (≥0.85): Use KB result, skip external search
                         if confidence >= 0.85:
@@ -364,11 +429,19 @@ class TelegramBot:
 
                     # Step 2: If no KB result or low confidence, use external search
                     if not manual_result:
+                        if not kb_result:
+                            trace.add_step("kb_search", "miss", {"hit": False})
                         manual_result = await self.manual_service.search_manual(
                             manufacturer=result.manufacturer,
                             model=result.model_number,
                             timeout=15
                         )
+                        trace.add_step("external_manual_search",
+                            "success" if manual_result else "miss", {
+                            "found": bool(manual_result),
+                            "url": manual_result.get('url') if manual_result else None,
+                            "cached": manual_result.get('cached', False) if manual_result else None
+                        })
 
                     if manual_result:
                         logger.info(
@@ -380,6 +453,7 @@ class TelegramBot:
                         logger.info(f"Manual not found | user_id={user_id}")
 
                 except Exception as e:
+                    trace.add_step("manual_search", "error", {"error": str(e)})
                     logger.error(f"Manual search failed: {e}", exc_info=True)
                     # Continue without manual if search fails
 
@@ -454,6 +528,19 @@ class TelegramBot:
                     response += f"\n\n📊 _This was your last free lookup!_"
 
             await msg.edit_text(response, parse_mode="Markdown")
+            trace.add_step("response_sent", "success", {
+                "response_length": len(response),
+                "manual_found": bool(manual_result),
+                "equipment_created": is_new
+            })
+
+            # Determine final outcome
+            if manual_result:
+                outcome = "success_with_manual"
+            elif equipment_number:
+                outcome = "success_no_manual"
+            else:
+                outcome = "partial_success"
 
             logger.info(
                 f"OCR complete | user_id={user_id} | "
@@ -463,10 +550,17 @@ class TelegramBot:
             )
 
         except Exception as e:
+            trace.add_step("error", "error", {"error": str(e), "type": type(e).__name__})
+            outcome = "error"
             logger.error(f"Error in photo handler: {e}", exc_info=True)
             await msg.edit_text(
                 "❌ Failed to analyze photo. Please try again with a clearer image."
             )
+
+        finally:
+            # Always save trace
+            trace.complete(outcome=outcome, llm_cost=llm_cost)
+            await tracer.save_trace(trace, self.db.pool)
 
     async def _handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """

@@ -45,6 +45,9 @@ htmlcov/
 *.log
 logs/
 
+# Request traces (keep folder, ignore data)
+traces/**/*.json
+
 # OS
 .DS_Store
 Thumbs.db
