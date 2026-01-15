@@ -1,7 +1,7 @@
 ---
 id: task-8.6
 title: 'AC-AUTH-6: Telegram ID as universal foreign key'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-01-15 09:42'
 labels:

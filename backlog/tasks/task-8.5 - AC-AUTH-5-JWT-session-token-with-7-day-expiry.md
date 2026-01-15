@@ -1,7 +1,7 @@
 ---
 id: task-8.5
 title: 'AC-AUTH-5: JWT session token with 7-day expiry'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-01-15 09:42'
 labels:

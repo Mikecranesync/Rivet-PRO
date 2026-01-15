@@ -88,7 +88,8 @@ async def health_check():
         "version": "1.0.0",
         "environment": settings.environment,
         "database": {
-            "healthy": db_healthy
+            "healthy": db_healthy,
+            "active_provider": db.active_provider
         }
     }
 

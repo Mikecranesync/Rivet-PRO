@@ -1,7 +1,7 @@
 ---
 id: task-8.4
 title: 'AC-AUTH-4: User record created/updated on login'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-01-15 09:41'
 labels:

@@ -117,7 +117,7 @@ class Settings(BaseSettings):
     # Web API Authentication
     jwt_secret_key: str = Field(..., description="JWT secret key for token signing")
     jwt_algorithm: str = Field("HS256", description="JWT algorithm")
-    jwt_expiration_minutes: int = Field(1440, description="JWT token expiration (24 hours)")
+    jwt_expiration_minutes: int = Field(10080, description="JWT token expiration (7 days)")
     allowed_origins: str = Field(
         "http://localhost:3000,http://localhost:5173,https://rivet-cmms.com",
         description="Comma-separated CORS allowed origins"
