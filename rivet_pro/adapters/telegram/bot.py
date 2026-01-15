@@ -1730,6 +1730,103 @@ class TelegramBot:
                 "❌ Error processing your response. Please try again or contact support."
             )
 
+    async def handle_pipeline_approval_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Handle pipeline approval/decline/request changes callbacks (PIPE-010).
+        Called when user clicks Approve, Decline, or Request Changes button.
+        """
+        query = update.callback_query
+        await query.answer()
+
+        try:
+            # Parse callback data: "pipeline_approve:123" or "pipeline_decline:123" or "pipeline_changes:123"
+            action_part, pipeline_id_str = query.data.split(':', 1)
+            action = action_part.replace('pipeline_', '')
+            pipeline_id = int(pipeline_id_str)
+
+            user = update.effective_user
+            approver_id = str(user.id)
+            approver_name = user.full_name
+
+            logger.info(
+                f"Pipeline approval callback | action={action} | "
+                f"pipeline_id={pipeline_id} | approver={approver_name}"
+            )
+
+            # Get state machine
+            from rivet_pro.core.services.workflow_state_machine import (
+                get_state_machine, WorkflowState, InvalidTransitionError
+            )
+            from datetime import datetime
+
+            machine = get_state_machine()
+            current = machine.get_current_state(pipeline_id)
+
+            if not current:
+                await query.edit_message_text(
+                    f"❌ Pipeline #{pipeline_id} not found."
+                )
+                return
+
+            # Build metadata
+            metadata = {
+                "approver_telegram_id": approver_id,
+                "approver_name": approver_name,
+                "approved_at": datetime.utcnow().isoformat(),
+                "action": action
+            }
+
+            if action == 'approve':
+                # Transition to APPROVED state
+                try:
+                    machine.transition(pipeline_id, WorkflowState.APPROVED, metadata)
+                    await query.edit_message_text(
+                        f"✅ <b>Pipeline Approved</b>\n\n"
+                        f"Pipeline #{pipeline_id} has been approved by {approver_name}.\n"
+                        f"The pipeline will now continue execution.",
+                        parse_mode="HTML"
+                    )
+                    logger.info(f"Pipeline {pipeline_id} approved by {approver_name}")
+                except InvalidTransitionError as e:
+                    await query.edit_message_text(f"❌ Cannot approve: {e}")
+
+            elif action == 'decline':
+                # Transition to REJECTED state
+                try:
+                    machine.transition(pipeline_id, WorkflowState.REJECTED, metadata)
+                    await query.edit_message_text(
+                        f"❌ <b>Pipeline Declined</b>\n\n"
+                        f"Pipeline #{pipeline_id} has been declined by {approver_name}.\n"
+                        f"The pipeline has been stopped.",
+                        parse_mode="HTML"
+                    )
+                    logger.info(f"Pipeline {pipeline_id} declined by {approver_name}")
+                except InvalidTransitionError as e:
+                    await query.edit_message_text(f"❌ Cannot decline: {e}")
+
+            elif action == 'changes':
+                # Keep in PENDING_APPROVAL but note that changes were requested
+                metadata["changes_requested"] = True
+                machine.transition(pipeline_id, WorkflowState.PENDING_APPROVAL, metadata)
+                await query.edit_message_text(
+                    f"📝 <b>Changes Requested</b>\n\n"
+                    f"Pipeline #{pipeline_id} - {approver_name} has requested changes.\n"
+                    f"Please reply to this message with your requested changes.",
+                    parse_mode="HTML"
+                )
+                logger.info(f"Pipeline {pipeline_id} - changes requested by {approver_name}")
+
+        except ValueError as e:
+            logger.error(f"Error parsing pipeline callback data: {e}")
+            await query.edit_message_text(
+                "❌ Error parsing request. Please try again."
+            )
+        except Exception as e:
+            logger.error(f"Error handling pipeline approval: {e}", exc_info=True)
+            await query.edit_message_text(
+                "❌ Error processing your response. Please try again or contact support."
+            )
+
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
         Handle /help command.
@@ -2039,6 +2136,14 @@ Send a 📷 photo of any equipment nameplate and I'll identify it and find the m
             CallbackQueryHandler(
                 self.manual_verification_callback,
                 pattern=r'^verify_(yes|no):'
+            )
+        )
+
+        # Register callback handler for pipeline approval (PIPE-010)
+        self.application.add_handler(
+            CallbackQueryHandler(
+                self.handle_pipeline_approval_callback,
+                pattern=r'^pipeline_(approve|decline|changes):'
             )
         )
 

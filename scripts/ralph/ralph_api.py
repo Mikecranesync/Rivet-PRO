@@ -18,6 +18,10 @@ import subprocess
 from pathlib import Path
 from anthropic import Anthropic
 
+# Fix Windows console encoding for emoji output
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
 # Configuration - auto-detect project root
 SCRIPT_DIR = Path(__file__).parent
 PROJECT_ROOT = SCRIPT_DIR.parent.parent  # scripts/ralph -> project root
