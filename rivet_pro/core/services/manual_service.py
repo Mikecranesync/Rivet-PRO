@@ -1,9 +1,11 @@
 """
 Manual search service for equipment manuals.
 Caches manual URLs in database and searches via n8n Manual Hunter webhook.
+Also serves locally downloaded manuals (AUTO-KB-009).
 """
 
 from typing import Optional, Dict, Any
+from pathlib import Path
 import httpx
 import json
 from datetime import datetime
@@ -56,23 +58,27 @@ class ManualService:
         self,
         manufacturer: str,
         model: str,
-        timeout: int = 15
+        timeout: int = 15,
+        prefer_local: bool = True
     ) -> Optional[Dict[str, Any]]:
         """
-        Search for equipment manual. Checks cache first, then external search.
+        Search for equipment manual. Checks local files first, then cache, then external search.
 
         Args:
             manufacturer: Equipment manufacturer name
             model: Equipment model number
             timeout: Max seconds to wait for external search (default: 15)
+            prefer_local: Check local manual_files first (default: True) - AUTO-KB-009
 
         Returns:
             Dict with manual info if found:
             {
-                'url': 'https://...',
+                'url': 'https://...' or None,
+                'local_path': '/path/to/manual.pdf' or None,
                 'title': 'Manual title',
-                'source': 'tavily' | 'cache',
-                'cached': bool
+                'source': 'local' | 'tavily' | 'cache',
+                'cached': bool,
+                'is_local': bool
             }
             Returns None if not found.
         """
@@ -84,15 +90,33 @@ class ManualService:
         mfr_clean = manufacturer.strip()
         model_clean = model.strip()
 
-        # 1. Check cache first
+        # AUTO-KB-009: Check local files first
+        if prefer_local:
+            local = await self.get_local_manual(mfr_clean, model_clean)
+            if local:
+                logger.info(f"Local manual HIT | {mfr_clean} {model_clean} | path={local.get('file_path')}")
+                return {
+                    'url': None,
+                    'local_path': local.get('file_path'),
+                    'title': local.get('filename', f"{mfr_clean} {model_clean} Manual"),
+                    'source': 'local',
+                    'cached': True,
+                    'is_local': True,
+                    'has_text': local.get('has_text', False),
+                    'has_embedding': local.get('has_embedding', False)
+                }
+
+        # 1. Check cache first (URL cache)
         cached = await self.get_cached_manual(mfr_clean, model_clean)
         if cached:
             logger.info(f"Manual cache HIT | {mfr_clean} {model_clean} | url={cached.get('url')}")
             return {
                 'url': cached.get('manual_url'),
+                'local_path': None,
                 'title': cached.get('manual_title'),
                 'source': cached.get('source', 'cache'),
-                'cached': True
+                'cached': True,
+                'is_local': False
             }
 
         # 2. Cache miss - search externally (Tavily or n8n fallback)
@@ -113,6 +137,8 @@ class ManualService:
                 )
 
                 result['cached'] = False
+                result['is_local'] = False
+                result['local_path'] = None
                 logger.info(f"Manual found and cached | {mfr_clean} {model_clean}")
                 return result
 
@@ -122,6 +148,139 @@ class ManualService:
         except Exception as e:
             logger.error(f"Manual search failed | {mfr_clean} {model_clean} | error={e}")
             return None
+
+    async def get_local_manual(
+        self,
+        manufacturer: str,
+        model: str,
+        manual_type: str = "user_manual"
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Check if a local copy of the manual exists (AUTO-KB-009).
+
+        Args:
+            manufacturer: Equipment manufacturer
+            model: Equipment model number
+            manual_type: Type of manual (default: user_manual)
+
+        Returns:
+            Dict with local file info if found:
+            {
+                'file_path': '/path/to/manual.pdf',
+                'filename': 'manual.pdf',
+                'size_bytes': int,
+                'checksum': 'sha256...',
+                'has_text': bool,
+                'has_embedding': bool
+            }
+            Returns None if not found locally.
+        """
+        try:
+            row = await self.db.fetchrow(
+                """
+                SELECT
+                    file_path,
+                    filename,
+                    size_bytes,
+                    checksum_sha256,
+                    text_content IS NOT NULL as has_text,
+                    embedding_vector IS NOT NULL as has_embedding,
+                    downloaded_at,
+                    access_count
+                FROM manual_files
+                WHERE LOWER(manufacturer) = LOWER($1)
+                  AND LOWER(model) = LOWER($2)
+                  AND manual_type = $3
+                  AND file_path IS NOT NULL
+                """,
+                manufacturer,
+                model,
+                manual_type
+            )
+
+            if row:
+                file_path = row['file_path']
+
+                # Verify file still exists on disk
+                if not Path(file_path).exists():
+                    logger.warning(f"Local manual file missing | {manufacturer} {model} | path={file_path}")
+                    return None
+
+                # Update access tracking
+                await self.db.execute(
+                    """
+                    UPDATE manual_files
+                    SET last_accessed_at = NOW(),
+                        access_count = access_count + 1
+                    WHERE LOWER(manufacturer) = LOWER($1)
+                      AND LOWER(model) = LOWER($2)
+                      AND manual_type = $3
+                    """,
+                    manufacturer,
+                    model,
+                    manual_type
+                )
+
+                logger.info(
+                    f"Local manual found | {manufacturer} {model} | "
+                    f"path={file_path} | access_count={row['access_count'] + 1}"
+                )
+
+                return {
+                    'file_path': file_path,
+                    'filename': row['filename'],
+                    'size_bytes': row['size_bytes'],
+                    'checksum': row['checksum_sha256'],
+                    'has_text': row['has_text'],
+                    'has_embedding': row['has_embedding'],
+                    'downloaded_at': row['downloaded_at']
+                }
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Local manual lookup failed | {manufacturer} {model} | error={e}")
+            return None
+
+    async def get_local_manual_stats(self) -> Dict[str, Any]:
+        """
+        Get statistics about locally stored manuals (AUTO-KB-009).
+
+        Returns:
+            Dict with local manual statistics
+        """
+        try:
+            stats = await self.db.fetchrow(
+                """
+                SELECT
+                    COUNT(*) as total_local_manuals,
+                    COUNT(*) FILTER (WHERE text_content IS NOT NULL) as with_text,
+                    COUNT(*) FILTER (WHERE embedding_vector IS NOT NULL) as with_embedding,
+                    COALESCE(SUM(size_bytes), 0) as total_size_bytes,
+                    COALESCE(SUM(access_count), 0) as total_accesses
+                FROM manual_files
+                WHERE file_path IS NOT NULL
+                """
+            )
+
+            if stats:
+                result = dict(stats)
+                # Convert to human-readable size
+                total_bytes = result.get('total_size_bytes', 0)
+                if total_bytes > 1_000_000_000:
+                    result['total_size_human'] = f"{total_bytes / 1_000_000_000:.2f} GB"
+                elif total_bytes > 1_000_000:
+                    result['total_size_human'] = f"{total_bytes / 1_000_000:.2f} MB"
+                else:
+                    result['total_size_human'] = f"{total_bytes / 1000:.2f} KB"
+
+                return result
+
+            return {}
+
+        except Exception as e:
+            logger.error(f"Failed to get local manual stats | error={e}")
+            return {}
 
     async def get_cached_manual(
         self,
