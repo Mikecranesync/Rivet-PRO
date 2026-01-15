@@ -1,9 +1,10 @@
 ---
 id: task-10.6
 title: 'AC-PIPE-6: backlog.md generated every 5 minutes'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-01-15 09:46'
+updated_date: '2026-01-15 22:10'
 labels:
   - pipeline
   - observability

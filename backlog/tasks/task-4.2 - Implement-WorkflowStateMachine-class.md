@@ -1,10 +1,10 @@
 ---
 id: task-4.2
 title: Implement WorkflowStateMachine class
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-01-14 23:32'
-updated_date: '2026-01-14 23:44'
+updated_date: '2026-01-15 22:09'
 labels:
   - workflow
   - code

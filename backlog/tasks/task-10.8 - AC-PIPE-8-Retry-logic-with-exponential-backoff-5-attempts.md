@@ -1,9 +1,10 @@
 ---
 id: task-10.8
 title: 'AC-PIPE-8: Retry logic with exponential backoff (5 attempts)'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-01-15 09:46'
+updated_date: '2026-01-15 22:10'
 labels:
   - pipeline
   - resilience

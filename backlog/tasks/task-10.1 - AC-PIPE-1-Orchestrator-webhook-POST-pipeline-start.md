@@ -1,9 +1,10 @@
 ---
 id: task-10.1
 title: 'AC-PIPE-1: Orchestrator webhook POST /pipeline/start'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-01-15 09:45'
+updated_date: '2026-01-15 22:09'
 labels:
   - pipeline
   - n8n

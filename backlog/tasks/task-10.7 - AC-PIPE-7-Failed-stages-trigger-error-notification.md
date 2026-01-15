@@ -1,9 +1,10 @@
 ---
 id: task-10.7
 title: 'AC-PIPE-7: Failed stages trigger error notification'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-01-15 09:46'
+updated_date: '2026-01-15 22:10'
 labels:
   - pipeline
   - error-handling

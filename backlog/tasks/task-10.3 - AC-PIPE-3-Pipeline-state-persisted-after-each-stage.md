@@ -1,9 +1,10 @@
 ---
 id: task-10.3
 title: 'AC-PIPE-3: Pipeline state persisted after each stage'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-01-15 09:45'
+updated_date: '2026-01-15 22:09'
 labels:
   - pipeline
   - database
