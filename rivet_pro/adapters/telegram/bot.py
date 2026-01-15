@@ -2057,7 +2057,7 @@ Send a 📷 photo of any equipment nameplate and I'll identify it and find the m
                 drop_pending_updates=True
             )
 
-            logger.info("✅ Telegram bot is running and polling for updates")
+            logger.info("Telegram bot is running and polling for updates")
 
     async def stop(self) -> None:
         """
