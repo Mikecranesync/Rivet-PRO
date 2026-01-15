@@ -218,8 +218,9 @@ class TestNavigationKeyboard:
         button = keyboard.inline_keyboard[0][0]
         callback_data = button.callback_data
 
-        # Should contain encoded navigation data
-        assert "nav" in callback_data or "target_node" in callback_data
+        # Should contain encoded navigation data (format: ts:{tree_id}:{node_hash}:{action_code})
+        assert callback_data.startswith("ts:")  # Troubleshooting prefix
+        assert ":n" in callback_data or ":s" in callback_data or ":b" in callback_data  # Action code
 
 
 class TestConfirmationKeyboard:

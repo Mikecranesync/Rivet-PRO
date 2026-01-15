@@ -10,6 +10,7 @@ from .callback import encode_callback, decode_callback, CallbackData
 from .keyboard import build_navigation_keyboard, KeyboardLayoutStrategy
 from .mermaid_parser import MermaidParser, parse_mermaid
 from .history import NavigationHistory, NavigationSession, get_navigation_history
+from .navigator import TreeNavigator
 from .formatting import (
     format_node_text,
     format_safety_warning,
@@ -46,6 +47,7 @@ __all__ = [
     "NavigationHistory",
     "NavigationSession",
     "get_navigation_history",
+    "TreeNavigator",
     "format_node_text",
     "format_safety_warning",
     "is_safety_node",
