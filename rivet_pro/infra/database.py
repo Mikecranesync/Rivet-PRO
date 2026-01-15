@@ -2,7 +2,7 @@
 Database connection management for Rivet Pro.
 Uses asyncpg for async PostgreSQL connections to Neon.
 
-Includes failover logic: Neon -> Railway -> Supabase
+Includes failover logic: Neon -> Supabase -> CockroachDB (emergency)
 """
 
 import os
@@ -22,6 +22,11 @@ def get_database_providers() -> List[Tuple[str, str]]:
 
     Returns:
         List of (provider_name, connection_url) tuples
+
+    Failover order:
+        1. Neon (primary) - serverless PostgreSQL
+        2. Supabase (failover) - true PostgreSQL, 500MB free
+        3. CockroachDB (emergency) - PostgreSQL wire compatible, 5GB free
     """
     providers = []
 
@@ -29,15 +34,15 @@ def get_database_providers() -> List[Tuple[str, str]]:
     if settings.database_url:
         providers.append(("neon", settings.database_url))
 
-    # Failover 1: Railway
-    railway_url = os.getenv("RAILWAY_DB_URL")
-    if railway_url and "your_railway_password" not in railway_url:
-        providers.append(("railway", railway_url))
-
-    # Failover 2: Supabase
+    # Failover 1: Supabase (true PostgreSQL)
     supabase_url = os.getenv("SUPABASE_DB_URL")
     if supabase_url:
         providers.append(("supabase", supabase_url))
+
+    # Failover 2: CockroachDB (emergency - PostgreSQL wire compatible)
+    cockroach_url = os.getenv("COCKROACH_DB_URL")
+    if cockroach_url and "your_user" not in cockroach_url and "your_password" not in cockroach_url:
+        providers.append(("cockroachdb", cockroach_url))
 
     return providers
 

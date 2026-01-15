@@ -63,9 +63,9 @@ async def test_normal_connection():
 
 
 async def test_simulated_failover():
-    """Test 2: Simulate Neon failure and verify Railway takes over."""
+    """Test 2: Simulate Neon failure and verify Supabase takes over."""
     print("\n" + "="*60)
-    print("TEST 2: Simulated Neon Failure -> Railway Failover")
+    print("TEST 2: Simulated Neon Failure -> Supabase Failover")
     print("="*60)
 
     # Temporarily corrupt the DATABASE_URL to simulate failure
@@ -74,15 +74,25 @@ async def test_simulated_failover():
         print("✗ DATABASE_URL not set")
         return False
 
-    # Check if Railway is configured
-    railway_url = os.environ.get("RAILWAY_DB_URL")
-    if not railway_url or "your_railway_password" in railway_url:
-        print("⚠ RAILWAY_DB_URL not configured - skipping failover test")
-        print("  Set RAILWAY_DB_URL in .env to enable failover")
+    # Check if Supabase is configured
+    supabase_url = os.environ.get("SUPABASE_DB_URL")
+    if not supabase_url:
+        print("⚠ SUPABASE_DB_URL not configured - skipping failover test")
+        print("  Set SUPABASE_DB_URL in .env to enable failover")
         return None  # Skip, not fail
 
     print("\nSimulating Neon failure by using invalid URL...")
+
+    # Need to reload settings and database module to pick up env change
     os.environ["DATABASE_URL"] = "postgresql://invalid:invalid@invalid.neon.tech/invalid"
+
+    # Force reload of settings to pick up new DATABASE_URL
+    import importlib
+    import rivet_pro.config.settings as settings_module
+    importlib.reload(settings_module)
+
+    import rivet_pro.infra.database as db_module
+    importlib.reload(db_module)
 
     from rivet_pro.infra.database import Database
 
@@ -91,17 +101,17 @@ async def test_simulated_failover():
         await db.connect()
         print(f"✓ Failover successful! Connected to: {db.active_provider}")
 
-        if db.active_provider == "railway":
-            print("✓ Railway took over as expected")
+        if db.active_provider == "supabase":
+            print("✓ Supabase took over as expected")
 
-            # Run a test query on Railway
+            # Run a test query on Supabase
             result = await db.fetchval("SELECT 1")
-            print(f"✓ Railway query successful: {result}")
+            print(f"✓ Supabase query successful: {result}")
 
             await db.disconnect()
             return True
         else:
-            print(f"✗ Expected 'railway', got '{db.active_provider}'")
+            print(f"✗ Expected 'supabase', got '{db.active_provider}'")
             await db.disconnect()
             return False
 
@@ -109,8 +119,10 @@ async def test_simulated_failover():
         print(f"✗ Failover failed: {e}")
         return False
     finally:
-        # Restore original DATABASE_URL
+        # Restore original DATABASE_URL and reload settings
         os.environ["DATABASE_URL"] = original_url
+        importlib.reload(settings_module)
+        importlib.reload(db_module)
         print("\nRestored original DATABASE_URL")
 
 
