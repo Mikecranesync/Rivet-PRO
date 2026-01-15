@@ -989,6 +989,77 @@ class TelegramBot:
             logger.error(f"Error in /stats command: {e}", exc_info=True)
             await update.message.reply_text("❌ An error occurred. Please try again.")
 
+    async def tier_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Handle /tier command.
+        Show current subscription tier and usage.
+        """
+        telegram_user_id = update.effective_user.id
+
+        try:
+            # Get usage info
+            allowed, count, reason = await self.usage_service.can_use_service(telegram_user_id)
+
+            # Determine tier
+            if reason == "subscribed":
+                tier = "Pro"
+                tier_emoji = "⭐"
+                limit_text = "Unlimited"
+            else:
+                tier = "Free"
+                tier_emoji = "🆓"
+                limit_text = f"{count}/{FREE_TIER_LIMIT}"
+
+            response = f"{tier_emoji} *Your Subscription*\n\n"
+            response += f"*Tier:* {tier}\n"
+            response += f"*Lookups Used:* {limit_text}\n"
+
+            if tier == "Free":
+                remaining = max(0, FREE_TIER_LIMIT - count)
+                response += f"*Remaining:* {remaining}\n\n"
+                response += "💡 `/upgrade` to get unlimited lookups!"
+
+            await update.message.reply_text(response, parse_mode="Markdown")
+
+        except Exception as e:
+            logger.error(f"Error in /tier command: {e}", exc_info=True)
+            await update.message.reply_text("❌ An error occurred. Please try again.")
+
+    async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Handle /status command.
+        Show bot and system status.
+        """
+        try:
+            # Check database
+            db_ok = await self.db.health_check()
+
+            # Get recent activity
+            telegram_id = str(update.effective_user.id)
+            user_id = f"telegram_{telegram_id}"
+
+            equipment_count = await self.db.fetchval(
+                "SELECT COUNT(*) FROM cmms_equipment WHERE owned_by_user_id IN ($1, $2)",
+                user_id, telegram_id
+            ) or 0
+
+            # Check knowledge base
+            kb_count = await self.db.fetchval(
+                "SELECT COUNT(*) FROM knowledge_atoms WHERE is_active = true"
+            ) or 0
+
+            response = "🤖 *RIVET Status*\n\n"
+            response += f"*Database:* {'✅ Connected' if db_ok else '❌ Error'}\n"
+            response += f"*Your Equipment:* {equipment_count}\n"
+            response += f"*Knowledge Base:* {kb_count:,} atoms\n"
+            response += f"*Bot Version:* 1.0.0\n"
+
+            await update.message.reply_text(response, parse_mode="Markdown")
+
+        except Exception as e:
+            logger.error(f"Error in /status command: {e}", exc_info=True)
+            await update.message.reply_text("❌ An error occurred. Please try again.")
+
     async def kb_worker_status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
         Handle /kb_worker_status command - Display enrichment worker status (AUTO-KB-005).
@@ -1938,6 +2009,8 @@ Send a 📷 photo of any equipment nameplate and I'll identify it and find the m
         self.application.add_handler(CommandHandler("manual", self.manual_command))
         self.application.add_handler(CommandHandler("library", self.library_command))
         self.application.add_handler(CommandHandler("stats", self.stats_command))
+        self.application.add_handler(CommandHandler("tier", self.tier_command))
+        self.application.add_handler(CommandHandler("status", self.status_command))
         self.application.add_handler(CommandHandler("kb_stats", self.kb_stats_command))
         self.application.add_handler(CommandHandler("kb_worker_status", self.kb_worker_status_command))  # AUTO-KB-005
         self.application.add_handler(CommandHandler("upgrade", self.upgrade_command))
