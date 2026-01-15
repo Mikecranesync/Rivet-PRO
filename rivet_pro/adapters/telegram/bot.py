@@ -607,12 +607,13 @@ class TelegramBot:
           /equip search <query> - Search equipment
           /equip view <equipment_number> - View equipment details
         """
-        user_id = f"telegram_{update.effective_user.id}"
+        telegram_id = str(update.effective_user.id)
+        user_id = f"telegram_{telegram_id}"
         args = context.args or []
 
         try:
             if not args or args[0] == "list":
-                # List equipment
+                # List equipment (match both user_id formats for backward compatibility)
                 equipment_list = await self.db.execute_query_async(
                     """
                     SELECT
@@ -621,11 +622,12 @@ class TelegramBot:
                         model_number,
                         work_order_count
                     FROM cmms_equipment
-                    WHERE owned_by_user_id = $1
+                    WHERE owned_by_user_id IN ($1, $2)
+                       OR first_reported_by IN ($1, $2)
                     ORDER BY created_at DESC
                     LIMIT 10
                     """,
-                    (user_id,)
+                    (user_id, telegram_id)
                 )
 
                 if not equipment_list:
@@ -662,15 +664,15 @@ class TelegramBot:
                         model_number,
                         serial_number
                     FROM cmms_equipment
-                    WHERE owned_by_user_id = $1
+                    WHERE (owned_by_user_id IN ($1, $2) OR first_reported_by IN ($1, $2))
                       AND (
-                          manufacturer ILIKE $2
-                          OR model_number ILIKE $2
-                          OR serial_number ILIKE $2
+                          manufacturer ILIKE $3
+                          OR model_number ILIKE $3
+                          OR serial_number ILIKE $3
                       )
                     LIMIT 10
                     """,
-                    (user_id, f"%{query}%")
+                    (user_id, telegram_id, f"%{query}%")
                 )
 
                 if not results:
@@ -696,9 +698,10 @@ class TelegramBot:
                     """
                     SELECT *
                     FROM cmms_equipment
-                    WHERE owned_by_user_id = $1 AND equipment_number = $2
+                    WHERE (owned_by_user_id IN ($1, $2) OR first_reported_by IN ($1, $2))
+                      AND equipment_number = $3
                     """,
-                    (user_id, equipment_number),
+                    (user_id, telegram_id, equipment_number),
                     fetch_mode="one"
                 )
 
