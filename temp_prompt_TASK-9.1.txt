@@ -1,0 +1,38 @@
+You are implementing a feature for RIVET Pro, an AI-powered maintenance assistant.
+
+# Story: TASK-9.1
+# Title: Mermaid Diagram Parser
+
+## Description
+Create a parser that converts Mermaid flowchart syntax into a navigable tree structure of nodes and edges.
+
+## Acceptance Criteria
+["Mermaid flowchart syntax parses to Python dict with nodes and edges", "Supports TD and LR orientations", "Handles decision nodes and action nodes", "Edge labels preserved for button text", "Unit tests cover basic flowchart and branching"]
+
+## Context
+- Repository: C:\Users\hharp\OneDrive\Desktop\Rivet-PRO
+- This is an n8n-based system with PostgreSQL database
+- Telegram bot for user interface
+- Keep code SIMPLE - field techs need FAST responses
+- Use existing patterns in the codebase
+- DO NOT over-engineer or refactor unrelated code
+
+## Instructions
+1. Implement this feature completely
+2. Test that it works
+3. Commit with message: feat(TASK-9.1): Mermaid Diagram Parser
+
+When done, output a JSON summary:
+{
+  "success": true,
+  "commit_hash": "the-commit-hash",
+  "files_changed": ["list", "of", "files"],
+  "notes": "Brief description of what was implemented"
+}
+
+If blocked:
+{
+  "success": false,
+  "error_message": "What went wrong",
+  "notes": "What needs to happen to unblock"
+}

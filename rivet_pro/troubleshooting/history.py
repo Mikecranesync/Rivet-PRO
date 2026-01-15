@@ -161,7 +161,7 @@ class NavigationHistory:
             session.tree_id = tree_id
 
         # Enforce stack depth limit
-        if len(session.stack) >= self._max_stack_depth:
+        if len(session.stack) >= self._max_stack_depth and self._max_stack_depth > 0:
             # Remove oldest entry (bottom of stack)
             removed = session.stack.pop(0)
             logger.warning(
@@ -169,12 +169,17 @@ class NavigationHistory:
                 f"Removed oldest node: {removed}"
             )
 
-        # Push node onto stack
-        session.stack.append(node_id)
-        logger.debug(
-            f"Pushed node '{node_id}' for chat {chat_id}. "
-            f"Stack depth: {len(session.stack)}"
-        )
+        # Push node onto stack (only if max_stack_depth allows)
+        if self._max_stack_depth > 0:
+            session.stack.append(node_id)
+            logger.debug(
+                f"Pushed node '{node_id}' for chat {chat_id}. "
+                f"Stack depth: {len(session.stack)}"
+            )
+        else:
+            logger.debug(
+                f"Skipped push for chat {chat_id} - max_stack_depth is 0"
+            )
 
     def pop(self, chat_id: int) -> Optional[str]:
         """

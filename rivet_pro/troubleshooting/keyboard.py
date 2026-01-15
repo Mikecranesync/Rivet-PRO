@@ -153,11 +153,11 @@ def build_navigation_keyboard(
         if not target_node:
             continue
 
-        # Encode callback data
+        # Encode callback data using the callback module API
         callback_data = encode_callback(
-            action="nav",
-            node=target_node,
-            from_node=current_node
+            tree_id=tree_id,
+            node_id=target_node,
+            action="navigate"
         )
 
         # Validate callback data size
@@ -165,9 +165,9 @@ def build_navigation_keyboard(
             # Truncate label if callback data too long
             label = label[:20] + "..."
             callback_data = encode_callback(
-                action="nav",
-                node=target_node[:10],  # Truncate node ID too
-                from_node=current_node[:10]
+                tree_id=tree_id,
+                node_id=target_node[:10],  # Truncate node ID too
+                action="navigate"
             )
 
         buttons.append(InlineKeyboardButton(label, callback_data=callback_data))
@@ -175,9 +175,9 @@ def build_navigation_keyboard(
     # Add back button if requested
     if include_back_button and parent_node:
         back_callback = encode_callback(
-            action="back",
-            node=parent_node,
-            from_node=current_node
+            tree_id=tree_id,
+            node_id=parent_node,
+            action="back"
         )
         buttons.append(InlineKeyboardButton("⬅️ Back", callback_data=back_callback))
 
@@ -243,6 +243,7 @@ def build_paginated_keyboard(
     page: int,
     items_per_page: int,
     callback_prefix: str,
+    tree_id: int = 1,
     layout: KeyboardLayoutStrategy = KeyboardLayoutStrategy.AUTO
 ) -> InlineKeyboardMarkup:
     """
@@ -294,9 +295,9 @@ def build_paginated_keyboard(
         # Previous button
         if page > 0:
             prev_callback = encode_callback(
-                action="page",
-                node=str(page - 1),
-                prefix=callback_prefix
+                tree_id=tree_id,
+                node_id=f"prev_{page - 1}",
+                action="select"
             )
             pagination_row.append(
                 InlineKeyboardButton("◀️ Prev", callback_data=prev_callback)
@@ -313,15 +314,17 @@ def build_paginated_keyboard(
         # Next button
         if page < total_pages - 1:
             next_callback = encode_callback(
-                action="page",
-                node=str(page + 1),
-                prefix=callback_prefix
+                tree_id=tree_id,
+                node_id=f"next_{page + 1}",
+                action="select"
             )
             pagination_row.append(
                 InlineKeyboardButton("Next ▶️", callback_data=next_callback)
             )
 
-        # Add pagination row to keyboard
-        keyboard_markup.inline_keyboard.append(pagination_row)
+        # Add pagination row to keyboard (convert to list first as inline_keyboard is tuple)
+        keyboard_rows = list(keyboard_markup.inline_keyboard)
+        keyboard_rows.append(pagination_row)
+        keyboard_markup = InlineKeyboardMarkup(keyboard_rows)
 
     return keyboard_markup
