@@ -353,6 +353,8 @@ class TelegramBot:
             # KB-003: Search knowledge base first, then external if needed
             manual_result = None
             kb_result = None
+            search_report = None  # For search transparency
+            helpful_response = None  # LLM-generated tip when not found
             if result.manufacturer and result.model_number:
                 try:
                     # Step 1: Check knowledge base
@@ -401,10 +403,11 @@ class TelegramBot:
 
                             # Try external search as backup
                             try:
-                                external_result = await self.manual_service.search_manual(
+                                external_result, _ = await self.manual_service.search_manual(
                                     manufacturer=result.manufacturer,
                                     model=result.model_number,
-                                    timeout=15
+                                    timeout=15,
+                                    collect_report=False  # Don't need report for backup search
                                 )
                                 # If external finds different/better result, use it
                                 if external_result and external_result.get('url') != kb_result.get('url'):
@@ -428,21 +431,26 @@ class TelegramBot:
                             kb_result = None  # Ignore low confidence result
 
                     # Step 2: If no KB result or low confidence, use external search
+                    search_report = None
                     if not manual_result:
                         if not kb_result:
                             trace.add_step("kb_search", "miss", {"hit": False})
-                        manual_result = await self.manual_service.search_manual(
+                        manual_result, search_report = await self.manual_service.search_manual(
                             manufacturer=result.manufacturer,
                             model=result.model_number,
-                            timeout=15
+                            timeout=15,
+                            collect_report=True  # Collect transparency report
                         )
                         trace.add_step("external_manual_search",
                             "success" if manual_result else "miss", {
                             "found": bool(manual_result),
                             "url": manual_result.get('url') if manual_result else None,
-                            "cached": manual_result.get('cached', False) if manual_result else None
+                            "cached": manual_result.get('cached', False) if manual_result else None,
+                            "search_report": search_report.to_dict() if search_report else None
                         })
 
+                    # Generate helpful response if not found
+                    helpful_response = None
                     if manual_result:
                         logger.info(
                             f"Manual found | user_id={user_id} | "
@@ -451,6 +459,17 @@ class TelegramBot:
                         )
                     else:
                         logger.info(f"Manual not found | user_id={user_id}")
+                        # Generate helpful response using LLM
+                        if search_report:
+                            try:
+                                helpful_response = await self.manual_service.generate_helpful_response(
+                                    manufacturer=result.manufacturer,
+                                    model=result.model_number,
+                                    search_report=search_report
+                                )
+                                logger.info(f"Generated helpful response for {result.manufacturer} {result.model_number}")
+                            except Exception as e:
+                                logger.error(f"Failed to generate helpful response: {e}")
 
                 except Exception as e:
                     trace.add_step("manual_search", "error", {"error": str(e)})
@@ -501,7 +520,12 @@ class TelegramBot:
             if hasattr(result, 'error_code') and result.error_code:
                 equipment_data['error_code'] = result.error_code
 
-            response = format_equipment_response(equipment_data, manual_result)
+            response = format_equipment_response(
+                equipment_data,
+                manual_result,
+                search_report=search_report,
+                helpful_response=helpful_response
+            )
 
             # Add equipment number if created/matched
             if equipment_number:

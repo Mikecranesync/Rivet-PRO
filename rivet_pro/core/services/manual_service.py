@@ -4,13 +4,17 @@ Caches manual URLs in database and searches via n8n Manual Hunter webhook.
 Also serves locally downloaded manuals (AUTO-KB-009).
 """
 
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from pathlib import Path
 import httpx
 import json
+import time
 from datetime import datetime
 from rivet_pro.infra.observability import get_logger
 from rivet_pro.config.settings import settings
+from rivet_pro.core.models.search_report import (
+    SearchReport, SearchStage, SearchStatus
+)
 
 logger = get_logger(__name__)
 
@@ -59,8 +63,9 @@ class ManualService:
         manufacturer: str,
         model: str,
         timeout: int = 15,
-        prefer_local: bool = True
-    ) -> Optional[Dict[str, Any]]:
+        prefer_local: bool = True,
+        collect_report: bool = False
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[SearchReport]]:
         """
         Search for equipment manual. Checks local files first, then cache, then external search.
 
@@ -69,32 +74,42 @@ class ManualService:
             model: Equipment model number
             timeout: Max seconds to wait for external search (default: 15)
             prefer_local: Check local manual_files first (default: True) - AUTO-KB-009
+            collect_report: Collect search transparency report (default: False)
 
         Returns:
-            Dict with manual info if found:
-            {
-                'url': 'https://...' or None,
-                'local_path': '/path/to/manual.pdf' or None,
-                'title': 'Manual title',
-                'source': 'local' | 'tavily' | 'cache',
-                'cached': bool,
-                'is_local': bool
-            }
-            Returns None if not found.
+            Tuple of:
+            - Dict with manual info if found (or None)
+            - SearchReport with transparency data (or None if collect_report=False)
         """
         if not manufacturer or not model:
             logger.warning(f"Missing manufacturer or model | mfr={manufacturer} | model={model}")
-            return None
+            return None, None
 
         # Normalize inputs for cache lookup
         mfr_clean = manufacturer.strip()
         model_clean = model.strip()
 
+        # Create search report if collecting transparency data
+        report = SearchReport(manufacturer=mfr_clean, model=model_clean) if collect_report else None
+
         # AUTO-KB-009: Check local files first
         if prefer_local:
+            start_ms = time.time()
             local = await self.get_local_manual(mfr_clean, model_clean)
+            duration_ms = int((time.time() - start_ms) * 1000)
+
+            if report:
+                report.add_stage(
+                    SearchStage.LOCAL_FILES,
+                    SearchStatus.SUCCESS if local else SearchStatus.NOT_FOUND,
+                    duration_ms,
+                    details=f"Found: {local.get('filename')}" if local else "No local copy"
+                )
+
             if local:
                 logger.info(f"Local manual HIT | {mfr_clean} {model_clean} | path={local.get('file_path')}")
+                if report:
+                    report.complete(manual_found=True)
                 return {
                     'url': None,
                     'local_path': local.get('file_path'),
@@ -104,12 +119,25 @@ class ManualService:
                     'is_local': True,
                     'has_text': local.get('has_text', False),
                     'has_embedding': local.get('has_embedding', False)
-                }
+                }, report
 
         # 1. Check cache first (URL cache)
+        start_ms = time.time()
         cached = await self.get_cached_manual(mfr_clean, model_clean)
+        duration_ms = int((time.time() - start_ms) * 1000)
+
+        if report:
+            report.add_stage(
+                SearchStage.DATABASE_CACHE,
+                SearchStatus.SUCCESS if cached else SearchStatus.NOT_FOUND,
+                duration_ms,
+                details=f"Cached from {cached.get('source')}" if cached else "Not in cache"
+            )
+
         if cached:
             logger.info(f"Manual cache HIT | {mfr_clean} {model_clean} | url={cached.get('url')}")
+            if report:
+                report.complete(manual_found=True, manual_url=cached.get('manual_url'))
             return {
                 'url': cached.get('manual_url'),
                 'local_path': None,
@@ -117,14 +145,14 @@ class ManualService:
                 'source': cached.get('source', 'cache'),
                 'cached': True,
                 'is_local': False
-            }
+            }, report
 
         # 2. Cache miss - search externally (Tavily or n8n fallback)
         search_method = "Tavily" if self.use_tavily_direct else "n8n"
         logger.info(f"Manual cache MISS | {mfr_clean} {model_clean} | Searching via {search_method}...")
 
         try:
-            result = await self._search_external(mfr_clean, model_clean, timeout)
+            result = await self._search_external(mfr_clean, model_clean, timeout, report)
 
             if result and result.get('url'):
                 # 3. Cache successful result
@@ -140,14 +168,26 @@ class ManualService:
                 result['is_local'] = False
                 result['local_path'] = None
                 logger.info(f"Manual found and cached | {mfr_clean} {model_clean}")
-                return result
+                if report:
+                    report.complete(manual_found=True, manual_url=result['url'])
+                return result, report
 
             logger.info(f"Manual not found | {mfr_clean} {model_clean}")
-            return None
+            if report:
+                report.complete(manual_found=False)
+            return None, report
 
         except Exception as e:
             logger.error(f"Manual search failed | {mfr_clean} {model_clean} | error={e}")
-            return None
+            if report:
+                report.add_stage(
+                    SearchStage.EXTERNAL_SEARCH,
+                    SearchStatus.ERROR,
+                    0,
+                    details=f"Error: {str(e)[:50]}"
+                )
+                report.complete(manual_found=False)
+            return None, report
 
     async def get_local_manual(
         self,
@@ -734,7 +774,8 @@ NOT PDF: /search?, /results, catalog pages, homepages, shopping carts"""
         self,
         manufacturer: str,
         model: str,
-        timeout: int
+        timeout: int,
+        report: Optional[SearchReport] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Search for manual using Tavily API directly or n8n webhook fallback.
@@ -743,20 +784,22 @@ NOT PDF: /search?, /results, catalog pages, homepages, shopping carts"""
             manufacturer: Equipment manufacturer
             model: Equipment model number
             timeout: Request timeout in seconds
+            report: Optional SearchReport for transparency tracking
 
         Returns:
             Dict with manual info if found, None otherwise
         """
         if self.use_tavily_direct:
-            return await self._search_tavily_direct(manufacturer, model, timeout)
+            return await self._search_tavily_direct(manufacturer, model, timeout, report)
         else:
-            return await self._search_via_n8n(manufacturer, model, timeout)
+            return await self._search_via_n8n(manufacturer, model, timeout, report)
 
     async def _search_tavily_direct(
         self,
         manufacturer: str,
         model: str,
-        timeout: int
+        timeout: int,
+        report: Optional[SearchReport] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Call Tavily API directly to search for equipment manual.
@@ -765,10 +808,15 @@ NOT PDF: /search?, /results, catalog pages, homepages, shopping carts"""
             manufacturer: Equipment manufacturer
             model: Equipment model number
             timeout: Request timeout in seconds
+            report: Optional SearchReport for transparency tracking
 
         Returns:
             Dict with manual info if found, None otherwise
         """
+        start_ms = time.time()
+        urls_found = 0
+        urls_rejected = 0
+
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 # Build search query optimized for PDF manuals
@@ -805,6 +853,7 @@ NOT PDF: /search?, /results, catalog pages, homepages, shopping carts"""
                     for result in results:
                         url = result.get('url', '')
                         title = result.get('title', '')
+                        urls_found += 1
 
                         # Quick pre-filter: URLs likely to be documentation
                         url_lower = url.lower()
@@ -831,11 +880,21 @@ NOT PDF: /search?, /results, catalog pages, homepages, shopping carts"""
                             reasoning = validation.get('reasoning', 'No reasoning provided')
 
                             if is_valid and confidence >= 0.7:
-                                # URL passed validation
+                                # URL passed validation - SUCCESS!
+                                duration_ms = int((time.time() - start_ms) * 1000)
                                 logger.info(
                                     f"Tavily manual validated | {manufacturer} {model} | "
                                     f"url={url} | confidence={confidence:.2f}"
                                 )
+                                if report:
+                                    report.add_stage(
+                                        SearchStage.EXTERNAL_SEARCH,
+                                        SearchStatus.SUCCESS,
+                                        duration_ms,
+                                        details=f"Found via Tavily ({urls_found} URLs checked)",
+                                        urls_found=urls_found,
+                                        urls_rejected=urls_rejected
+                                    )
                                 return {
                                     'url': url,
                                     'title': title or f"{manufacturer} {model} Manual",
@@ -843,31 +902,77 @@ NOT PDF: /search?, /results, catalog pages, homepages, shopping carts"""
                                     'confidence': confidence
                                 }
                             else:
-                                # URL rejected by LLM judge
+                                # URL rejected by LLM judge - track for transparency
+                                urls_rejected += 1
                                 logger.warning(
                                     f"URL rejected by LLM judge | {manufacturer} {model} | "
                                     f"url={url} | confidence={confidence:.2f} | reason={reasoning}"
                                 )
+                                if report:
+                                    report.add_rejected_url(
+                                        url=url,
+                                        title=title,
+                                        confidence=confidence,
+                                        rejection_reason=reasoning[:100],
+                                        validator="llm"
+                                    )
                                 # Continue checking next result
 
+                    # No valid results found
+                    duration_ms = int((time.time() - start_ms) * 1000)
                     logger.info(f"Tavily search: no valid PDF results after LLM validation | {manufacturer} {model}")
+                    if report:
+                        report.add_stage(
+                            SearchStage.EXTERNAL_SEARCH,
+                            SearchStatus.NOT_FOUND,
+                            duration_ms,
+                            details=f"{urls_found} URLs found, {urls_rejected} rejected",
+                            urls_found=urls_found,
+                            urls_rejected=urls_rejected
+                        )
                     return None
 
+                # Non-200 response
+                duration_ms = int((time.time() - start_ms) * 1000)
                 logger.warning(f"Tavily API returned {response.status_code} | {manufacturer} {model}")
+                if report:
+                    report.add_stage(
+                        SearchStage.EXTERNAL_SEARCH,
+                        SearchStatus.ERROR,
+                        duration_ms,
+                        details=f"Tavily API error: {response.status_code}"
+                    )
                 return None
 
         except httpx.TimeoutException:
+            duration_ms = int((time.time() - start_ms) * 1000)
             logger.error(f"Tavily search timeout | {manufacturer} {model} | timeout={timeout}s")
+            if report:
+                report.add_stage(
+                    SearchStage.EXTERNAL_SEARCH,
+                    SearchStatus.ERROR,
+                    duration_ms,
+                    details=f"Timeout after {timeout}s"
+                )
             return None
         except Exception as e:
+            duration_ms = int((time.time() - start_ms) * 1000)
             logger.error(f"Tavily search failed | {manufacturer} {model} | error={e}")
+            if report:
+                report.add_stage(
+                    SearchStage.EXTERNAL_SEARCH,
+                    SearchStatus.ERROR,
+                    duration_ms,
+                    details=f"Error: {str(e)[:50]}"
+                )
             return None
 
     async def _search_via_n8n(
         self,
         manufacturer: str,
         model: str,
-        timeout: int
+        timeout: int,
+        report: Optional[SearchReport] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Call n8n Manual Hunter webhook to search for manual (fallback).
@@ -876,10 +981,13 @@ NOT PDF: /search?, /results, catalog pages, homepages, shopping carts"""
             manufacturer: Equipment manufacturer
             model: Equipment model number
             timeout: Request timeout in seconds
+            report: Optional SearchReport for transparency tracking
 
         Returns:
             Dict with manual info if found, None otherwise
         """
+        start_ms = time.time()
+
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.post(
@@ -917,12 +1025,22 @@ NOT PDF: /search?, /results, catalog pages, homepages, shopping carts"""
                         confidence = validation.get('confidence', 0.0)
                         reasoning = validation.get('reasoning', 'No reasoning provided')
 
+                        duration_ms = int((time.time() - start_ms) * 1000)
+
                         if is_valid and confidence >= 0.7:
                             # URL passed validation
                             logger.info(
                                 f"n8n manual validated | {manufacturer} {model} | "
                                 f"url={url} | confidence={confidence:.2f}"
                             )
+                            if report:
+                                report.add_stage(
+                                    SearchStage.EXTERNAL_SEARCH,
+                                    SearchStatus.SUCCESS,
+                                    duration_ms,
+                                    details="Found via n8n webhook",
+                                    urls_found=1
+                                )
                             return {
                                 'url': url,
                                 'title': data.get('title', f"{manufacturer} {model} Manual"),
@@ -935,18 +1053,68 @@ NOT PDF: /search?, /results, catalog pages, homepages, shopping carts"""
                                 f"n8n URL rejected by LLM judge | {manufacturer} {model} | "
                                 f"url={url} | confidence={confidence:.2f} | reason={reasoning}"
                             )
+                            if report:
+                                report.add_rejected_url(
+                                    url=url,
+                                    title=data.get('title'),
+                                    confidence=confidence,
+                                    rejection_reason=reasoning[:100],
+                                    validator="llm"
+                                )
+                                report.add_stage(
+                                    SearchStage.EXTERNAL_SEARCH,
+                                    SearchStatus.NOT_FOUND,
+                                    duration_ms,
+                                    details="n8n result rejected by LLM",
+                                    urls_found=1,
+                                    urls_rejected=1
+                                )
                             return None
 
+                    # No result from n8n
+                    duration_ms = int((time.time() - start_ms) * 1000)
+                    if report:
+                        report.add_stage(
+                            SearchStage.EXTERNAL_SEARCH,
+                            SearchStatus.NOT_FOUND,
+                            duration_ms,
+                            details="n8n returned no results"
+                        )
                     return None
 
+                # Non-200 response
+                duration_ms = int((time.time() - start_ms) * 1000)
                 logger.warning(f"n8n search returned {response.status_code} | {manufacturer} {model}")
+                if report:
+                    report.add_stage(
+                        SearchStage.EXTERNAL_SEARCH,
+                        SearchStatus.ERROR,
+                        duration_ms,
+                        details=f"n8n error: {response.status_code}"
+                    )
                 return None
 
         except httpx.TimeoutException:
+            duration_ms = int((time.time() - start_ms) * 1000)
             logger.error(f"n8n search timeout | {manufacturer} {model} | timeout={timeout}s")
+            if report:
+                report.add_stage(
+                    SearchStage.EXTERNAL_SEARCH,
+                    SearchStatus.ERROR,
+                    duration_ms,
+                    details=f"n8n timeout after {timeout}s"
+                )
             return None
         except Exception as e:
+            duration_ms = int((time.time() - start_ms) * 1000)
             logger.error(f"n8n search failed | {manufacturer} {model} | error={e}")
+            if report:
+                report.add_stage(
+                    SearchStage.EXTERNAL_SEARCH,
+                    SearchStatus.ERROR,
+                    duration_ms,
+                    details=f"Error: {str(e)[:50]}"
+                )
             return None
 
     async def get_cache_stats(self) -> Dict[str, int]:
@@ -973,3 +1141,85 @@ NOT PDF: /search?, /results, catalog pages, homepages, shopping carts"""
         except Exception as e:
             logger.error(f"Failed to get cache stats | error={e}")
             return {}
+
+    async def generate_helpful_response(
+        self,
+        manufacturer: str,
+        model: str,
+        search_report: Optional[SearchReport] = None
+    ) -> Optional[str]:
+        """
+        Generate an LLM-powered helpful response when manual not found.
+        Uses the cheapest available LLM (Groq) for cost efficiency.
+
+        Args:
+            manufacturer: Equipment manufacturer
+            model: Equipment model number
+            search_report: Optional search report with rejection details
+
+        Returns:
+            Helpful response string or None if generation fails
+        """
+        context_parts = []
+        if search_report and search_report.rejected_urls:
+            context_parts.append(
+                f"We found {len(search_report.rejected_urls)} potential URLs but "
+                "none matched this specific equipment model."
+            )
+
+        context = " ".join(context_parts) if context_parts else ""
+
+        prompt = f"""I searched for a manual for {manufacturer} {model} equipment but couldn't find one.
+{context}
+
+Write a brief, helpful 2-3 sentence response for a maintenance technician who needs documentation.
+Include:
+1. What type of equipment this likely is (if recognizable from the manufacturer/model)
+2. One specific suggestion for finding documentation
+
+Keep it under 80 words. Be practical and helpful. Do not apologize or say sorry."""
+
+        # Try Groq first (cheapest), then DeepSeek, then others
+        llm_configs = [
+            ("groq", self.groq_api_key, "https://api.groq.com/openai/v1/chat/completions", "llama-3.3-70b-versatile"),
+            ("deepseek", self.deepseek_api_key, "https://api.deepseek.com/v1/chat/completions", "deepseek-chat"),
+        ]
+
+        for provider_name, api_key, url, model_name in llm_configs:
+            if not api_key:
+                continue
+
+            try:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    headers = {
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {api_key}"
+                    }
+
+                    response = await client.post(
+                        url,
+                        headers=headers,
+                        json={
+                            "model": model_name,
+                            "messages": [{"role": "user", "content": prompt}],
+                            "max_tokens": 150,
+                            "temperature": 0.3
+                        }
+                    )
+
+                    if response.status_code == 200:
+                        data = response.json()
+                        content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
+                        if content:
+                            logger.info(
+                                f"Generated helpful response | {manufacturer} {model} | "
+                                f"provider={provider_name} | len={len(content)}"
+                            )
+                            return content.strip()
+
+            except Exception as e:
+                logger.warning(f"Helpful response generation failed | provider={provider_name} | error={e}")
+                continue
+
+        logger.warning(f"All LLMs failed for helpful response | {manufacturer} {model}")
+        return None

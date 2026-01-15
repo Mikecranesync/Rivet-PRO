@@ -6,12 +6,16 @@ Provides functions to enhance raw LLM responses with:
 - Safety warning extraction and highlighting
 - Confidence badges
 - Troubleshooting step checkboxes
+- Search transparency reports (what we searched and why)
 
 Extracted from rivet/utils/response_formatter.py - Production-ready
 """
 
 import re
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from rivet_pro.core.models.search_report import SearchReport
 
 
 def add_citations(text: str, sources: List[Dict[str, str]]) -> str:
@@ -278,9 +282,76 @@ def synthesize_response(
     return text + safety_section
 
 
+def format_search_transparency(report: 'SearchReport') -> str:
+    """
+    Format search transparency section showing what was searched.
+    Only shown when manual not found, to prove thorough searching.
+
+    Args:
+        report: SearchReport with search attempt details
+
+    Returns:
+        HTML formatted search transparency section
+    """
+    from rivet_pro.core.models.search_report import SearchStage, SearchStatus
+
+    if report is None:
+        return ""
+
+    lines = ["<b>Search Details:</b>"]
+
+    # Stage names for display
+    stage_names = {
+        SearchStage.LOCAL_FILES: "Local Files",
+        SearchStage.DATABASE_CACHE: "Database Cache",
+        SearchStage.EXTERNAL_SEARCH: "Web Search",
+        SearchStage.LLM_VALIDATION: "AI Validation"
+    }
+
+    # Status emojis
+    status_emojis = {
+        SearchStatus.SUCCESS: "✅",
+        SearchStatus.NOT_FOUND: "❌",
+        SearchStatus.REJECTED: "⚠️",
+        SearchStatus.SKIPPED: "⏭️",
+        SearchStatus.ERROR: "❓"
+    }
+
+    # Format each stage
+    for stage in report.stages:
+        emoji = status_emojis.get(stage.status, "❓")
+        name = stage_names.get(stage.stage, stage.stage.value)
+        details = stage.details or stage.status.value
+        lines.append(f"• {emoji} {name}: {details}")
+
+    # Show rejected URLs (max 3 to keep response concise)
+    if report.rejected_urls:
+        lines.append("")
+        lines.append(f"<b>URLs Evaluated ({len(report.rejected_urls)} rejected):</b>")
+        for rejected in report.rejected_urls[:3]:
+            # Truncate URL for display
+            display_url = rejected.url[:45] + "..." if len(rejected.url) > 45 else rejected.url
+            conf_pct = int(rejected.confidence * 100)
+            # Truncate reason
+            reason = rejected.rejection_reason[:60] if rejected.rejection_reason else "No reason"
+            lines.append(f"• {display_url}")
+            lines.append(f"  └ {conf_pct}% - {reason}")
+
+        if len(report.rejected_urls) > 3:
+            lines.append(f"  <i>...and {len(report.rejected_urls) - 3} more</i>")
+
+    # Search timing
+    lines.append("")
+    lines.append(f"⏱️ <i>Search completed in {report.total_duration_ms}ms</i>")
+
+    return "\n".join(lines)
+
+
 def format_equipment_response(
     equipment: Dict[str, Any],
-    manual: Dict[str, Any] = None
+    manual: Dict[str, Any] = None,
+    search_report: Optional['SearchReport'] = None,
+    helpful_response: Optional[str] = None
 ) -> str:
     """
     Format equipment identification response with optional manual link.
@@ -298,6 +369,8 @@ def format_equipment_response(
             - title: str
             - source: str
             - cached: bool
+        search_report: Optional SearchReport with transparency data
+        helpful_response: Optional LLM-generated helpful response when not found
 
     Returns:
         Formatted HTML string ready for Telegram (use parse_mode="HTML")
@@ -368,6 +441,16 @@ def format_equipment_response(
     else:
         # Manual not found
         response += "📖 <b>Manual Not Found</b>\n\n"
+
+        # Add LLM-generated helpful response if available
+        if helpful_response:
+            response += f"💡 {helpful_response}\n\n"
+
+        # Add search transparency section if report available
+        if search_report:
+            transparency = format_search_transparency(search_report)
+            if transparency:
+                response += f"{transparency}\n\n"
 
         # Suggest manual search query
         search_query = f"{mfr} {model} manual PDF"
