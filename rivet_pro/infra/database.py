@@ -1,16 +1,45 @@
 """
 Database connection management for Rivet Pro.
 Uses asyncpg for async PostgreSQL connections to Neon.
+
+Includes failover logic: Neon -> Railway -> Supabase
 """
 
+import os
 import asyncpg
-from typing import Optional
+from typing import Optional, List, Tuple
 from contextlib import asynccontextmanager
 from pathlib import Path
 from rivet_pro.config.settings import settings
 from rivet_pro.infra.observability import get_logger
 
 logger = get_logger(__name__)
+
+
+def get_database_providers() -> List[Tuple[str, str]]:
+    """
+    Get list of database providers in failover order.
+
+    Returns:
+        List of (provider_name, connection_url) tuples
+    """
+    providers = []
+
+    # Primary: Neon
+    if settings.database_url:
+        providers.append(("neon", settings.database_url))
+
+    # Failover 1: Railway
+    railway_url = os.getenv("RAILWAY_DB_URL")
+    if railway_url and "your_railway_password" not in railway_url:
+        providers.append(("railway", railway_url))
+
+    # Failover 2: Supabase
+    supabase_url = os.getenv("SUPABASE_DB_URL")
+    if supabase_url:
+        providers.append(("supabase", supabase_url))
+
+    return providers
 
 
 class Database:
@@ -21,34 +50,86 @@ class Database:
 
     def __init__(self):
         self.pool: Optional[asyncpg.Pool] = None
+        self.active_provider: Optional[str] = None
 
     async def connect(self) -> None:
         """
-        Create database connection pool.
-        Should be called on application startup.
+        Create database connection pool with automatic failover.
+
+        Tries providers in order: Neon -> Railway -> Supabase
+        Alerts via Telegram on failover.
         """
         if self.pool is not None:
             logger.warning("Database pool already exists")
             return
 
-        try:
-            logger.info(f"Connecting to database | Environment: {settings.environment}")
+        providers = get_database_providers()
+        if not providers:
+            raise RuntimeError("No database providers configured")
 
-            self.pool = await asyncpg.create_pool(
-                dsn=settings.database_url,
-                min_size=settings.database_pool_min_size,
-                max_size=settings.database_pool_max_size,
-                command_timeout=60,
+        errors = []
+        for provider_name, dsn in providers:
+            try:
+                logger.info(f"Attempting database connection | Provider: {provider_name}")
+
+                self.pool = await asyncpg.create_pool(
+                    dsn=dsn,
+                    min_size=settings.database_pool_min_size,
+                    max_size=settings.database_pool_max_size,
+                    command_timeout=60,
+                )
+
+                # Test connection
+                async with self.pool.acquire() as conn:
+                    version = await conn.fetchval("SELECT version()")
+                    logger.info(
+                        f"Database connected successfully | "
+                        f"Provider: {provider_name} | "
+                        f"PostgreSQL: {version[:50]}..."
+                    )
+
+                self.active_provider = provider_name
+
+                # Alert on failover (not primary)
+                if provider_name != "neon":
+                    await self._send_failover_alert(provider_name, errors)
+
+                return  # Success!
+
+            except Exception as e:
+                logger.warning(f"Connection failed | Provider: {provider_name} | Error: {e}")
+                errors.append((provider_name, str(e)))
+                self.pool = None
+                continue
+
+        # All providers failed
+        error_summary = "; ".join([f"{p}: {e}" for p, e in errors])
+        raise RuntimeError(f"All database providers failed: {error_summary}")
+
+    async def _send_failover_alert(self, active_provider: str, errors: List[Tuple[str, str]]) -> None:
+        """Send Telegram alert when failing over to backup database."""
+        try:
+            import httpx
+            bot_token = settings.telegram_bot_token
+            chat_id = "8445149012"  # Admin chat
+
+            error_details = "\n".join([f"  - {p}: {e[:50]}" for p, e in errors])
+            message = (
+                f"⚠️ DATABASE FAILOVER\n\n"
+                f"Active: {active_provider.upper()}\n"
+                f"Failed providers:\n{error_details}\n\n"
+                f"Check Neon status: https://console.neon.tech"
             )
 
-            # Test connection
-            async with self.pool.acquire() as conn:
-                version = await conn.fetchval("SELECT version()")
-                logger.info(f"Database connected successfully | PostgreSQL version: {version[:50]}...")
-
+            async with httpx.AsyncClient() as client:
+                await client.post(
+                    f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                    json={"chat_id": chat_id, "text": message},
+                    timeout=5.0
+                )
+            logger.info(f"Failover alert sent | Active: {active_provider}")
         except Exception as e:
-            logger.error(f"Failed to connect to database: {e}")
-            raise
+            logger.warning(f"Failed to send failover alert: {e}")
 
     async def disconnect(self) -> None:
         """

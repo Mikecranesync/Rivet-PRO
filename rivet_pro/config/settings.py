@@ -101,6 +101,11 @@ class Settings(BaseSettings):
     langchain_api_key: Optional[str] = None
     langchain_project: str = Field("rivet-pro", description="LangSmith project name")
 
+    # Langfuse LLM Cost Tracking
+    langfuse_public_key: Optional[str] = Field(None, description="Langfuse public key for tracing")
+    langfuse_secret_key: Optional[str] = Field(None, description="Langfuse secret key for tracing")
+    langfuse_base_url: Optional[str] = Field("https://us.cloud.langfuse.com", description="Langfuse API endpoint")
+
     # Feature Flags
     beta_mode: bool = Field(True, description="Unlock all features during beta")
 

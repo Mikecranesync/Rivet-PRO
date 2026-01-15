@@ -15,8 +15,51 @@ from enum import Enum
 from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass
 from datetime import datetime
+from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
+
+# Langfuse tracing (optional - graceful fallback if not configured)
+_langfuse = None
+
+def _get_langfuse():
+    """Lazy-load Langfuse client."""
+    global _langfuse
+    if _langfuse is None:
+        try:
+            from langfuse import Langfuse
+            from rivet_pro.config.settings import settings
+            if settings.langfuse_public_key and settings.langfuse_secret_key:
+                _langfuse = Langfuse(
+                    public_key=settings.langfuse_public_key,
+                    secret_key=settings.langfuse_secret_key,
+                    host=settings.langfuse_base_url or "https://us.cloud.langfuse.com",
+                )
+                logger.info("Langfuse tracing enabled")
+            else:
+                _langfuse = False  # Explicitly disabled
+                logger.debug("Langfuse not configured (no keys)")
+        except Exception as e:
+            logger.warning(f"Langfuse init failed: {e}")
+            _langfuse = False
+    return _langfuse if _langfuse else None
+
+
+@contextmanager
+def langfuse_generation(name: str, model: str, user_id: Optional[str] = None, metadata: Optional[Dict] = None):
+    """Context manager for Langfuse generation tracing."""
+    lf = _get_langfuse()
+    if not lf:
+        yield None
+        return
+
+    trace = lf.trace(name=name, user_id=user_id, metadata=metadata or {})
+    generation = trace.generation(name=name, model=model, metadata=metadata or {})
+    try:
+        yield generation
+    finally:
+        generation.end()
+        lf.flush()
 
 
 class ModelCapability(Enum):
@@ -199,6 +242,7 @@ class LLMRouter:
         image_bytes: bytes,
         prompt: str,
         max_tokens: int = 1000,
+        user_id: Optional[str] = None,
     ) -> Tuple[str, float]:
         """
         Call a specific provider's vision API.
@@ -211,6 +255,7 @@ class LLMRouter:
         """
         provider = provider_config.name
         model = provider_config.model
+        start_time = datetime.utcnow()
 
         # Encode image
         image_b64 = base64.b64encode(image_bytes).decode("utf-8")
@@ -309,6 +354,37 @@ class LLMRouter:
 
         else:
             raise ValueError(f"Unknown provider: {provider}")
+
+        # Log to Langfuse for cost tracking
+        duration_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
+        lf = _get_langfuse()
+        if lf:
+            try:
+                trace = lf.trace(
+                    name="vision_ocr",
+                    user_id=user_id,
+                    metadata={"provider": provider, "model": model},
+                )
+                trace.generation(
+                    name="ocr_extraction",
+                    model=model,
+                    input=prompt[:500],  # Truncate for logging
+                    output=text[:1000] if text else None,
+                    usage={
+                        "input_tokens": len(prompt.split()),
+                        "output_tokens": len(text.split()) if text else 0,
+                    },
+                    metadata={
+                        "provider": provider,
+                        "cost_usd": cost,
+                        "duration_ms": duration_ms,
+                        "image_size_kb": len(image_bytes) / 1024,
+                    },
+                )
+                lf.flush()
+                logger.debug(f"Langfuse: logged vision call | provider={provider} | cost=${cost:.4f}")
+            except Exception as e:
+                logger.warning(f"Langfuse logging failed: {e}")
 
         return text, cost
 
