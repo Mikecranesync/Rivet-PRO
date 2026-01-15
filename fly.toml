@@ -1,0 +1,15 @@
+app = "rivet-cmms-bot"
+primary_region = "ord"  # Chicago
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  TELEGRAM_BOT_MODE = "polling"
+  PYTHONUNBUFFERED = "1"
+
+# No HTTP services needed - this is a worker (Telegram polling)
+# The bot connects outbound to Telegram, no inbound needed
+
+[processes]
+  app = "python run_bot.py"
