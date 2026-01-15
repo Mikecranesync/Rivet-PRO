@@ -1,0 +1,38 @@
+[Unit]
+Description=RIVET Pro Autonomous Enrichment Worker
+After=network.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rivet
+Group=rivet
+WorkingDirectory=/opt/rivet-pro
+Environment="PATH=/opt/rivet-pro/.venv/bin:/usr/local/bin:/usr/bin"
+EnvironmentFile=/opt/rivet-pro/.env
+
+# Main worker process
+ExecStart=/opt/rivet-pro/.venv/bin/python -m rivet_pro.workers.enrichment_worker
+
+# Restart policy
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+# Graceful shutdown
+TimeoutStopSec=60
+KillMode=mixed
+KillSignal=SIGTERM
+
+# Resource limits
+MemoryMax=512M
+CPUQuota=50%
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rivet-enrichment-worker
+
+[Install]
+WantedBy=multi-user.target
