@@ -285,7 +285,7 @@ def format_equipment_response(
     """
     Format equipment identification response with optional manual link.
 
-    Creates beautiful Telegram Markdown v2 compatible response for equipment lookups.
+    Uses HTML format for reliable URL handling (Markdown has issues with underscores in URLs).
 
     Args:
         equipment: Dict with equipment info:
@@ -300,7 +300,7 @@ def format_equipment_response(
             - cached: bool
 
     Returns:
-        Formatted Markdown string ready for Telegram
+        Formatted HTML string ready for Telegram (use parse_mode="HTML")
 
     Example (with manual):
         >>> equipment = {
@@ -314,92 +314,66 @@ def format_equipment_response(
         ...     'source': 'tavily'
         ... }
         >>> print(format_equipment_response(equipment, manual))
-        📋 *Equipment Identified*
-
-        *Manufacturer:* Siemens
-        *Model:* G120 VFD
-        *Serial:* 6SL3244-0BB12-1BA1
-
-        📖 *User Manual*
-        [Siemens G120 Operating Instructions](https://example.com/manual.pdf)
-
-        💡 _Bookmark this for offline access._
-
-    Example (without manual):
-        >>> equipment = {'manufacturer': 'Unknown', 'model': 'XYZ-500'}
-        >>> print(format_equipment_response(equipment))
-        📋 *Equipment Identified*
-
-        *Manufacturer:* Unknown
-        *Model:* XYZ-500
-
-        📖 *Manual Not Found*
-
-        Try searching: Unknown XYZ-500 manual PDF
-
-        _Send a clearer photo if the ID looks wrong._
+        📋 <b>Equipment Identified</b>
+        ...
     """
-    # Start with equipment identification
-    response = "📋 *Equipment Identified*\n\n"
+    # Start with equipment identification (HTML format)
+    response = "📋 <b>Equipment Identified</b>\n\n"
 
     # Add manufacturer
     mfr = equipment.get('manufacturer', 'Unknown')
-    response += f"*Manufacturer:* {mfr}\n"
+    response += f"<b>Manufacturer:</b> {mfr}\n"
 
     # Add model
     model = equipment.get('model', 'Unknown')
-    response += f"*Model:* {model}\n"
+    response += f"<b>Model:</b> {model}\n"
 
     # Add serial if available
     if equipment.get('serial'):
-        response += f"*Serial:* {equipment['serial']}\n"
+        response += f"<b>Serial:</b> {equipment['serial']}\n"
 
     # Add error code if detected
     if equipment.get('error_code'):
-        response += f"⚠️ *Error Code:* {equipment['error_code']}\n"
+        response += f"⚠️ <b>Error Code:</b> {equipment['error_code']}\n"
 
     # Add manual section
     response += "\n"
 
     if manual and manual.get('url'):
         # Manual found
-        response += "📖 *User Manual*\n"
+        response += "📖 <b>User Manual</b>\n"
 
         title = manual.get('title', f"{mfr} {model} Manual")
         url = manual['url']
         confidence = manual.get('confidence', 1.0)
 
-        # Escape underscores in URL for Telegram Markdown compatibility
-        # Telegram Markdown treats _ as italic marker, breaking URLs with underscores
-        url_escaped = url.replace('_', r'\_')
-
-        # Create clickable Markdown link with escaped URL
-        response += f"[{title}]({url_escaped})\n\n"
+        # HTML format handles URLs with underscores correctly (no escaping needed)
+        response += f'<a href="{url}">{title}</a>\n\n'
 
         # Add plain URL as fallback (some mobile clients have issues with links)
-        response += f"📎 _If link doesn't work, copy this URL:_\n`{url}`\n\n"
+        response += f"📎 <i>If link doesn't work, copy this URL:</i>\n<code>{url}</code>\n\n"
 
         # Add confidence indicator if medium confidence (0.5-0.7)
         if 0.5 <= confidence < 0.7:
-            response += "⚠️ _Link quality uncertain - please verify before use._\n\n"
+            response += "⚠️ <i>Link quality uncertain - please verify before use.</i>\n\n"
         elif confidence >= 0.7:
             # High confidence - add helpful tip
-            response += "💡 _Tap link or copy URL to browser._\n"
+            response += "💡 <i>Tap link or copy URL to browser.</i>\n"
 
         # Add source attribution if available
         if manual.get('source') and manual.get('source') != 'cache':
             source = manual['source'].capitalize()
-            response += f"\n_Source: {source}_"
+            response += f"\n<i>Source: {source}</i>"
 
     else:
         # Manual not found
-        response += "📖 *Manual Not Found*\n\n"
+        response += "📖 <b>Manual Not Found</b>\n\n"
 
         # Suggest manual search query
         search_query = f"{mfr} {model} manual PDF"
         response += f"Try searching: {search_query}\n\n"
 
         # Helpful tip
-        response += "_Send a clearer photo if the ID looks wrong._"
+        response += "<i>Send a clearer photo if the ID looks wrong.</i>"
 
     return response

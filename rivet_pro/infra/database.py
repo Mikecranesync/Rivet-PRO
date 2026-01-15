@@ -61,7 +61,7 @@ class Database:
         """
         Create database connection pool with automatic failover.
 
-        Tries providers in order: Neon -> Railway -> Supabase
+        Tries providers in order: Neon -> Supabase -> CockroachDB
         Alerts via Telegram on failover.
         """
         if self.pool is not None:

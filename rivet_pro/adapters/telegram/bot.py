@@ -523,11 +523,11 @@ class TelegramBot:
             if reason == 'under_limit':
                 remaining = FREE_TIER_LIMIT - count - 1
                 if remaining > 0:
-                    response += f"\n\n📊 _{remaining} free lookups remaining_"
+                    response += f"\n\n📊 <i>{remaining} free lookups remaining</i>"
                 else:
-                    response += f"\n\n📊 _This was your last free lookup!_"
+                    response += f"\n\n📊 <i>This was your last free lookup!</i>"
 
-            await msg.edit_text(response, parse_mode="Markdown")
+            await msg.edit_text(response, parse_mode="HTML")
             trace.add_step("response_sent", "success", {
                 "response_length": len(response),
                 "manual_found": bool(manual_result),
