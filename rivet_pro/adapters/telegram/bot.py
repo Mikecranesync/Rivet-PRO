@@ -28,6 +28,7 @@ from rivet_pro.core.services.manual_service import ManualService
 from rivet_pro.core.services.feedback_service import FeedbackService
 from rivet_pro.core.services.alerting_service import AlertingService
 from rivet_pro.core.services.kb_analytics_service import KnowledgeBaseAnalytics
+from rivet_pro.core.services.enrichment_queue_service import EnrichmentQueueService
 from rivet_pro.core.utils import format_equipment_response
 
 logger = get_logger(__name__)
@@ -49,6 +50,7 @@ class TelegramBot:
         self.manual_service = None  # Initialized after db connects
         self.feedback_service = None  # Initialized after db connects
         self.kb_analytics_service = None  # Initialized after db connects
+        self.enrichment_queue_service = None  # Initialized after db connects (AUTO-KB-004)
 
         # Initialize alerting service for Ralph notifications (RALPH-BOT-3)
         self.alerting_service = AlertingService(
@@ -1080,6 +1082,25 @@ class TelegramBot:
                     f"KB miss | manufacturer={manufacturer} | model={model} | "
                     f"Falling back to external search"
                 )
+
+                # AUTO-KB-004: Trigger enrichment job on KB miss
+                if self.enrichment_queue_service and manufacturer and model:
+                    try:
+                        await self.enrichment_queue_service.add_to_queue(
+                            manufacturer=manufacturer,
+                            model_pattern=model,
+                            priority=5,  # Default priority
+                            user_query_count=1,
+                            metadata={'trigger': 'user_search', 'equipment_type': equipment_type}
+                        )
+                        logger.info(
+                            f"Enrichment job queued | manufacturer={manufacturer} | "
+                            f"model={model} | trigger=kb_miss"
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to queue enrichment job: {e}")
+                        # Don't fail user request if enrichment queue fails
+
                 return None
 
             result = {
@@ -1816,6 +1837,7 @@ Send a 📷 photo of any equipment nameplate and I'll identify it and find the m
         self.manual_service = ManualService(self.db)
         self.feedback_service = FeedbackService(self.db.pool)
         self.kb_analytics_service = KnowledgeBaseAnalytics(self.db.pool)
+        self.enrichment_queue_service = EnrichmentQueueService(self.db.pool)  # AUTO-KB-004
         logger.info("Database and services initialized")
 
         # Initialize the application
