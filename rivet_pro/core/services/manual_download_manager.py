@@ -9,6 +9,7 @@ import asyncio
 import hashlib
 import logging
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List
@@ -16,6 +17,14 @@ from urllib.parse import urlparse
 
 import aiohttp
 import asyncpg
+
+# PDF text extraction
+try:
+    import PyPDF2
+    HAS_PYPDF2 = True
+except ImportError:
+    HAS_PYPDF2 = False
+    logging.warning("PyPDF2 not installed - PDF text extraction disabled")
 
 logger = logging.getLogger(__name__)
 
@@ -384,3 +393,167 @@ class ManualDownloadManager:
         # Remove other problematic chars
         safe = ''.join(c for c in safe if c.isalnum() or c in '._- ')
         return safe.strip()
+
+    # AUTO-KB-007: Text extraction methods
+
+    async def extract_text(
+        self,
+        pdf_path: str,
+        max_pages: int = 50
+    ) -> Optional[str]:
+        """
+        Extract text content from a PDF file.
+
+        Args:
+            pdf_path: Path to PDF file
+            max_pages: Maximum pages to extract (default 50)
+
+        Returns:
+            Extracted text content or None on failure
+        """
+        if not HAS_PYPDF2:
+            logger.error("PyPDF2 not installed - cannot extract text")
+            return None
+
+        path = Path(pdf_path)
+        if not path.exists():
+            logger.error(f"PDF file not found: {pdf_path}")
+            return None
+
+        try:
+            text_parts = []
+
+            with open(path, 'rb') as f:
+                try:
+                    reader = PyPDF2.PdfReader(f)
+
+                    # Check if encrypted
+                    if reader.is_encrypted:
+                        # Try empty password
+                        try:
+                            reader.decrypt('')
+                        except Exception:
+                            logger.warning(f"PDF is encrypted: {pdf_path}")
+                            return None
+
+                    num_pages = min(len(reader.pages), max_pages)
+
+                    for page_num in range(num_pages):
+                        try:
+                            page = reader.pages[page_num]
+                            page_text = page.extract_text()
+                            if page_text:
+                                text_parts.append(page_text)
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to extract page {page_num}: {e}"
+                            )
+                            continue
+
+                except PyPDF2.errors.PdfReadError as e:
+                    logger.error(f"PDF read error for {pdf_path}: {e}")
+                    return None
+
+            if not text_parts:
+                logger.warning(f"No text extracted from {pdf_path}")
+                return None
+
+            # Combine and clean text
+            full_text = '\n\n'.join(text_parts)
+            cleaned_text = self._clean_extracted_text(full_text)
+
+            logger.info(
+                f"Extracted text | file={pdf_path} | "
+                f"pages={num_pages} | chars={len(cleaned_text)}"
+            )
+
+            return cleaned_text
+
+        except Exception as e:
+            logger.error(f"Text extraction failed for {pdf_path}: {e}")
+            return None
+
+    def _clean_extracted_text(self, text: str) -> str:
+        """
+        Clean extracted PDF text.
+
+        - Remove excessive whitespace
+        - Normalize line breaks
+        - Remove common headers/footers patterns
+        """
+        # Normalize whitespace
+        text = re.sub(r'[ \t]+', ' ', text)
+
+        # Normalize line breaks
+        text = re.sub(r'\n{3,}', '\n\n', text)
+
+        # Remove page numbers (common patterns)
+        text = re.sub(r'\n\s*\d+\s*\n', '\n', text)
+        text = re.sub(r'\n\s*Page \d+ of \d+\s*\n', '\n', text, flags=re.I)
+
+        # Remove common footer patterns
+        text = re.sub(r'\n\s*©.*?\n', '\n', text)
+        text = re.sub(r'\n\s*All rights reserved.*?\n', '\n', text, flags=re.I)
+
+        # Strip leading/trailing whitespace
+        text = text.strip()
+
+        return text
+
+    async def extract_and_store_text(
+        self,
+        manufacturer: str,
+        model: str,
+        manual_type: str = "user_manual"
+    ) -> Optional[str]:
+        """
+        Extract text from a stored manual and save to database.
+
+        Args:
+            manufacturer: Equipment manufacturer
+            model: Equipment model
+            manual_type: Type of manual
+
+        Returns:
+            Extracted text or None
+        """
+        # Get local file path
+        file_path = await self.get_local_path(manufacturer, model, manual_type)
+        if not file_path:
+            logger.warning(
+                f"No local file for {manufacturer} {model} {manual_type}"
+            )
+            return None
+
+        # Extract text
+        text_content = await self.extract_text(file_path)
+        if not text_content:
+            return None
+
+        # Store in database
+        try:
+            async with self.db_pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    UPDATE manual_files
+                    SET text_content = $1,
+                        text_extracted_at = NOW()
+                    WHERE LOWER(manufacturer) = LOWER($2)
+                      AND LOWER(model) = LOWER($3)
+                      AND manual_type = $4
+                    """,
+                    text_content,
+                    manufacturer,
+                    model,
+                    manual_type
+                )
+
+            logger.info(
+                f"Stored extracted text | manufacturer={manufacturer} | "
+                f"model={model} | chars={len(text_content)}"
+            )
+            return text_content
+
+        except Exception as e:
+            logger.error(f"Failed to store extracted text: {e}")
+            return text_content  # Return text even if storage fails
