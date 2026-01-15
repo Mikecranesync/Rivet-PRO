@@ -3,6 +3,7 @@ Manual Download Manager - AUTO-KB-006
 
 Service to download equipment manuals from URLs and store locally.
 Supports concurrent downloads, retry logic, and integrity verification.
+Also supports S3 backup storage (AUTO-KB-010).
 """
 
 import asyncio
@@ -26,6 +27,15 @@ except ImportError:
     HAS_PYPDF2 = False
     logging.warning("PyPDF2 not installed - PDF text extraction disabled")
 
+# S3 backup (AUTO-KB-010)
+try:
+    import boto3
+    from botocore.exceptions import ClientError
+    HAS_BOTO3 = True
+except ImportError:
+    HAS_BOTO3 = False
+    logging.info("boto3 not installed - S3 backup disabled")
+
 logger = logging.getLogger(__name__)
 
 # Default storage path
@@ -45,6 +55,7 @@ class ManualDownloadManager:
     - Retry with exponential backoff
     - Checksum verification
     - Metadata storage in database
+    - S3 backup storage (AUTO-KB-010)
     """
 
     MAX_CONCURRENT = 5
@@ -52,10 +63,16 @@ class ManualDownloadManager:
     MAX_RETRIES = 3
     CHUNK_SIZE = 8192  # 8KB chunks
 
+    # S3 configuration (AUTO-KB-010)
+    S3_BUCKET = "rivet-kb-manuals"
+    S3_PREFIX = "manuals"
+
     def __init__(
         self,
         db_pool: asyncpg.Pool,
-        storage_path: Optional[Path] = None
+        storage_path: Optional[Path] = None,
+        s3_bucket: Optional[str] = None,
+        enable_s3_backup: bool = False
     ):
         """
         Initialize download manager.
@@ -63,10 +80,37 @@ class ManualDownloadManager:
         Args:
             db_pool: Database connection pool
             storage_path: Base path for storing manuals
+            s3_bucket: S3 bucket name for backup (AUTO-KB-010)
+            enable_s3_backup: Enable S3 backup storage (default: False)
         """
         self.db_pool = db_pool
         self.storage_path = storage_path or DEFAULT_STORAGE_PATH
         self._semaphore = asyncio.Semaphore(self.MAX_CONCURRENT)
+
+        # S3 backup configuration (AUTO-KB-010)
+        self.s3_bucket = s3_bucket or self.S3_BUCKET
+        self.enable_s3_backup = enable_s3_backup and HAS_BOTO3
+        self._s3_client = None
+
+        if self.enable_s3_backup:
+            self._init_s3_client()
+
+    def _init_s3_client(self):
+        """Initialize S3 client (AUTO-KB-010)."""
+        if not HAS_BOTO3:
+            logger.warning("boto3 not installed - S3 backup disabled")
+            self.enable_s3_backup = False
+            return
+
+        try:
+            self._s3_client = boto3.client('s3')
+            # Verify bucket access
+            self._s3_client.head_bucket(Bucket=self.s3_bucket)
+            logger.info(f"S3 backup enabled | bucket={self.s3_bucket}")
+        except Exception as e:
+            logger.error(f"Failed to initialize S3 client: {e}")
+            self.enable_s3_backup = False
+            self._s3_client = None
 
     async def download_manual(
         self,
@@ -110,6 +154,14 @@ class ManualDownloadManager:
                 if result:
                     # Store metadata in database
                     await self._store_metadata(result)
+
+                    # AUTO-KB-010: Upload to S3 backup (async, non-blocking)
+                    if self.enable_s3_backup:
+                        s3_key = await self.upload_to_s3(result['file_path'])
+                        if s3_key:
+                            result['s3_key'] = s3_key
+                            await self._update_s3_metadata(result)
+
                     return result
 
             except Exception as e:
@@ -557,3 +609,222 @@ class ManualDownloadManager:
         except Exception as e:
             logger.error(f"Failed to store extracted text: {e}")
             return text_content  # Return text even if storage fails
+
+    # AUTO-KB-010: S3 Backup Storage Methods
+
+    async def upload_to_s3(self, file_path: str) -> Optional[str]:
+        """
+        Upload file to S3 backup storage (AUTO-KB-010).
+
+        Args:
+            file_path: Local path to the file
+
+        Returns:
+            S3 key if successful, None otherwise
+        """
+        if not self.enable_s3_backup or not self._s3_client:
+            return None
+
+        path = Path(file_path)
+        if not path.exists():
+            logger.error(f"File not found for S3 upload: {file_path}")
+            return None
+
+        try:
+            # Build S3 key from file path structure
+            # e.g., manuals/Siemens/SINAMICS_G120/user_manual.pdf
+            relative_path = path.relative_to(self.storage_path)
+            s3_key = f"{self.S3_PREFIX}/{relative_path}".replace("\\", "/")
+
+            # Upload file
+            await asyncio.to_thread(
+                self._s3_client.upload_file,
+                str(path),
+                self.s3_bucket,
+                s3_key,
+                ExtraArgs={
+                    'ContentType': 'application/pdf',
+                    'StorageClass': 'STANDARD_IA'  # Infrequent access for cost savings
+                }
+            )
+
+            logger.info(f"Uploaded to S3 | key={s3_key} | bucket={self.s3_bucket}")
+            return s3_key
+
+        except Exception as e:
+            logger.error(f"S3 upload failed for {file_path}: {e}")
+            return None
+
+    async def _update_s3_metadata(self, result: Dict[str, Any]) -> None:
+        """Update database with S3 key after upload (AUTO-KB-010)."""
+        if not result.get('s3_key'):
+            return
+
+        try:
+            async with self.db_pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    UPDATE manual_files
+                    SET s3_key = $1,
+                        s3_uploaded_at = NOW()
+                    WHERE LOWER(manufacturer) = LOWER($2)
+                      AND LOWER(model) = LOWER($3)
+                      AND manual_type = $4
+                    """,
+                    result['s3_key'],
+                    result['manufacturer'],
+                    result['model'],
+                    result['manual_type']
+                )
+        except Exception as e:
+            logger.error(f"Failed to update S3 metadata: {e}")
+
+    async def download_from_s3(
+        self,
+        manufacturer: str,
+        model: str,
+        manual_type: str = "user_manual"
+    ) -> Optional[str]:
+        """
+        Download file from S3 backup if local copy missing (AUTO-KB-010).
+
+        Args:
+            manufacturer: Equipment manufacturer
+            model: Equipment model
+            manual_type: Type of manual
+
+        Returns:
+            Local file path if successful, None otherwise
+        """
+        if not self.enable_s3_backup or not self._s3_client:
+            return None
+
+        try:
+            async with self.db_pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    SELECT s3_key, file_path
+                    FROM manual_files
+                    WHERE LOWER(manufacturer) = LOWER($1)
+                      AND LOWER(model) = LOWER($2)
+                      AND manual_type = $3
+                      AND s3_key IS NOT NULL
+                    """,
+                    manufacturer,
+                    model,
+                    manual_type
+                )
+
+            if not row or not row['s3_key']:
+                return None
+
+            file_path = Path(row['file_path'])
+
+            # Check if local file already exists
+            if file_path.exists():
+                return str(file_path)
+
+            # Create directory if needed
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Download from S3
+            await asyncio.to_thread(
+                self._s3_client.download_file,
+                self.s3_bucket,
+                row['s3_key'],
+                str(file_path)
+            )
+
+            logger.info(
+                f"Downloaded from S3 | key={row['s3_key']} | path={file_path}"
+            )
+            return str(file_path)
+
+        except Exception as e:
+            logger.error(f"S3 download failed: {e}")
+            return None
+
+    async def sync_to_s3(self) -> Dict[str, int]:
+        """
+        Sync all local manuals to S3 backup (AUTO-KB-010).
+
+        Returns:
+            Dict with success and failure counts
+        """
+        if not self.enable_s3_backup:
+            logger.warning("S3 backup not enabled")
+            return {'success': 0, 'failed': 0, 'skipped': 0}
+
+        try:
+            async with self.db_pool.acquire() as conn:
+                # Get manuals without S3 backup
+                rows = await conn.fetch(
+                    """
+                    SELECT manufacturer, model, manual_type, file_path
+                    FROM manual_files
+                    WHERE file_path IS NOT NULL
+                      AND s3_key IS NULL
+                    """
+                )
+
+            success = 0
+            failed = 0
+            skipped = 0
+
+            for row in rows:
+                file_path = row['file_path']
+                if not Path(file_path).exists():
+                    skipped += 1
+                    continue
+
+                s3_key = await self.upload_to_s3(file_path)
+                if s3_key:
+                    await self._update_s3_metadata({
+                        's3_key': s3_key,
+                        'manufacturer': row['manufacturer'],
+                        'model': row['model'],
+                        'manual_type': row['manual_type']
+                    })
+                    success += 1
+                else:
+                    failed += 1
+
+            logger.info(
+                f"S3 sync complete | success={success} | "
+                f"failed={failed} | skipped={skipped}"
+            )
+            return {'success': success, 'failed': failed, 'skipped': skipped}
+
+        except Exception as e:
+            logger.error(f"S3 sync failed: {e}")
+            return {'success': 0, 'failed': 0, 'error': str(e)}
+
+    async def get_s3_backup_stats(self) -> Dict[str, Any]:
+        """
+        Get statistics about S3 backup storage (AUTO-KB-010).
+
+        Returns:
+            Dict with S3 backup statistics
+        """
+        try:
+            async with self.db_pool.acquire() as conn:
+                stats = await conn.fetchrow(
+                    """
+                    SELECT
+                        COUNT(*) as total_manuals,
+                        COUNT(*) FILTER (WHERE s3_key IS NOT NULL) as backed_up,
+                        COUNT(*) FILTER (WHERE s3_key IS NULL AND file_path IS NOT NULL) as not_backed_up,
+                        COALESCE(SUM(size_bytes) FILTER (WHERE s3_key IS NOT NULL), 0) as backed_up_bytes
+                    FROM manual_files
+                    """
+                )
+
+            result = dict(stats) if stats else {}
+            result['s3_enabled'] = self.enable_s3_backup
+            result['s3_bucket'] = self.s3_bucket if self.enable_s3_backup else None
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Failed to get S3 backup stats: {e}")
+            return {'s3_enabled': self.enable_s3_backup, 'error': str(e)}
