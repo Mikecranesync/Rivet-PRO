@@ -892,6 +892,73 @@ class TelegramBot:
             logger.error(f"Error in /stats command: {e}", exc_info=True)
             await update.message.reply_text("❌ An error occurred. Please try again.")
 
+    async def kb_worker_status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Handle /kb_worker_status command - Display enrichment worker status (AUTO-KB-005).
+        Admin-only command for monitoring worker health.
+        """
+        user = update.effective_user
+        telegram_user_id = str(user.id)
+
+        # Admin check - only allow authorized users
+        admin_list = [settings.telegram_admin_chat_id]
+        if telegram_user_id not in admin_list:
+            await update.message.reply_text(
+                "This command is admin-only.\n\n"
+                "Contact the system administrator for access."
+            )
+            logger.warning(f"Unauthorized /kb_worker_status attempt | user_id={user.id}")
+            return
+
+        logger.info(f"/kb_worker_status command | user_id={user.id}")
+
+        try:
+            # Fetch worker status
+            status = await self.enrichment_queue_service.worker_status()
+
+            # Format the response
+            if status.get('error'):
+                await update.message.reply_text(
+                    f"*Worker Status Error*\n\n{status['error']}",
+                    parse_mode="Markdown"
+                )
+                return
+
+            is_running = status.get('is_running', False)
+            status_emoji = "🟢" if is_running else "🔴"
+            status_text = "Running" if is_running else "Stopped"
+
+            message = f"*Enrichment Worker Status*\n\n"
+            message += f"{status_emoji} *Status:* {status_text}\n"
+
+            if status.get('worker_id'):
+                message += f"*Worker ID:* `{status['worker_id']}`\n"
+
+            if status.get('last_heartbeat'):
+                message += f"*Last Heartbeat:* {status['last_heartbeat']}\n"
+
+            message += f"*Jobs Today:* {status.get('jobs_processed_today', 0)}\n"
+            message += f"*Queue Depth:* {status.get('queue_depth', 0)}\n"
+
+            if status.get('current_job'):
+                job = status['current_job']
+                message += f"\n*Current Job:*\n"
+                message += f"  `{job['manufacturer']} {job['model_pattern']}`\n"
+                message += f"  Started: {job['started_at']}\n"
+
+            # Add alert if worker is down
+            if not is_running:
+                message += "\n*Worker appears to be down!*\n"
+                message += "Run `/restart_worker` to restart."
+
+            await update.message.reply_text(message, parse_mode="Markdown")
+
+        except Exception as e:
+            logger.error(f"Error in /kb_worker_status command: {e}", exc_info=True)
+            await update.message.reply_text(
+                "Failed to retrieve worker status. Please try again later."
+            )
+
     async def kb_stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
         Handle /kb_stats command - Display knowledge base statistics.
@@ -1775,6 +1842,7 @@ Send a 📷 photo of any equipment nameplate and I'll identify it and find the m
         self.application.add_handler(CommandHandler("library", self.library_command))
         self.application.add_handler(CommandHandler("stats", self.stats_command))
         self.application.add_handler(CommandHandler("kb_stats", self.kb_stats_command))
+        self.application.add_handler(CommandHandler("kb_worker_status", self.kb_worker_status_command))  # AUTO-KB-005
         self.application.add_handler(CommandHandler("upgrade", self.upgrade_command))
         self.application.add_handler(CommandHandler("reset", self.reset_command))
         self.application.add_handler(CommandHandler("done", self.done_command))
