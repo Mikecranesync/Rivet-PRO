@@ -9,16 +9,16 @@
 - PostgreSQL database on Neon
 - AI-powered equipment identification via photo OCR
 
-## Current State (2026-01-15)
+## Current State (2026-01-15 Evening)
 
 | Item | Status |
 |------|--------|
 | Branch | `main` (clean, production-ready) |
-| Feature flags | Stable/experimental split done (STABLE-001 to STABLE-013) |
-| Repository | Cleaned up - 137 files archived locally |
-| Memory system | Implemented - MCP memory + file-based |
-| AUTO-KB System | **COMPLETE** - All 11 stories done (AUTO-KB-003 to AUTO-KB-013) |
-| Backlog.md tasks | task-13 to task-24 (all Done) |
+| Phase 1: Foundation | Partial (3/12 - Auth incomplete) |
+| Phase 2: Troubleshooting | **COMPLETE** (9/9) |
+| Phase 3: Pipeline Agents | **COMPLETE** (8/8) |
+| AUTO-KB System | **COMPLETE** - All 11 stories done |
+| Latest commit | `13ff139` - Phase 3 Pipeline infrastructure |
 
 ## Key Commands
 
@@ -64,12 +64,23 @@ psql $DATABASE_URL -c "SELECT story_id, title, status FROM ralph_stories ORDER B
 
 ## What's Next
 
-1. **Run migrations** - Apply 019_query_patterns.sql and 020_catalog_scraper.sql to Neon
-2. **Test enrichment worker** - Run `python -m rivet_pro.workers.enrichment_worker`
-3. **Deploy worker** - Set up systemd service on Linux server
+1. **Phase 4: Analytics & Admin** (task-11) - Usage metrics dashboard
+2. **Complete Phase 1 Auth** (task-8.1-8.3) - Telegram Login Widget, HMAC verification
+3. **Integration Testing** - Verify Phase 3 pipeline components end-to-end
 4. Continue CMMS extraction from Agent Factory
 5. Implement remaining bot commands (`/equip`, `/wo`)
-6. Wire up OCR pipeline for nameplate photos
+
+## Phase 3 Pipeline Files (NEW)
+
+| Purpose | File |
+|---------|------|
+| Pipeline API | `rivet_pro/adapters/web/routers/pipeline.py` |
+| State machine | `rivet_pro/core/services/workflow_state_machine.py` |
+| LLM failover | `rivet_pro/core/services/llm_manager.py` |
+| Telegram queue | `rivet_pro/core/services/resilient_telegram_manager.py` |
+| Agent routing | `rivet_pro/core/services/agent_executor.py` |
+| Backlog worker | `rivet_pro/workers/backlog_generator.py` |
+| DB migration | `rivet_pro/migrations/024_workflow_history.sql` |
 
 ## AUTO-KB System Summary
 
