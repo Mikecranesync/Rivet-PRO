@@ -133,7 +133,7 @@ async def test_python_search(manufacturer: str, model: str) -> TestResult:
 
     try:
         # Import here to avoid issues if dependencies missing
-        from rivet_pro.rivet_pro.infra.database import DatabaseManager
+        from rivet_pro.infra.database import DatabaseManager
         from rivet_pro.core.services.manual_service import ManualService
 
         # Initialize services
@@ -181,12 +181,13 @@ async def test_python_search(manufacturer: str, model: str) -> TestResult:
 
 
 async def test_n8n_search(manufacturer: str, model: str, chat_id: int = 12345) -> TestResult:
-    """Test n8n Manual Hunter workflow via webhook"""
+    """Test n8n Manual Hunter workflow via webhook with wait for response"""
     result = TestResult("n8n", manufacturer, model)
     start_time = time.time()
 
-    # n8n webhook URL
-    webhook_url = "https://mikecranesync.app.n8n.cloud/webhook/rivet-manual-hunter"
+    # n8n webhook URL - use test endpoint that waits for response
+    # The production webhook is async (sends to Telegram), so we use the -test suffix
+    webhook_url = "https://mikecranesync.app.n8n.cloud/webhook-test/rivet-manual-hunter"
 
     payload = {
         "chat_id": chat_id,
@@ -198,28 +199,47 @@ async def test_n8n_search(manufacturer: str, model: str, chat_id: int = 12345) -
     }
 
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(webhook_url, json=payload)
             result.duration_ms = int((time.time() - start_time) * 1000)
 
             if response.status_code == 200:
                 data = response.json()
-                # n8n returns various formats depending on the path taken
-                result.success = data.get('found', False) or data.get('pdf_url') is not None
-                result.manual_url = data.get('pdf_url') or data.get('url')
-                result.confidence = data.get('confidence', 0.0)
 
-                # Check for transparency data
-                if 'search_transparency' in data:
-                    result.transparency_report = data['search_transparency']
-                if 'message' in data:
-                    result.helpful_response = data['message']
+                # The workflow may return different structures based on the path
+                # Check for various success indicators
+                if isinstance(data, dict):
+                    # Direct result
+                    result.success = (
+                        data.get('found', False) or
+                        data.get('pdf_url') is not None or
+                        (data.get('confidence', 0) >= 75 and data.get('pdf_url'))
+                    )
+                    result.manual_url = data.get('pdf_url') or data.get('url')
+                    result.confidence = data.get('confidence', 0.0)
+
+                    # Check for transparency data
+                    if 'search_transparency' in data:
+                        result.transparency_report = data['search_transparency']
+                    if 'message' in data:
+                        result.helpful_response = data['message']
+                    if 'reasoning' in data:
+                        result.helpful_response = data.get('reasoning', '')
+
+                elif isinstance(data, list) and len(data) > 0:
+                    # Array result - take last item (final node output)
+                    last_item = data[-1]
+                    if isinstance(last_item, dict):
+                        result.success = last_item.get('pdf_url') is not None
+                        result.manual_url = last_item.get('pdf_url')
+                        result.confidence = last_item.get('confidence', 0.0)
+
             else:
                 result.error = f"HTTP {response.status_code}: {response.text[:200]}"
 
     except httpx.TimeoutException:
-        result.error = "Timeout (60s)"
-        result.duration_ms = 60000
+        result.error = "Timeout (120s)"
+        result.duration_ms = 120000
     except Exception as e:
         result.error = str(e)
         result.duration_ms = int((time.time() - start_time) * 1000)
