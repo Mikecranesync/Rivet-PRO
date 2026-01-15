@@ -1,7 +1,7 @@
 ---
 id: task-2.4
 title: Add /health endpoint
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-01-14 23:31'
 updated_date: '2026-01-14 23:44'
