@@ -37,8 +37,7 @@ class MermaidParser:
         mermaid_text = self._clean_text(mermaid_text)
         self._parse_flowchart_declaration(mermaid_text)
         
-        lines = mermaid_text.strip().split('
-')
+        lines = mermaid_text.strip().split('\n')
         for line in lines:
             line = line.strip()
             if not line or line.startswith('flowchart'):
