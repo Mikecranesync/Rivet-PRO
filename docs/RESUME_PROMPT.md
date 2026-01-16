@@ -8,53 +8,92 @@ Copy and paste this to resume the session:
 
 I'm working on **RIVET Pro**, a Telegram bot for industrial equipment technicians. Read `docs/QUICK_CONTEXT.md` for full context.
 
-## What Was Just Completed
+## Current Status: Phase 4 SME Chat COMPLETE
 
-### Search Transparency & Human-in-the-Loop Validation
+**PR**: https://github.com/Mikecranesync/Rivet-PRO/pull/8
+**Branch**: `ralph/sme-chat-phase4`
+**Status**: User testing PASSED - Ready to merge to main
 
-When manual search fails but finds potential URLs:
-1. **Transparency Report** - Shows search stages and rejected URLs with reasons
-2. **Human-in-the-Loop** - If candidate ≥50% confidence, asks "Is this correct?"
-3. **Feedback Learning** - User Yes/No cached for future searches
+### What Was Built
 
-**Key files modified:**
-- `rivet_pro/core/models/search_report.py` - Added `best_candidate` property
-- `rivet_pro/core/services/manual_service.py` - Reordered LLM cascade: Groq → DeepSeek → Claude
-- `rivet_pro/core/utils/response_formatter.py` - Human-in-loop prompt UI
-- `rivet_pro/adapters/telegram/bot.py` - `_handle_manual_validation_reply()` handler
-- `rivet_pro/migrations/025_manual_feedback.sql` - User feedback table
-- `rivet_pro/core/utils/encoding.py` - Windows UTF-8 console fix
+Phase 4 adds conversational chat with vendor-specific SME agents:
+- **7 SME Personalities**: Hans (Siemens), Mike (Rockwell), Erik (ABB), Pierre (Schneider), Takeshi (Mitsubishi), Ken (Fanuc), Alex (Generic)
+- **RAG-Enhanced Responses**: Knowledge base context filtered by manufacturer
+- **Confidence-Based Routing**:
+  - HIGH (>=0.85): Direct KB answer with SME voice styling
+  - MEDIUM (0.70-0.85): Full SME synthesis from RAG context
+  - LOW (<0.70): Clarifying questions to gather more info
+- **Telegram Commands**: `/chat [vendor]` to start, `/endchat` to close
+- **Telegram Menu**: All commands now appear in bot menu button
+- **Safety Warning Extraction**: Flags voltage, LOTO, arc flash hazards
+- **Multi-Turn Conversation**: Session preserves context across messages
 
-**LLM Cascade (speed/cost optimized):**
-1. Groq (free, fastest)
-2. DeepSeek (cheap)
-3. Claude (expensive, last resort)
+### Key Commits
+- `08beec7` - SME-CHAT-001: Database migration
+- `f8ceb8e` - SME-CHAT-002: Pydantic models
+- `213b99c` - SME-CHAT-003: SME personalities
+- `b383c71` - SME-CHAT-004: RAG service
+- `f365592` - SME-CHAT-005: Chat service core
+- `d8324cb` - SME-CHAT-006: Telegram /chat command
+- `fdd77de` - SME-CHAT-007: Message routing
+- `2aefbde` - SME-CHAT-008: Confidence routing
+- `8910f51` - SME-CHAT-009: Unit tests (38)
+- `b119989` - SME-CHAT-010: Integration tests (12)
+- `da1416c` - Production bot integration
+- `fd896b4` - Fix callback handler bug
 
-**Test Results:** 5/10 equipment items found direct PDF manuals
-
-### Windows Encoding Fix
-
-Created `rivet_pro/core/utils/encoding.py` to fix emoji display on Windows console (cp1252 → UTF-8).
-
-## Bot Status
-
-Running on VPS at `72.60.175.144`. Check with:
-```bash
-ssh root@72.60.175.144 "ps aux | grep telegram | grep -v grep"
-ssh root@72.60.175.144 "tail -30 /tmp/bot.log"
-```
+### Testing Results
+- 50 automated tests passing (38 unit + 12 integration)
+- Manual user testing PASSED:
+  - [x] `/chat siemens` - Hans personality works
+  - [x] Vendor picker shows when no vendor specified
+  - [x] Multi-turn conversation preserves context
+  - [x] Safety warnings appear for hazardous topics
+  - [x] `/endchat` closes session properly
 
 ## What's Next
 
-1. **Test human-in-the-loop** - Send photo to @testbotrivet_bot of obscure equipment, verify it shows "Is this correct?" prompt, reply Yes/No
-2. **Verify feedback storage** - Check `manual_cache` and `manual_feedback` tables after user replies
-3. **Push latest commits** - `git push origin main` then redeploy to VPS
+### Merge PR #8 to main
+```bash
+git checkout main
+git pull
+git merge ralph/sme-chat-phase4
+git push
+
+# Redeploy to VPS (uses systemd now)
+ssh root@72.60.175.144 "cd /opt/Rivet-PRO && git checkout main && git pull && systemctl restart rivet-bot"
+```
+
+### After Merge
+1. **Phase 5: Analytics & Admin** (task-11) - Usage metrics dashboard
+2. **Complete Phase 1 Auth** (task-8.1-8.3) - Telegram Login Widget
+
+## VPS Info
+
+Bot runs via systemd service on `72.60.175.144`:
+```bash
+# Check status
+ssh root@72.60.175.144 "systemctl status rivet-bot"
+
+# View logs
+ssh root@72.60.175.144 "journalctl -u rivet-bot -n 50 --no-pager"
+
+# Restart
+ssh root@72.60.175.144 "systemctl restart rivet-bot"
+```
 
 ## MCP Memory
 
 Query for context:
-- `mcp__memory__search_nodes("SearchTransparency")`
-- `mcp__memory__search_nodes("HumanInTheLoop")`
-- `mcp__memory__search_nodes("LLMCascade")`
+- `mcp__memory__search_nodes("SME_Chat_Phase4")`
+- `mcp__memory__search_nodes("RIVET")`
+
+## Bugs Fixed During Development
+
+1. **Pydantic use_enum_values=True** - Enum fields stored as strings, not enum objects. Don't call `.value` on them.
+2. **asyncpg JSONB** - Requires `json.dumps()` for INSERT with `::jsonb` cast, and parsing (string vs dict) on SELECT.
+3. **Callback handler update.message is None** - Use `update.effective_message` for code that handles both commands and inline keyboard callbacks.
 
 ---
+
+*Last updated: 2026-01-16 - Testing complete, ready to merge*
