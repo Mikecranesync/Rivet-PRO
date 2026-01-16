@@ -11,6 +11,7 @@ from rivet.services.sme_rag_service import (
     calculate_rag_confidence,
     extract_sources_from_atoms,
 )
+from rivet.services.sme_chat_service import SMEChatService
 
 __all__ = [
     "KnowledgeService",
@@ -19,4 +20,5 @@ __all__ = [
     "SMERagService",
     "calculate_rag_confidence",
     "extract_sources_from_atoms",
+    "SMEChatService",
 ]
