@@ -2463,6 +2463,9 @@ Send a 📷 photo of any equipment nameplate and I'll identify it and find the m
 
     async def _start_sme_session(self, update: Update, context: ContextTypes.DEFAULT_TYPE, vendor: str, chat_id: int) -> None:
         """Start an SME chat session with the specified vendor."""
+        # Get the message object - works for both commands and callbacks
+        message = update.effective_message
+
         try:
             # Get personality info
             personality = get_personality(vendor)
@@ -2500,12 +2503,12 @@ Send a 📷 photo of any equipment nameplate and I'll identify it and find the m
             greeting += "Ask me anything about troubleshooting, configuration, or technical details.\n\n"
             greeting += "_Type `/endchat` when you're done._"
 
-            await update.message.reply_text(greeting, parse_mode="Markdown")
+            await message.reply_text(greeting, parse_mode="Markdown")
             logger.info(f"[SME Chat] Session started | user_id={update.effective_user.id} | vendor={vendor} | session_id={session.session_id}")
 
         except Exception as e:
             logger.error(f"[SME Chat] Failed to start session | error={e}")
-            await update.message.reply_text(
+            await message.reply_text(
                 "❌ Failed to start chat session. Please try again.",
                 parse_mode="Markdown"
             )
