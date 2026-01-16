@@ -17,6 +17,7 @@
 8. [Administrator Features](#8-administrator-features)
 9. [Tips & Best Practices](#9-tips--best-practices)
 10. [Quick Reference](#10-quick-reference)
+11. [Atlas CMMS Web Interface](#11-atlas-cmms-web-interface)
 
 ---
 
@@ -816,6 +817,57 @@ Use consistent location tags for easy searching:
 - 🟢 HIGH - Reliable
 - 🟡 MEDIUM - Verify
 - 🟠 LOW - Use caution
+
+---
+
+## 11. Atlas CMMS Web Interface
+
+In addition to the Telegram bot, you can view and manage equipment through the **Atlas CMMS web interface**.
+
+### 11.1 Accessing the Web UI
+
+**URL:** http://72.60.175.144:3000
+
+**Login Credentials:**
+- Email: `admin@example.com`
+- Password: `admin`
+
+### 11.2 What's Synced?
+
+Equipment you add via Telegram photo is automatically synced to the web interface:
+
+| Telegram | Web UI |
+|----------|--------|
+| Equipment Number | Bar Code |
+| Manufacturer + Model | Name |
+| Model Number | Model |
+| Serial Number | Serial Number |
+| Photo Caption | Area |
+
+**Example:** If you send a photo with caption "Stardust Racers", that equipment will appear in the web Assets list with "Stardust Racers" as the Area.
+
+### 11.3 Web UI Features
+
+The Atlas CMMS web interface provides:
+
+- **Asset Browser** - View all equipment in a searchable grid
+- **Asset Details** - See full specifications, history, and linked work orders
+- **Work Order Management** - Create and manage work orders visually
+- **Reports** - Generate maintenance reports and analytics
+- **User Management** - Add team members and assign roles
+
+### 11.4 Mobile vs Web
+
+| Task | Best Tool |
+|------|-----------|
+| Quick equipment capture | Telegram (photo) |
+| Equipment search while working | Telegram |
+| SME expert chat | Telegram |
+| Detailed asset browsing | Web UI |
+| Work order reports | Web UI |
+| Team management | Web UI |
+
+**Tip:** Use Telegram for field work and quick captures, use the web UI for office-based management and reporting.
 
 ---
 
