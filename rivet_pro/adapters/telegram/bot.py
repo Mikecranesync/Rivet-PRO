@@ -8,7 +8,7 @@ from uuid import UUID
 from datetime import time as datetime_time
 import asyncio
 import pytz
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -17,6 +17,13 @@ from telegram.ext import (
     filters,
     ContextTypes,
 )
+
+# SME Chat imports
+from rivet.services.sme_chat_service import SMEChatService
+from rivet.services.sme_rag_service import SMERagService
+from rivet.prompts.sme.personalities import get_personality, SME_PERSONALITIES
+from rivet.models.sme_chat import SMEVendor, ConfidenceLevel
+from rivet.atlas.database import AtlasDatabase
 from rivet_pro.config.settings import settings
 from rivet_pro.infra.observability import get_logger
 from rivet_pro.infra.database import Database
@@ -51,6 +58,10 @@ class TelegramBot:
         self.feedback_service = None  # Initialized after db connects
         self.kb_analytics_service = None  # Initialized after db connects
         self.enrichment_queue_service = None  # Initialized after db connects (AUTO-KB-004)
+
+        # SME Chat service (Phase 4)
+        self.atlas_db = None  # AtlasDatabase for SME chat
+        self.sme_chat_service = None  # Initialized after db connects
 
         # Track pending manual validations (human-in-the-loop)
         # Maps user_id -> {url, manufacturer, model, timestamp}
@@ -1624,12 +1635,20 @@ class TelegramBot:
         """
         Route messages - detect feedback replies vs normal messages.
 
-        If user replies to bot's message → treat as feedback
-        If user has pending validation and says yes/no → treat as validation response
-        Otherwise → normal message handling
+        Priority:
+        1. SME Chat mode - if active, route to SME handler
+        2. Reply to bot message → treat as feedback
+        3. Pending validation yes/no → treat as validation response
+        4. Otherwise → normal message handling
         """
         message = update.message
         user_id = str(update.effective_user.id)
+
+        # Check for SME Chat mode first (Phase 4)
+        if context.user_data.get('sme_chat_active') and message.text:
+            handled = await self.handle_sme_chat_message(update, context)
+            if handled:
+                return
 
         # Check if this is a reply to the bot's own message
         if message.reply_to_message and message.reply_to_message.from_user.id == context.bot.id:
@@ -2347,6 +2366,318 @@ Send a 📷 photo of any equipment nameplate and I'll identify it and find the m
 
         logger.info(f"Exited troubleshooting | user_id={user_id}")
 
+    # ==================== SME CHAT COMMANDS (Phase 4) ====================
+
+    async def chat_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Handle /chat command - Start SME chat session.
+
+        Usage:
+        - /chat [vendor] - Start chat with specific vendor SME
+        - /chat - Show vendor picker if no vendor specified
+        """
+        user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
+        args = context.args
+
+        logger.info(f"[SME Chat] /chat command | user_id={user_id} | args={args}")
+
+        # Check if SME chat service is available
+        if not self.sme_chat_service:
+            await update.message.reply_text(
+                "⚠️ SME Chat is currently unavailable. Please try again later.",
+                parse_mode="Markdown"
+            )
+            return
+
+        # Check if already in a chat session
+        if context.user_data.get('sme_chat_active'):
+            vendor = context.user_data.get('sme_vendor', 'unknown')
+            sme_name = context.user_data.get('sme_name', 'SME')
+            await update.message.reply_text(
+                f"💬 You're already chatting with *{sme_name}*!\n\n"
+                f"Use `/endchat` to end this session first, or just keep chatting!",
+                parse_mode="Markdown"
+            )
+            return
+
+        # Valid vendor choices
+        VENDOR_ALIASES = {
+            "siemens": "siemens",
+            "rockwell": "rockwell",
+            "allen-bradley": "rockwell",
+            "ab": "rockwell",
+            "abb": "abb",
+            "schneider": "schneider",
+            "mitsubishi": "mitsubishi",
+            "melsec": "mitsubishi",
+            "fanuc": "fanuc",
+            "generic": "generic",
+        }
+
+        vendor = None
+
+        # Check if vendor was specified
+        if args:
+            vendor_input = args[0].lower()
+            vendor = VENDOR_ALIASES.get(vendor_input)
+            if not vendor:
+                await update.message.reply_text(
+                    f"❓ Unknown vendor: `{args[0]}`\n\n"
+                    f"Supported vendors: siemens, rockwell (or allen-bradley/ab), abb, schneider, mitsubishi, fanuc, generic\n\n"
+                    f"Example: `/chat siemens`",
+                    parse_mode="Markdown"
+                )
+                return
+
+        # If no vendor specified, show picker
+        if not vendor:
+            keyboard = [
+                [
+                    InlineKeyboardButton("🇩🇪 Siemens", callback_data="sme_vendor_siemens"),
+                    InlineKeyboardButton("🇺🇸 Rockwell", callback_data="sme_vendor_rockwell"),
+                ],
+                [
+                    InlineKeyboardButton("🇨🇭 ABB", callback_data="sme_vendor_abb"),
+                    InlineKeyboardButton("🇫🇷 Schneider", callback_data="sme_vendor_schneider"),
+                ],
+                [
+                    InlineKeyboardButton("🇯🇵 Mitsubishi", callback_data="sme_vendor_mitsubishi"),
+                    InlineKeyboardButton("🇯🇵 Fanuc", callback_data="sme_vendor_fanuc"),
+                ],
+                [
+                    InlineKeyboardButton("🌐 Generic", callback_data="sme_vendor_generic"),
+                ],
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(
+                "🎯 *Choose Your SME Expert*\n\n"
+                "Select a vendor-specific expert to chat with:",
+                parse_mode="Markdown",
+                reply_markup=reply_markup
+            )
+            return
+
+        # Start the session
+        await self._start_sme_session(update, context, vendor, chat_id)
+
+    async def _start_sme_session(self, update: Update, context: ContextTypes.DEFAULT_TYPE, vendor: str, chat_id: int) -> None:
+        """Start an SME chat session with the specified vendor."""
+        try:
+            # Get personality info
+            personality = get_personality(vendor)
+            sme_name = personality.name
+
+            # Get equipment context if available (from recent photo lookup)
+            equipment_context = None
+            if context.user_data.get('pending_equipment'):
+                eq = context.user_data['pending_equipment']
+                equipment_context = {
+                    "manufacturer": eq.get("manufacturer"),
+                    "model": eq.get("model"),
+                    "serial_number": eq.get("serial_number"),
+                }
+
+            # Start session in database
+            session = await self.sme_chat_service.start_session(
+                telegram_chat_id=chat_id,
+                sme_vendor=vendor,
+                equipment_context=equipment_context,
+            )
+
+            # Store session info in user_data
+            context.user_data['sme_session_id'] = str(session.session_id)
+            context.user_data['sme_chat_active'] = True
+            context.user_data['sme_vendor'] = vendor
+            context.user_data['sme_name'] = sme_name
+            context.user_data['sme_error_count'] = 0
+
+            # Build greeting
+            greeting = f"👋 *{sme_name}* is ready to help!\n\n"
+            greeting += f"_{personality.tagline}_\n\n"
+            if equipment_context:
+                greeting += f"📋 I see you're working with a *{equipment_context.get('manufacturer', '')} {equipment_context.get('model', '')}*.\n\n"
+            greeting += "Ask me anything about troubleshooting, configuration, or technical details.\n\n"
+            greeting += "_Type `/endchat` when you're done._"
+
+            await update.message.reply_text(greeting, parse_mode="Markdown")
+            logger.info(f"[SME Chat] Session started | user_id={update.effective_user.id} | vendor={vendor} | session_id={session.session_id}")
+
+        except Exception as e:
+            logger.error(f"[SME Chat] Failed to start session | error={e}")
+            await update.message.reply_text(
+                "❌ Failed to start chat session. Please try again.",
+                parse_mode="Markdown"
+            )
+
+    async def endchat_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Handle /endchat command - Close active SME chat session.
+        """
+        user_id = update.effective_user.id
+        logger.info(f"[SME Chat] /endchat command | user_id={user_id}")
+
+        # Check if in a chat session
+        if not context.user_data.get('sme_chat_active'):
+            await update.message.reply_text(
+                "ℹ️ You don't have an active chat session.\n\n"
+                "Use `/chat` to start one!",
+                parse_mode="Markdown"
+            )
+            return
+
+        session_id = context.user_data.get('sme_session_id')
+        sme_name = context.user_data.get('sme_name', 'SME')
+
+        try:
+            # Close session in database
+            if session_id and self.sme_chat_service:
+                await self.sme_chat_service.close_session(session_id)
+
+            # Clear user_data
+            context.user_data.pop('sme_session_id', None)
+            context.user_data.pop('sme_chat_active', None)
+            context.user_data.pop('sme_vendor', None)
+            context.user_data.pop('sme_name', None)
+            context.user_data.pop('sme_error_count', None)
+
+            await update.message.reply_text(
+                f"👋 *Chat with {sme_name} ended.*\n\n"
+                f"Thanks for chatting! Use `/chat` anytime to start a new session!",
+                parse_mode="Markdown"
+            )
+            logger.info(f"[SME Chat] Session closed | user_id={user_id} | session_id={session_id}")
+
+        except Exception as e:
+            logger.error(f"[SME Chat] Failed to close session | error={e}")
+            # Clear local state anyway
+            context.user_data.pop('sme_session_id', None)
+            context.user_data.pop('sme_chat_active', None)
+            context.user_data.pop('sme_vendor', None)
+            context.user_data.pop('sme_name', None)
+            await update.message.reply_text(
+                "✅ Chat session ended.\n\n"
+                "Use `/chat` to start a new session!",
+                parse_mode="Markdown"
+            )
+
+    async def sme_vendor_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle SME vendor selection callback."""
+        query = update.callback_query
+        await query.answer()
+
+        # Extract vendor from callback_data (e.g., "sme_vendor_siemens" -> "siemens")
+        vendor = query.data.replace("sme_vendor_", "")
+        chat_id = update.effective_chat.id
+
+        await self._start_sme_session(update, context, vendor, chat_id)
+
+    async def handle_sme_chat_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+        """
+        Handle a message in SME chat mode.
+
+        Returns True if message was handled, False if should fall through to normal handling.
+        """
+        if not context.user_data.get('sme_chat_active'):
+            return False
+
+        if not self.sme_chat_service:
+            await update.message.reply_text(
+                "⚠️ SME Chat service is unavailable. Session ended.\n"
+                "Use `/chat` to try starting a new session.",
+                parse_mode="Markdown"
+            )
+            context.user_data.pop('sme_chat_active', None)
+            return True
+
+        session_id = context.user_data.get('sme_session_id')
+        sme_name = context.user_data.get('sme_name', 'SME')
+        sme_vendor = context.user_data.get('sme_vendor', 'generic')
+        user_message = update.message.text
+
+        # Show typing indicator
+        await update.message.chat.send_action("typing")
+
+        try:
+            # Get response from SME chat service
+            response = await self.sme_chat_service.chat(
+                session_id=session_id,
+                user_message=user_message,
+            )
+
+            # Format response
+            formatted = self._format_sme_chat_response(response, sme_name)
+            await update.message.reply_text(formatted, parse_mode="Markdown")
+
+            # Reset error count on success
+            context.user_data['sme_error_count'] = 0
+
+            logger.info(f"[SME Chat] Response sent | session_id={session_id} | confidence={response.confidence_level}")
+            return True
+
+        except Exception as e:
+            logger.error(f"[SME Chat] Error processing message | error={e}")
+
+            # Track consecutive errors
+            error_count = context.user_data.get('sme_error_count', 0) + 1
+            context.user_data['sme_error_count'] = error_count
+
+            if error_count >= 3:
+                await update.message.reply_text(
+                    f"⚠️ *{sme_name} is having trouble responding.*\n\n"
+                    f"This might be a temporary issue. You can:\n"
+                    f"1. Type `/endchat` to end this session\n"
+                    f"2. Start fresh with `/chat {sme_vendor}`\n\n"
+                    f"_Error: {str(e)[:100]}_",
+                    parse_mode="Markdown"
+                )
+            else:
+                await update.message.reply_text(
+                    f"⚠️ *{sme_name}* had trouble processing that.\n\n"
+                    f"_Please rephrase your question, or type `/endchat` to end the session._",
+                    parse_mode="Markdown"
+                )
+            return True
+
+    def _format_sme_chat_response(self, response, sme_name: str) -> str:
+        """Format SME chat response for Telegram."""
+        lines = []
+
+        # SME name badge with confidence indicator
+        if response.confidence_level == ConfidenceLevel.HIGH:
+            conf_emoji = "🟢"
+        elif response.confidence_level == ConfidenceLevel.MEDIUM:
+            conf_emoji = "🟡"
+        else:
+            conf_emoji = "🟠"
+
+        lines.append(f"{conf_emoji} *{sme_name}*\n")
+
+        # Main response
+        lines.append(response.response)
+
+        # Safety warnings
+        if response.safety_warnings:
+            lines.append("\n\n⚠️ *SAFETY WARNINGS:*")
+            for warning in response.safety_warnings:
+                lines.append(f"• {warning}")
+
+        # Sources (limit to 3)
+        if response.sources:
+            lines.append("\n\n📚 *Sources:*")
+            for source in response.sources[:3]:
+                # Truncate long source strings
+                if len(source) > 60:
+                    source = source[:57] + "..."
+                lines.append(f"• {source}")
+
+        # Footer
+        lines.append(f"\n_💬 Chatting with {sme_name} | /endchat to end_")
+
+        return "\n".join(lines)
+
+    # ==================== END SME CHAT COMMANDS ====================
+
     async def menu_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
         Handle menu button callbacks.
@@ -2444,6 +2775,18 @@ Send a 📷 photo of any equipment nameplate and I'll identify it and find the m
         self.application.add_handler(CommandHandler("reset", self.reset_command))
         self.application.add_handler(CommandHandler("done", self.done_command))
 
+        # SME Chat commands (Phase 4)
+        self.application.add_handler(CommandHandler("chat", self.chat_command))
+        self.application.add_handler(CommandHandler("endchat", self.endchat_command))
+
+        # Register callback handler for SME vendor selection
+        self.application.add_handler(
+            CallbackQueryHandler(
+                self.sme_vendor_callback,
+                pattern=r'^sme_vendor_'
+            )
+        )
+
         # Register callback handler for menu buttons
         self.application.add_handler(
             CallbackQueryHandler(
@@ -2511,11 +2854,42 @@ Send a 📷 photo of any equipment nameplate and I'll identify it and find the m
         self.feedback_service = FeedbackService(self.db.pool)
         self.kb_analytics_service = KnowledgeBaseAnalytics(self.db.pool)
         self.enrichment_queue_service = EnrichmentQueueService(self.db.pool)  # AUTO-KB-004
+
+        # Initialize SME Chat service (Phase 4)
+        try:
+            self.atlas_db = AtlasDatabase()
+            await self.atlas_db.connect()
+            self.sme_chat_service = SMEChatService(db=self.atlas_db)
+            logger.info("SME Chat service initialized")
+        except Exception as e:
+            logger.warning(f"SME Chat service initialization failed: {e}")
+            self.sme_chat_service = None
+
         logger.info("Database and services initialized")
 
         # Initialize the application
         await self.application.initialize()
         await self.application.start()
+
+        # Set bot commands menu
+        commands = [
+            BotCommand("start", "Start the bot"),
+            BotCommand("help", "Show help"),
+            BotCommand("menu", "Show main menu"),
+            BotCommand("chat", "Start SME chat session"),
+            BotCommand("endchat", "End SME chat session"),
+            BotCommand("manual", "Search for equipment manual"),
+            BotCommand("equip", "Equipment lookup"),
+            BotCommand("wo", "Work order management"),
+            BotCommand("library", "Browse your equipment library"),
+            BotCommand("stats", "View your stats"),
+            BotCommand("done", "Exit troubleshooting mode"),
+        ]
+        try:
+            await self.application.bot.set_my_commands(commands)
+            logger.info("Bot menu commands set successfully")
+        except Exception as e:
+            logger.warning(f"Failed to set bot commands: {e}")
 
         # Schedule daily KB health report at 9 AM EST (KB-009)
         # Only if job_queue is available (requires pip install "python-telegram-bot[job-queue]")
