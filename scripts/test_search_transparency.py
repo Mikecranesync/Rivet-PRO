@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Search Transparency Test Suite
 
@@ -23,6 +24,10 @@ from typing import Dict, List, Optional, Tuple, Any
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Fix Windows console encoding for Unicode/emoji output
+from rivet_pro.core.utils.encoding import fix_windows_encoding
+fix_windows_encoding()
 
 import httpx
 from dotenv import load_dotenv
@@ -249,9 +254,9 @@ async def test_n8n_search(manufacturer: str, model: str, chat_id: int = 12345) -
 
 def format_result(result: TestResult, verbose: bool = True) -> str:
     """Format a test result for display"""
-    status = "[OK] FOUND" if result.success else "[X] NOT FOUND"
+    status = "✅ FOUND" if result.success else "❌ NOT FOUND"
     if result.error:
-        status = f"[!] ERROR: {result.error[:50]}"
+        status = f"⚠️ ERROR: {result.error[:50]}"
 
     output = f"""
 {'='*60}
@@ -266,13 +271,13 @@ Duration: {result.duration_ms}ms
         output += f"Confidence: {result.confidence:.0%}\n"
 
     if verbose and result.transparency_report:
-        output += "\n[TRANSPARENCY REPORT]\n"
+        output += "\n📊 TRANSPARENCY REPORT:\n"
         report = result.transparency_report
 
         # Show stages
         if 'stages' in report:
             for stage in report['stages']:
-                emoji = "[OK]" if stage.get('status') == 'success' else "[X]"
+                emoji = "✅" if stage.get('status') == 'success' else "❌"
                 output += f"  {emoji} {stage.get('stage', 'unknown')}: {stage.get('details', 'N/A')}\n"
 
         # Show rejected URLs
@@ -289,7 +294,7 @@ Duration: {result.duration_ms}ms
             output += f"\n  Total search time: {report['total_duration_ms']}ms\n"
 
     if result.helpful_response:
-        output += f"\n[HELPFUL RESPONSE]\n{result.helpful_response[:300]}\n"
+        output += f"\n💡 HELPFUL RESPONSE:\n{result.helpful_response[:300]}\n"
 
     return output
 
@@ -328,9 +333,9 @@ Has Helpful Resp:   {'Yes' if python_result.helpful_response else 'No':<20}{'Yes
         # Check if same URL
         if python_result.manual_url and n8n_result.manual_url:
             if python_result.manual_url == n8n_result.manual_url:
-                output += "  [MATCH] Same URL found!\n"
+                output += "  ✅ MATCH - Same URL found!\n"
             else:
-                output += "  [DIFF] URLs don't match\n"
+                output += "  ⚠️ DIFFERENT - URLs don't match\n"
 
     return output
 
@@ -341,12 +346,12 @@ async def run_single_test(manufacturer: str, model: str, python_only: bool, n8n_
     n8n_result = None
 
     if not n8n_only:
-        print(f"\n[Python] Testing: {manufacturer} {model}...")
+        print(f"\n🐍 Testing Python: {manufacturer} {model}...")
         python_result = await test_python_search(manufacturer, model)
         print(format_result(python_result, verbose))
 
     if not python_only:
-        print(f"\n[n8n] Testing: {manufacturer} {model}...")
+        print(f"\n⚙️ Testing n8n: {manufacturer} {model}...")
         n8n_result = await test_n8n_search(manufacturer, model)
         print(format_result(n8n_result, verbose))
 
@@ -394,7 +399,7 @@ async def run_all_tests(python_only: bool, n8n_only: bool, verbose: bool, limit:
 
         # Small delay between tests to avoid rate limiting
         if i < len(equipment_list):
-            print("\n[...] Waiting 2 seconds before next test...")
+            print("\n⏳ Waiting 2 seconds before next test...")
             await asyncio.sleep(2)
 
     # Summary
