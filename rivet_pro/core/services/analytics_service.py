@@ -178,18 +178,19 @@ class AnalyticsService:
                 today
             ) or 0
 
-            # Top equipment lookups
+            # Top equipment lookups (join through manufacturers table)
             top_equipment = await self.db.fetch(
                 """
                 SELECT
-                    em.manufacturer,
+                    m.name as manufacturer,
                     em.model_number,
                     COUNT(*) as lookup_count
                 FROM interactions i
                 JOIN equipment_models em ON i.equipment_model_id = em.id
+                LEFT JOIN manufacturers m ON em.manufacturer_id = m.id
                 WHERE DATE(i.created_at) = $1
                   AND i.equipment_model_id IS NOT NULL
-                GROUP BY em.manufacturer, em.model_number
+                GROUP BY m.name, em.model_number
                 ORDER BY lookup_count DESC
                 LIMIT 5
                 """,
@@ -222,6 +223,12 @@ class AnalyticsService:
                 'date': today.isoformat(),
                 'queries_today': 0,
                 'unique_users_today': 0,
+                'equipment_lookups': 0,
+                'troubleshooting': 0,
+                'manual_searches': 0,
+                'sme_sessions': 0,
+                'top_equipment': [],
+                'kb_atom_count': 0,
                 'error': str(e)
             }
 
@@ -322,13 +329,13 @@ class AnalyticsService:
                 since_date
             ) or 0
 
-            # Sessions by vendor
+            # Sessions by vendor (column is sme_vendor in DB)
             by_vendor = await self.db.fetch(
                 """
-                SELECT vendor, COUNT(*) as count
+                SELECT sme_vendor as vendor, COUNT(*) as count
                 FROM sme_chat_sessions
                 WHERE created_at > $1
-                GROUP BY vendor
+                GROUP BY sme_vendor
                 ORDER BY count DESC
                 """,
                 since_date
