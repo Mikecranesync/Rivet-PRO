@@ -480,7 +480,19 @@ def format_equipment_response(
             search_query = f"{mfr} {model} manual PDF"
             response += f"Try searching: {search_query}\n\n"
 
-            # Helpful tip
-            response += "<i>Send a clearer photo if the ID looks wrong.</i>"
+            # Helpful tip - vary based on image issues
+            image_issues = equipment.get('image_issues', [])
+            if 'upside_down' in image_issues or 'rotated' in image_issues:
+                response += "<i>Tip: The image appears rotated. Try taking a photo with the nameplate right-side up.</i>"
+            elif 'dirty' in image_issues:
+                response += "<i>Tip: The nameplate looks dirty. Try wiping it clean and retaking the photo.</i>"
+            elif 'blurry' in image_issues:
+                response += "<i>Tip: The image is blurry. Hold the camera steady and ensure good focus.</i>"
+            elif 'partial' in image_issues:
+                response += "<i>Tip: The nameplate is partially visible. Include the full nameplate in the photo.</i>"
+            elif 'glare' in image_issues:
+                response += "<i>Tip: There is glare on the nameplate. Try shooting from a different angle.</i>"
+            else:
+                response += "<i>Send a clearer photo if the ID looks wrong.</i>"
 
     return response

@@ -517,7 +517,8 @@ class TelegramBot:
                 'manufacturer': result.manufacturer,
                 'model': result.model_number or 'Unknown',
                 'serial': result.serial_number,
-                'confidence': result.confidence
+                'confidence': result.confidence,
+                'image_issues': getattr(result, 'image_issues', [])
             }
 
             # Add error code if detected

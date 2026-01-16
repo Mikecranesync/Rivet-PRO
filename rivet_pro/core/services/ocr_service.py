@@ -46,9 +46,15 @@ EXTRACTION_PROMPT = """Extract equipment info from this photo. Return ONLY JSON 
   "frequency": "or null",
   "additional_specs": {"rpm":"","frame":"","ip_rating":""},
   "raw_text": "ALL visible text exactly",
-  "confidence": 0.0-1.0
+  "confidence": 0.0-1.0,
+  "image_issues": ["rotated|upside_down|dirty|damaged|blurry|glare|partial"]
 }
-RULES: Preserve exact model numbers. Include units. Use null not empty string. Confidence 0.9+ only if manufacturer+model clear."""
+RULES:
+- IMPORTANT: If image is rotated or upside-down, mentally rotate it before reading text
+- Preserve exact model numbers. Include units. Use null not empty string
+- Confidence 0.9+ only if manufacturer+model absolutely clear
+- Lower confidence to 0.7 or below if image is dirty, rotated, or partially visible
+- Add any image quality issues to "image_issues" array"""
 
 
 def validate_image_quality(
@@ -274,6 +280,19 @@ async def analyze_image(
             calculated_confidence = calculate_confidence(data, data.get("raw_text", ""))
             confidence = max(llm_confidence, calculated_confidence)
 
+            # Reduce confidence if image quality issues detected
+            image_issues = data.get("image_issues", [])
+            if image_issues:
+                # Major issues: upside_down, rotated require correction
+                major_issues = {'upside_down', 'rotated', 'partial'}
+                # Minor issues: dirt, glare can still be read
+                if major_issues & set(image_issues):
+                    confidence = min(confidence, 0.65)  # Force cascade to verify
+                    logger.info(f"{user_log} Major image issues detected: {image_issues} - capping confidence at 65%")
+                else:
+                    confidence = min(confidence, 0.80)
+                    logger.info(f"{user_log} Minor image issues detected: {image_issues} - capping confidence at 80%")
+
             # Build result
             result = OCRResult(
                 manufacturer=data.get("manufacturer"),
@@ -291,6 +310,7 @@ async def analyze_image(
                 frequency=data.get("frequency"),
                 additional_specs=data.get("additional_specs", {}),
                 raw_text=data.get("raw_text"),
+                image_issues=data.get("image_issues", []),
                 confidence=confidence,
                 provider=provider_config.name,
                 model_used=provider_config.model,

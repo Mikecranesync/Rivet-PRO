@@ -95,6 +95,9 @@ class OCRResult:
     # Raw OCR data
     raw_text: Optional[str] = None
 
+    # Image quality issues detected by OCR
+    image_issues: List[str] = field(default_factory=list)  # rotated, upside_down, dirty, blurry, etc.
+
     # Quality metrics
     confidence: float = 0.0  # 0.0-1.0
     provider: str = "unknown"  # groq, gemini, claude, openai
@@ -144,6 +147,7 @@ class OCRResult:
             "frequency": self.frequency,
             "additional_specs": self.additional_specs,
             "raw_text": self.raw_text,
+            "image_issues": self.image_issues,
             "confidence": self.confidence,
             "provider": self.provider,
             "model_used": self.model_used,
