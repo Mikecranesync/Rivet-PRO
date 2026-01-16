@@ -1,7 +1,7 @@
 # RIVET Pro Atlas CMMS
 ## User Manual
 
-**Version 2.0** | January 2026
+**Version 1.0** | January 2026
 
 ---
 
@@ -9,18 +9,14 @@
 
 1. [Introduction](#1-introduction)
 2. [Getting Started](#2-getting-started)
-3. [📸 Photo Pipeline Quick Start Guide](#3-photo-pipeline-quick-start-guide) ⭐ **NEW**
-4. [Equipment Management](#4-equipment-management)
-5. [Manual & Documentation Lookup](#5-manual--documentation-lookup)
-6. [Work Order Management](#6-work-order-management)
-7. [SME Expert Chat](#7-sme-expert-chat)
-8. [Account Management](#8-account-management)
-9. [Administrator Features](#9-administrator-features)
-10. [Tips & Best Practices](#10-tips--best-practices)
-11. [Quick Reference](#11-quick-reference)
-12. [Atlas CMMS Web Interface](#12-atlas-cmms-web-interface)
-13. [FAQ & Troubleshooting](#13-faq--troubleshooting)
-14. [Support & Contact](#14-support--contact)
+3. [Equipment Management](#3-equipment-management)
+4. [Manual & Documentation Lookup](#4-manual--documentation-lookup)
+5. [Work Order Management](#5-work-order-management)
+6. [SME Expert Chat](#6-sme-expert-chat)
+7. [Account Management](#7-account-management)
+8. [Administrator Features](#8-administrator-features)
+9. [Tips & Best Practices](#9-tips--best-practices)
+10. [Quick Reference](#10-quick-reference)
 
 ---
 
@@ -108,316 +104,9 @@ Shows:
 
 ---
 
-## 3. 📸 Photo Pipeline Quick Start Guide
+## 3. Equipment Management
 
-> **For Field Technicians**: This section teaches you how to use RIVET Pro's AI-powered photo analysis. Send a photo, get instant equipment identification, troubleshooting tips, and safety warnings.
-
-### 3.1 How to Add RIVET to Telegram
-
-**Step 1: Install Telegram** (if you don't have it)
-
-Download Telegram from:
-- **iPhone**: App Store → Search "Telegram"
-- **Android**: Google Play → Search "Telegram"
-- **Desktop**: https://desktop.telegram.org
-
-**Step 2: Find the RIVET Bot**
-
-1. Open Telegram
-2. Tap the **Search** icon (magnifying glass) at the top
-3. Type: `@RivetCMMS_bot`
-4. Tap the result showing **RIVET Pro Atlas CMMS**
-
-```
-┌─────────────────────────────────────┐
-│  🔍 Search: @RivetCMMS_bot          │
-│                                     │
-│  ┌─────────────────────────────┐   │
-│  │ 🤖 RIVET Pro Atlas CMMS     │   │
-│  │    @RivetCMMS_bot           │   │
-│  │    AI-powered maintenance   │   │
-│  └─────────────────────────────┘   │
-│                                     │
-│  Tap to open →                      │
-└─────────────────────────────────────┘
-```
-
-**Step 3: Start the Bot**
-
-1. Tap **START** at the bottom of the chat
-2. You're automatically registered!
-3. Send `/help` to see all commands
-
-**You're ready!** Just send any equipment photo to start.
-
----
-
-### 3.2 What to Photograph
-
-**Best Photos: Equipment Nameplates**
-
-The AI works best with clear photos of equipment **nameplates** (data plates, rating plates).
-
-| Equipment Type | What to Photograph |
-|----------------|-------------------|
-| **Motors** | Nameplate on motor housing (shows HP, RPM, voltage) |
-| **VFDs/Drives** | Front panel label or side data plate |
-| **PLCs** | Model label on PLC housing |
-| **Pumps** | Nameplate near motor or on pump casing |
-| **Control Panels** | Door label or inside main breaker label |
-| **Sensors** | Label on sensor body or housing |
-
-**Example: What a Good Nameplate Looks Like**
-
-```
-┌──────────────────────────────────────┐
-│  SIEMENS                             │
-│  MICROMASTER 420                     │
-│  ─────────────────────────────────   │
-│  Model: 6SE6420-2UC15-5AA1           │
-│  Input: 200-240V 3PH 50/60Hz         │
-│  Output: 0-240V 5.5A                 │
-│  Power: 1.5kW / 2HP                  │
-│  IP20                                │
-│  Serial: XB1234567890                │
-└──────────────────────────────────────┘
-```
-
----
-
-### 3.3 Photo Tips for Best Results
-
-**✅ DO: Good Photo Practices**
-
-| Tip | Why It Matters |
-|-----|----------------|
-| **Fill the frame** | Nameplate should be 80% of photo |
-| **Straight-on angle** | Reduces text distortion |
-| **Good lighting** | Natural light or flashlight, avoid shadows |
-| **Hold steady** | Brace phone against something solid |
-| **Clean the plate** | Wipe off dust/dirt first |
-| **Check focus** | Tap on the text to focus before shooting |
-
-**❌ DON'T: Common Mistakes**
-
-| Mistake | Problem | Fix |
-|---------|---------|-----|
-| **Too far away** | Text too small to read | Get closer, zoom in |
-| **Angled shot** | Distorted letters | Stand directly in front |
-| **Direct flash** | Glare obscures text | Use flashlight at angle |
-| **Blurry photo** | AI can't read text | Hold steady, tap to focus |
-| **Partial plate** | Missing info | Capture entire nameplate |
-| **Dark photo** | Can't see details | Add more light |
-
-**Lighting Tips**
-
-```
-Good:                          Bad:
-   💡                            📱💥
-    ╲                              │
-     ╲                             │
-      ╲                            │
-  ┌───────┐                   ┌───────┐
-  │ PLATE │  ← Light at       │▓▓▓▓▓▓▓│  ← Direct flash
-  └───────┘    45° angle      └───────┘    = glare
-      │                            │
-     📱                           📱
-
-Use flashlight at an angle     Don't use direct flash
-to avoid glare on metal        on shiny metal plates
-```
-
----
-
-### 3.4 Understanding Analysis Results
-
-When you send a photo, RIVET analyzes it in three stages. Here's what each part means:
-
-**Example Response:**
-
-```
-🏭 Equipment Identified
-
-┌─ STAGE 1: Classification ──────────────┐
-│ ✅ Industrial Equipment Detected        │
-│ Category: VFD (Variable Frequency Drive)│
-│ Confidence: 94%                         │
-└─────────────────────────────────────────┘
-
-┌─ STAGE 2: Specifications ──────────────┐
-│ Manufacturer: Siemens                   │
-│ Model: 6SE6420-2UC15-5AA1              │
-│ Serial: XB1234567890                    │
-│                                         │
-│ Specs Extracted:                        │
-│ • Voltage: 200-240V                     │
-│ • Power: 1.5kW / 2HP                    │
-│ • Current: 5.5A output                  │
-│ • Phase: 3-phase                        │
-│ • IP Rating: IP20                       │
-└─────────────────────────────────────────┘
-
-┌─ STAGE 3: AI Analysis ─────────────────┐
-│ 📖 Knowledge Base Match Found           │
-│                                         │
-│ Common Issues:                          │
-│ 1. F0001 - Overcurrent fault            │
-│ 2. F0003 - Undervoltage                 │
-│ 3. Motor overheating at low speed       │
-│                                         │
-│ ⚠️  SAFETY WARNING:                     │
-│ Capacitors retain charge for 5 min      │
-│ after power-off. Wait before opening.   │
-│                                         │
-│ 📚 Sources:                             │
-│ • MICROMASTER 420 Operating Manual      │
-│ • Siemens Fault Code Reference          │
-└─────────────────────────────────────────┘
-
-Equipment: EQ-2026-000123 (🆕 Created)
-Location: [Add with photo caption]
-```
-
-**What Each Section Means:**
-
-| Section | What It Tells You |
-|---------|-------------------|
-| **Stage 1: Classification** | Confirms it's industrial equipment and what type |
-| **Confidence %** | How sure the AI is (80%+ is good) |
-| **Stage 2: Specifications** | Manufacturer, model, serial, and technical specs |
-| **Stage 3: AI Analysis** | Troubleshooting tips, common faults, solutions |
-| **Safety Warnings** | Critical safety info (always read these!) |
-| **Sources** | Where the information came from (verify if unsure) |
-| **Equipment ID** | Your CMMS equipment number for tracking |
-
-**Confidence Levels Explained:**
-
-| Confidence | Meaning | What to Do |
-|------------|---------|------------|
-| 🟢 90-100% | Very reliable | Trust the results |
-| 🟡 80-89% | Good, but verify | Double-check model number |
-| 🟠 60-79% | Uncertain | Retake photo or verify manually |
-| 🔴 Below 60% | Low confidence | Poor photo quality, retake |
-
----
-
-### 3.5 Tagging Equipment with Locations
-
-Add a **caption** to your photo to tag the equipment's location in the CMMS.
-
-**How to Add a Caption:**
-
-```
-┌─────────────────────────────────────┐
-│                                     │
-│       [Your Equipment Photo]        │
-│                                     │
-├─────────────────────────────────────┤
-│ 📝 Add a caption...                 │
-│                                     │
-│ Type: "Line 3 Conveyor Motor"       │
-│       ─────────────────────         │
-│           ↑ This becomes the        │
-│             equipment location      │
-└─────────────────────────────────────┘
-```
-
-**Good Location Tags:**
-
-| Tag | Use Case |
-|-----|----------|
-| `Line 3 Conveyor Motor` | Specific machine + component |
-| `Building 2, MCC-4` | Building + panel location |
-| `Compressor Room - Chiller 1` | Room + equipment name |
-| `Stardust Racers VFD` | Machine name + component |
-| `Packaging Line Gearbox` | Production line + part |
-
-**Pro Tip**: Use consistent naming across your facility. If everyone tags equipment the same way, searches work better!
-
----
-
-### 3.6 Viewing Work Order History
-
-**Find Equipment History:**
-
-```
-/equip view EQ-2026-000123
-```
-
-Shows:
-- All linked work orders
-- Past faults and repairs
-- Maintenance history
-- Last service date
-
-**Search by Location:**
-
-```
-/equip search Line 3
-```
-
-Finds all equipment you've tagged with "Line 3" in the location.
-
-**View Work Order Details:**
-
-```
-/wo view WO-2026-000456
-```
-
-Shows:
-- Full work order description
-- Linked equipment
-- Status and priority
-- Creation date
-
-**Create Work Order from Photo:**
-
-After analyzing equipment:
-```
-/wo create EQ-2026-000123 Motor bearing noise at high RPM
-```
-
-This creates a work order linked to that equipment for tracking.
-
----
-
-### 3.7 Photo Pipeline - Quick Reference Card
-
-**Print this and keep in your toolbox:**
-
-```
-╔═══════════════════════════════════════════════════════════╗
-║           RIVET PRO - QUICK REFERENCE                     ║
-╠═══════════════════════════════════════════════════════════╣
-║                                                           ║
-║  📸 SEND A PHOTO                                          ║
-║  Just send any equipment nameplate photo                  ║
-║  Add caption for location tag                             ║
-║                                                           ║
-║  📋 COMMON COMMANDS                                       ║
-║  /help          - Show all commands                       ║
-║  /equip search  - Find equipment                          ║
-║  /wo list       - View work orders                        ║
-║  /wo create     - New work order                          ║
-║  /chat siemens  - Talk to SME expert                      ║
-║                                                           ║
-║  📷 PHOTO TIPS                                            ║
-║  ✓ Fill frame with nameplate                              ║
-║  ✓ Straight-on angle                                      ║
-║  ✓ Good lighting (no flash)                               ║
-║  ✓ Hold steady, tap to focus                              ║
-║                                                           ║
-║  ⚠️  ALWAYS READ SAFETY WARNINGS!                         ║
-║                                                           ║
-║  🆘 SUPPORT: support@rivetpro.io                          ║
-╚═══════════════════════════════════════════════════════════╝
-```
-
----
-
-## 4. Equipment Management
-
-### 4.1 Adding Equipment via Photo
+### 3.1 Adding Equipment via Photo
 
 The fastest way to add equipment is by sending a **nameplate photo**.
 
@@ -590,7 +279,7 @@ Shows the 10 most recently added equipment with IDs, manufacturers, and models.
 
 ---
 
-## 5. Manual & Documentation Lookup
+## 4. Manual & Documentation Lookup
 
 ### 4.1 How Manual Search Works
 
@@ -651,7 +340,7 @@ If no manual is found:
 
 ---
 
-## 6. Work Order Management
+## 5. Work Order Management
 
 ### 5.1 Listing Work Orders
 
@@ -764,7 +453,7 @@ Created: Jan 16, 2026 3:45 PM
 
 ---
 
-## 7. SME Expert Chat
+## 6. SME Expert Chat
 
 ### 6.1 What is SME Chat?
 
@@ -890,7 +579,7 @@ Need help with a different vendor? Try /chat
 
 ---
 
-## 8. Account Management
+## 7. Account Management
 
 ### 7.1 Free vs Pro Tier
 
@@ -958,7 +647,7 @@ Click the link to complete payment via Stripe.
 
 ---
 
-## 9. Administrator Features
+## 8. Administrator Features
 
 *These commands are only available to designated administrators.*
 
@@ -1016,7 +705,7 @@ Generates a comprehensive weekly report with:
 
 ---
 
-## 10. Tips & Best Practices
+## 9. Tips & Best Practices
 
 ### 9.1 Taking Great Nameplate Photos
 
@@ -1068,7 +757,7 @@ Use consistent location tags for easy searching:
 
 ---
 
-## 11. Quick Reference
+## 10. Quick Reference
 
 ### 10.1 All Commands
 
@@ -1130,238 +819,15 @@ Use consistent location tags for easy searching:
 
 ---
 
-## 12. Atlas CMMS Web Interface
-
-In addition to the Telegram bot, you can view and manage equipment through the **Atlas CMMS web interface**.
-
-### 11.1 Accessing the Web UI
-
-**URL:** http://72.60.175.144:3000
-
-**Login Credentials:**
-- Email: `admin@example.com`
-- Password: `admin`
-
-### 11.2 What's Synced?
-
-Equipment you add via Telegram photo is automatically synced to the web interface:
-
-| Telegram | Web UI |
-|----------|--------|
-| Equipment Number | Bar Code |
-| Manufacturer + Model | Name |
-| Model Number | Model |
-| Serial Number | Serial Number |
-| Photo Caption | Area |
-
-**Example:** If you send a photo with caption "Stardust Racers", that equipment will appear in the web Assets list with "Stardust Racers" as the Area.
-
-### 11.3 Web UI Features
-
-The Atlas CMMS web interface provides:
-
-- **Asset Browser** - View all equipment in a searchable grid
-- **Asset Details** - See full specifications, history, and linked work orders
-- **Work Order Management** - Create and manage work orders visually
-- **Reports** - Generate maintenance reports and analytics
-- **User Management** - Add team members and assign roles
-
-### 11.4 Mobile vs Web
-
-| Task | Best Tool |
-|------|-----------|
-| Quick equipment capture | Telegram (photo) |
-| Equipment search while working | Telegram |
-| SME expert chat | Telegram |
-| Detailed asset browsing | Web UI |
-| Work order reports | Web UI |
-| Team management | Web UI |
-
-**Tip:** Use Telegram for field work and quick captures, use the web UI for office-based management and reporting.
-
----
-
-## 13. FAQ & Troubleshooting
-
-### 13.1 Photo Analysis Issues
-
-**Q1: "My photo was rejected as 'not industrial equipment'"**
-
-| Possible Cause | Solution |
-|----------------|----------|
-| Photo shows food, people, or documents | Send a photo of the equipment **nameplate** only |
-| Photo is of general machinery without clear labels | Find and photograph the data plate/nameplate |
-| Low image quality | Ensure good lighting and focus |
-
-**Fix**: Look for the metal or plastic plate on the equipment that shows manufacturer, model, and specifications. That's what the AI needs.
-
----
-
-**Q2: "The manufacturer/model extracted is wrong"**
-
-| Possible Cause | Solution |
-|----------------|----------|
-| Blurry or partially visible text | Retake photo with better focus |
-| Nameplate at an angle | Photograph straight-on |
-| Faded or damaged nameplate | Clean the plate, add more light |
-| Multiple labels in photo | Crop to show only the main nameplate |
-
-**Fix**: Retake the photo following the tips in Section 3.3. The AI performs better with clear, well-lit, straight-on photos.
-
----
-
-**Q3: "Analysis takes too long (more than 10 seconds)"**
-
-| Possible Cause | Solution |
-|----------------|----------|
-| Large image file | Try a smaller photo (don't need super high resolution) |
-| Server under heavy load | Wait and try again in 30 seconds |
-| Poor internet connection | Move to better signal area |
-
-**Normal Response Times:**
-- Stage 1 (Classification): 1-2 seconds
-- Stage 2 (Extraction): 2-3 seconds
-- Stage 3 (AI Analysis): 3-4 seconds
-- Total: 5-8 seconds typical
-
-**Fix**: If persistently slow, type `/status` to check system health.
-
----
-
-**Q4: "I got an error message instead of results"**
-
-| Error | Meaning | What to Do |
-|-------|---------|------------|
-| "Service temporarily unavailable" | API provider down | Wait 5 minutes, try again |
-| "Image too large" | Photo exceeds 10MB limit | Take a smaller photo |
-| "Invalid image format" | Not JPEG/PNG/WEBP | Convert or retake photo |
-| "Database connection error" | Backend issue | Wait, system auto-recovers |
-
-**Fix**: Most errors are temporary. Wait 1-2 minutes and resend your photo. If persistent, contact support.
-
----
-
-**Q5: "How do I update equipment info that was extracted incorrectly?"**
-
-Currently, equipment records created from photos cannot be edited via Telegram. Options:
-
-1. **Web UI**: Log into Atlas CMMS at http://72.60.175.144:3000 and edit the asset directly
-2. **Create new**: Send a better photo to create a new, correct record
-3. **Contact admin**: Ask your admin to update the database record
-
-**Coming soon**: `/equip edit` command for Telegram updates.
-
----
-
-### 13.2 Work Order Issues
-
-**Q: "I can't create a work order"**
-
-| Issue | Solution |
-|-------|----------|
-| "Equipment not found" | Use `/equip search` to find correct equipment ID |
-| "Missing description" | Include a description after the equipment ID |
-| Free tier limit reached | Upgrade with `/upgrade` or wait until tomorrow |
-
-**Correct format:**
-```
-/wo create EQ-2026-000123 Motor bearing noise at high RPM
-           ↑               ↑
-           Equipment ID    Description (required)
-```
-
----
-
-### 13.3 Bot Not Responding
-
-**If the bot doesn't respond:**
-
-1. **Check bot status**: Send `/status`
-2. **Try simple command**: Send `/help`
-3. **Wait 30 seconds**: Sometimes messages queue
-4. **Restart conversation**: Type `/reset`
-5. **Check Telegram**: Make sure you have internet
-
-**Still not working?** The bot may be down for maintenance. Contact support.
-
----
-
-### 13.4 Getting Better Results
-
-| Goal | Tip |
-|------|-----|
-| Better equipment detection | Photograph only the nameplate, not the whole machine |
-| Faster responses | Use smaller photos (2-5MP is plenty) |
-| More accurate specs | Clean dusty/dirty nameplates before photographing |
-| Find equipment later | Always add location caption when sending photos |
-| Get troubleshooting help | Use `/chat <vendor>` for specific questions |
-
----
-
-## 14. Support & Contact
-
-### Getting Help
-
-| Method | When to Use | How |
-|--------|-------------|-----|
-| **In-App Help** | Basic questions | Send `/help` |
-| **System Status** | Check if service is down | Send `/status` |
-| **SME Expert Chat** | Equipment-specific questions | `/chat siemens` (or other vendor) |
-| **This Manual** | How-to guides | You're reading it! |
-| **Email Support** | Account issues, bugs, feedback | support@rivetpro.io |
-
-### Response Times
-
-| Issue Type | Expected Response |
-|------------|-------------------|
-| System outage | Immediate (auto-notification) |
-| Bug reports | Within 24 hours |
-| Feature requests | Within 1 week |
-| Account issues | Within 24 hours |
-
-### Reporting a Bug
-
-When reporting issues, please include:
-
-1. **What you were trying to do** (e.g., "sending a photo of a motor nameplate")
-2. **What happened** (e.g., "got error message XYZ")
-3. **Screenshot** (if possible)
-4. **Your Telegram username** (so we can check logs)
-5. **Time it happened** (helps us find the log entry)
-
-**Email bugs to:** support@rivetpro.io
-
-**Subject line format:** `[BUG] Brief description`
-
-### Feature Requests
-
-Have an idea to improve RIVET Pro? We'd love to hear it!
-
-**Email:** feedback@rivetpro.io
-
-**Include:**
-- What you'd like to be able to do
-- Why it would help your work
-- Any examples from other tools you've used
-
-### Emergency Support
-
-For **critical production issues** affecting multiple users:
-
-📱 **Emergency Hotline**: Available to Pro subscribers
-📧 **Urgent Email**: urgent@rivetpro.io (monitored 24/7)
-
----
-
-### Version Information
-
-- **Manual Version**: 2.0
-- **Last Updated**: January 2026
-- **Bot Handle**: @RivetCMMS_bot
-- **Web UI**: http://72.60.175.144:3000
+## Support
+
+For issues or feedback:
+- Check system status: `/status`
+- View help: `/help`
+- Admin contact: [Your admin contact]
 
 ---
 
 *RIVET Pro Atlas CMMS - Maintenance Made Mobile*
 
-**Bot:** @RivetCMMS_bot | **Support:** support@rivetpro.io
+**Bot:** @RivetCMMS_bot
