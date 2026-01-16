@@ -52,6 +52,10 @@ class TelegramBot:
         self.kb_analytics_service = None  # Initialized after db connects
         self.enrichment_queue_service = None  # Initialized after db connects (AUTO-KB-004)
 
+        # Track pending manual validations (human-in-the-loop)
+        # Maps user_id -> {url, manufacturer, model, timestamp}
+        self._pending_validations: dict = {}
+
         # Initialize alerting service for Ralph notifications (RALPH-BOT-3)
         self.alerting_service = AlertingService(
             bot_token=settings.telegram_bot_token,
@@ -526,6 +530,21 @@ class TelegramBot:
                 search_report=search_report,
                 helpful_response=helpful_response
             )
+
+            # Store pending validation if showing human-in-the-loop prompt
+            if search_report and search_report.best_candidate and search_report.best_candidate.confidence >= 0.5:
+                import time
+                self._pending_validations[str(user_id)] = {
+                    'url': search_report.best_candidate.url,
+                    'title': search_report.best_candidate.title,
+                    'manufacturer': result.manufacturer,
+                    'model': result.model_number,
+                    'timestamp': time.time()
+                }
+                logger.info(
+                    f"Stored pending validation | user_id={user_id} | "
+                    f"mfr={result.manufacturer} | model={result.model_number}"
+                )
 
             # Add equipment number if created/matched
             if equipment_number:
@@ -1605,15 +1624,35 @@ class TelegramBot:
         Route messages - detect feedback replies vs normal messages.
 
         If user replies to bot's message → treat as feedback
+        If user has pending validation and says yes/no → treat as validation response
         Otherwise → normal message handling
         """
         message = update.message
+        user_id = str(update.effective_user.id)
 
         # Check if this is a reply to the bot's own message
         if message.reply_to_message and message.reply_to_message.from_user.id == context.bot.id:
             await self._handle_feedback_reply(update, context)
-        else:
-            await self.handle_message(update, context)  # Existing handler
+            return
+
+        # Check if user has a pending validation and this looks like yes/no
+        if message.text and user_id in self._pending_validations:
+            import time
+            pending = self._pending_validations[user_id]
+            text_lower = message.text.strip().lower()
+
+            # Only process if within 5 minutes and looks like yes/no
+            is_yes_no = text_lower in ('yes', 'y', 'yep', 'yeah', 'correct', 'right', 'si', 'oui',
+                                       'no', 'n', 'nope', 'nah', 'wrong', 'incorrect')
+            is_recent = (time.time() - pending.get('timestamp', 0)) < 300  # 5 minutes
+
+            if is_yes_no and is_recent:
+                await self._handle_pending_validation(update, context, text_lower, pending)
+                del self._pending_validations[user_id]
+                return
+
+        # Default: normal message handling
+        await self.handle_message(update, context)
 
     async def _handle_feedback_reply(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
@@ -1687,6 +1726,88 @@ class TelegramBot:
             await update.message.reply_text(
                 "❌ Failed to process feedback. Please try again."
             )
+
+    async def _handle_pending_validation(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        reply_text: str,
+        pending: dict
+    ) -> None:
+        """
+        Handle Yes/No for pending manual validation (human-in-the-loop).
+        Called when user types yes/no without explicit reply, but has a pending validation.
+        """
+        user = update.effective_user
+        is_yes = reply_text in ('yes', 'y', 'yep', 'yeah', 'correct', 'right', 'si', 'oui')
+
+        url = pending.get('url', '')
+        manufacturer = pending.get('manufacturer', 'Unknown')
+        model = pending.get('model', 'Unknown')
+
+        logger.info(
+            f"Pending validation response | user={user.id} | "
+            f"validated={'yes' if is_yes else 'no'} | "
+            f"mfr={manufacturer} | model={model} | url={url[:60]}..."
+        )
+
+        if is_yes:
+            # Store validated URL in cache for future searches
+            try:
+                await self.db.execute(
+                    """
+                    INSERT INTO manual_cache (manufacturer, model, url, source, confidence, validated_by_user, created_at)
+                    VALUES ($1, $2, $3, 'user_validated', 1.0, TRUE, NOW())
+                    ON CONFLICT (manufacturer, model) DO UPDATE SET
+                        url = EXCLUDED.url,
+                        source = 'user_validated',
+                        confidence = 1.0,
+                        validated_by_user = TRUE,
+                        updated_at = NOW()
+                    """,
+                    manufacturer, model, url
+                )
+
+                await update.message.reply_text(
+                    "✅ <b>Thanks for confirming!</b>\n\n"
+                    "I've saved this manual for future reference. "
+                    "Next time someone asks about this equipment, I'll provide this link directly.",
+                    parse_mode="HTML"
+                )
+
+                logger.info(f"Manual URL validated and cached | {manufacturer} {model} | url={url[:60]}")
+
+            except Exception as e:
+                logger.error(f"Failed to cache validated URL: {e}", exc_info=True)
+                await update.message.reply_text(
+                    "✅ Thanks for the feedback! (Note: Had trouble saving for future use)"
+                )
+
+        else:
+            # User said No - log the rejection for learning
+            try:
+                await self.db.execute(
+                    """
+                    INSERT INTO manual_feedback (manufacturer, model, url, is_correct, telegram_user_id, created_at)
+                    VALUES ($1, $2, $3, FALSE, $4, NOW())
+                    """,
+                    manufacturer, model, url, str(user.id)
+                )
+
+                await update.message.reply_text(
+                    "👍 <b>Thanks for the feedback!</b>\n\n"
+                    "I won't suggest this URL again for this equipment. "
+                    "Your feedback helps improve future searches.",
+                    parse_mode="HTML"
+                )
+
+                logger.info(f"Manual URL rejected by user | {manufacturer} {model} | url={url[:60]}")
+
+            except Exception as e:
+                logger.error(f"Failed to store feedback: {e}", exc_info=True)
+                await update.message.reply_text(
+                    "👍 Thanks for the feedback!"
+                )
 
     async def _handle_manual_validation_reply(
         self,
