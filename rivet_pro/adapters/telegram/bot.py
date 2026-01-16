@@ -247,6 +247,12 @@ class TelegramBot:
             # Download photo (get highest resolution)
             photo = await update.message.photo[-1].get_file()
             photo_bytes = await photo.download_as_bytearray()
+
+            # Extract caption for location tagging (user can tag equipment via photo caption)
+            photo_caption = update.message.caption.strip() if update.message.caption else None
+            if photo_caption:
+                logger.info(f"Photo caption provided | user_id={user_id} | caption='{photo_caption}'")
+
             trace.add_step("photo_download", "success", {
                 "size_bytes": len(photo_bytes),
                 "size_kb": round(len(photo_bytes) / 1024, 1)
@@ -326,7 +332,7 @@ class TelegramBot:
                     model_number=result.model_number,
                     serial_number=result.serial_number,
                     equipment_type=getattr(result, 'equipment_type', None),
-                    location=None,  # Can be added later via conversation
+                    location=photo_caption,  # From photo caption (e.g., "Stardust Racers")
                     user_id=f"telegram_{user_id}"
                 )
                 trace.add_step("equipment_match", "success", {
@@ -564,6 +570,10 @@ class TelegramBot:
             if equipment_number:
                 status = "🆕 Created" if is_new else "✓ Matched"
                 response += f"\n\n<b>Equipment ID:</b> {equipment_number} ({status})"
+
+            # Add location if provided via photo caption
+            if photo_caption:
+                response += f"\n<b>Location:</b> {photo_caption}"
 
             # Add component type if detected
             if hasattr(result, 'component_type') and result.component_type:
