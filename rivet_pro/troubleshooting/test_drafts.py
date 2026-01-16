@@ -42,11 +42,12 @@ async def created_draft(sample_draft_data):
     """Create a draft for testing and clean up after"""
     draft_id = await save_draft(**sample_draft_data)
     yield draft_id
-    # Cleanup
+    # Cleanup - ignore errors since draft may already be deleted by test
     try:
         await delete_draft(draft_id)
-    except:
-        pass
+    except Exception as cleanup_error:
+        # Expected if test already deleted the draft
+        pass  # Cleanup failures are acceptable in test fixtures
 
 
 class TestSaveDraft:

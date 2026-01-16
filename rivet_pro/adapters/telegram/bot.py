@@ -1349,8 +1349,8 @@ class TelegramBot:
                     text=f"❌ *Daily KB Report Failed*\n\nError: {str(e)[:200]}",
                     parse_mode="Markdown"
                 )
-            except:
-                pass  # Don't cascade errors
+            except Exception as alert_error:
+                logger.warning(f"Failed to send KB report failure alert: {alert_error}")
 
     async def upgrade_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """

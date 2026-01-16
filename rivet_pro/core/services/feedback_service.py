@@ -555,8 +555,8 @@ class FeedbackService:
                         content += "**Validation:**\n"
                         for criterion in criteria:
                             content += f"- {criterion}\n"
-                except:
-                    pass
+                except (json.JSONDecodeError, TypeError, KeyError) as parse_error:
+                    logger.debug(f"Could not parse acceptance_criteria for story {story.get('id', 'unknown')}: {parse_error}")
 
             content += f"\n**Commit:** {story['commit_hash']}"
 
