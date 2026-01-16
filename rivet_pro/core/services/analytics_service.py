@@ -504,6 +504,39 @@ class AnalyticsService:
             logger.error(f"Failed to generate weekly report | error={e}")
             return f"❌ *Report Generation Failed*\n\nError: {str(e)[:100]}"
 
+    async def get_response_time_stats(self) -> Dict[str, Any]:
+        """
+        Get response time statistics from rivet_usage_log.
+
+        Returns:
+            Dict with avg_ms, slow_count, and total_count
+        """
+        today = datetime.utcnow().date()
+
+        try:
+            stats = await self.db.fetchrow(
+                """
+                SELECT
+                    AVG(latency_ms) as avg_ms,
+                    COUNT(*) FILTER (WHERE latency_ms > 5000) as slow_count,
+                    COUNT(*) as total_count
+                FROM rivet_usage_log
+                WHERE DATE(created_at) = $1
+                  AND latency_ms IS NOT NULL
+                """,
+                today
+            )
+
+            return {
+                'avg_ms': float(stats['avg_ms']) if stats['avg_ms'] else None,
+                'slow_count': stats['slow_count'] or 0,
+                'total_count': stats['total_count'] or 0
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to get response time stats | error={e}")
+            return {'avg_ms': None, 'slow_count': 0, 'total_count': 0}
+
     async def format_stats_message(self) -> str:
         """
         Format today's stats as a Telegram message for /stats command.
@@ -512,6 +545,7 @@ class AnalyticsService:
             Formatted Telegram Markdown string
         """
         stats = await self.get_today_stats()
+        response_stats = await self.get_response_time_stats()
 
         msg = "📊 *RIVET Pro Stats*\n"
         msg += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -531,6 +565,17 @@ class AnalyticsService:
             for eq in stats['top_equipment'][:3]:
                 msg += f"  • {eq['manufacturer']} {eq['model']} ({eq['count']})\n"
             msg += "\n"
+
+        # Response time stats (ANALYTICS-006)
+        msg += "*Performance*\n"
+        if response_stats['avg_ms'] is not None:
+            avg_sec = response_stats['avg_ms'] / 1000
+            msg += f"  Avg Response: {avg_sec:.2f}s\n"
+            if response_stats['slow_count'] > 0:
+                msg += f"  Slow (>5s): {response_stats['slow_count']} ⚠️\n"
+        else:
+            msg += "  Avg Response: --\n"
+        msg += "\n"
 
         msg += f"*KB Atoms:* {stats['kb_atom_count']:,}\n"
         msg += f"\n_Updated: {datetime.utcnow().strftime('%H:%M UTC')}_"

@@ -60,8 +60,8 @@
         "Fast response (<2s) using pre-aggregated data"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Commit fc36b08 - /adminstats and /report commands added to bot.py"
     },
     {
       "id": "ANALYTICS-005",
@@ -90,8 +90,8 @@
         "Slow queries (>5s) flagged for review"
       ],
       "priority": 6,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Response time tracking via _log_response_time() in bot.py, get_response_time_stats() in analytics_service.py"
     }
   ]
 }

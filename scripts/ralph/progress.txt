@@ -305,3 +305,69 @@ All 4 stories implemented and passing:
 
 Ready for Phase 5 or merge to main.
 ---
+
+=== Phase 5: Analytics Dashboard ===
+Started: Thu, Jan 16, 2026
+Branch: ralph/analytics-phase5
+Stories: ANALYTICS-001 through ANALYTICS-006
+---
+
+## 2026-01-16 - ANALYTICS-001, 002, 003, 005
+- Created rivet_pro/core/services/analytics_service.py (new, 583 lines)
+- DailyStats, KBHealthMetrics, SMEChatMetrics dataclasses
+- aggregate_daily_stats() - aggregates from interactions table with upsert
+- get_today_stats() - real-time dashboard data with top equipment
+- get_kb_health() - total atoms, by manufacturer, coverage gaps, stale atoms
+- get_sme_chat_analytics() - sessions by vendor, avg messages, confidence distribution
+- generate_weekly_report() - formatted Telegram report with trend arrows
+- Files changed: rivet_pro/core/services/analytics_service.py (new)
+- Commit: 9520678
+
+**Learnings for future iterations:**
+- Use FILTER clause in PostgreSQL for conditional aggregation
+- Dataclasses are cleaner than Dict for structured return types
+- Confidence distribution tracks HIGH/MEDIUM/LOW from sme_chat_messages
+---
+
+## 2026-01-16 - ANALYTICS-004
+- Added /adminstats command for admin users (quick stats)
+- Added /report command for weekly report generation
+- Admin check uses telegram_admin_chat_id from settings
+- Integrated AnalyticsService into TelegramBot class
+- Service initialized after database connection in start()
+- Files changed: rivet_pro/adapters/telegram/bot.py
+- Commit: fc36b08
+
+**Learnings for future iterations:**
+- Compare telegram_user_id as int not str for admin check
+- Initialize services after db pool is ready
+- Use CommandHandler registration for slash commands
+---
+
+## 2026-01-16 - ANALYTICS-006
+- Added _log_response_time() helper to bot.py for timing all handlers
+- Uses time.perf_counter() for millisecond precision
+- Logs to rivet_usage_log table with latency_ms column
+- Slow queries (>5000ms) flagged with warning log
+- Added get_response_time_stats() to analytics_service.py
+- Updated format_stats_message() to show avg response time in /adminstats
+- Files changed: bot.py, analytics_service.py
+- Commit: 8d5c81c
+
+**Learnings for future iterations:**
+- time.perf_counter() is more accurate than time.time() for latency
+- Use int() for ms to avoid float precision issues in DB
+- Display slow query count only if > 0 to reduce noise
+---
+
+=== Phase 5: Analytics Dashboard COMPLETE ===
+All 6 stories implemented and passing:
+- ANALYTICS-001: Daily usage statistics aggregation (9520678)
+- ANALYTICS-002: KB health metrics (9520678)
+- ANALYTICS-003: SME chat analytics (9520678)
+- ANALYTICS-004: Admin /adminstats and /report commands (fc36b08)
+- ANALYTICS-005: Weekly report generation (9520678)
+- ANALYTICS-006: Response time tracking (8d5c81c)
+
+Ready for commit and merge to main.
+---

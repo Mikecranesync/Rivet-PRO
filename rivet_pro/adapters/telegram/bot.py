@@ -1707,6 +1707,9 @@ class TelegramBot:
         3. Pending validation yes/no → treat as validation response
         4. Otherwise → normal message handling
         """
+        import time
+        start_time = time.perf_counter()
+
         message = update.message
         user_id = str(update.effective_user.id)
 
@@ -1714,11 +1717,13 @@ class TelegramBot:
         if context.user_data.get('sme_chat_active') and message.text:
             handled = await self.handle_sme_chat_message(update, context)
             if handled:
+                await self._log_response_time(update.effective_user.id, 'sme_chat', start_time)
                 return
 
         # Check if this is a reply to the bot's own message
         if message.reply_to_message and message.reply_to_message.from_user.id == context.bot.id:
             await self._handle_feedback_reply(update, context)
+            await self._log_response_time(update.effective_user.id, 'feedback', start_time)
             return
 
         # Check if user has a pending validation and this looks like yes/no
@@ -1735,10 +1740,42 @@ class TelegramBot:
             if is_yes_no and is_recent:
                 await self._handle_pending_validation(update, context, text_lower, pending)
                 del self._pending_validations[user_id]
+                await self._log_response_time(update.effective_user.id, 'validation', start_time)
                 return
 
         # Default: normal message handling
         await self.handle_message(update, context)
+        await self._log_response_time(update.effective_user.id, 'message', start_time)
+
+    async def _log_response_time(self, telegram_user_id: int, action_type: str, start_time: float) -> None:
+        """
+        Log response time to rivet_usage_log for analytics (ANALYTICS-006).
+
+        Args:
+            telegram_user_id: Telegram user ID
+            action_type: Type of action (message, sme_chat, validation, etc.)
+            start_time: Start time from time.perf_counter()
+        """
+        import time
+        latency_ms = int((time.perf_counter() - start_time) * 1000)
+
+        # Flag slow queries (>5s)
+        if latency_ms > 5000:
+            logger.warning(f"Slow response | user={telegram_user_id} | action={action_type} | latency={latency_ms}ms")
+
+        try:
+            await self.db.execute(
+                """
+                INSERT INTO rivet_usage_log (telegram_id, action_type, latency_ms, success, created_at)
+                VALUES ($1, $2, $3, true, NOW())
+                """,
+                telegram_user_id,
+                action_type,
+                latency_ms
+            )
+        except Exception as e:
+            logger.debug(f"Failed to log response time: {e}")
+            # Don't break user experience for logging failures
 
     async def _handle_feedback_reply(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
