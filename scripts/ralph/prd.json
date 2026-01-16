@@ -1,71 +1,97 @@
 {
   "project": "RIVET Pro",
-  "branchName": "ralph/tech-debt-cleanup",
-  "description": "Technical Debt Cleanup Sprint: Address critical technical debt before Phase 5 features. Focus on runtime stability issues including hardcoded configuration, in-memory state that doesn't survive restarts, unimplemented database queries, and silent error handling.",
+  "branchName": "ralph/analytics-phase5",
+  "description": "Phase 5: Analytics Dashboard - Build admin analytics for usage tracking, knowledge base health, and SME chat metrics. Telegram-first with /stats and /report commands.",
   "userStories": [
     {
-      "id": "DEBT-001",
-      "title": "Extract Hardcoded Chat ID to Configuration",
-      "description": "The chat ID 8445149012 is hardcoded in 6+ locations. Extract to settings.py as ADMIN_CHAT_ID.",
+      "id": "ANALYTICS-001",
+      "title": "Daily Usage Statistics Aggregation",
+      "description": "Create a background job that aggregates daily usage stats from rivet_usage_log into daily_stats table. Track: total queries, unique users, queries by category (equipment/troubleshooting/manual/sme_chat), average response time.",
       "acceptanceCriteria": [
-        "No hardcoded chat IDs remain in codebase (grep returns 0 results)",
-        "ADMIN_CHAT_ID added to rivet_pro/config/settings.py",
-        "All 6 files updated to use settings.ADMIN_CHAT_ID",
-        ".env.example documents the ADMIN_CHAT_ID setting",
-        "Bot starts and works correctly with config value"
+        "Function aggregate_daily_stats() created in rivet_pro/core/services/analytics_service.py",
+        "Queries rivet_usage_log for previous day's data",
+        "Inserts aggregated row into daily_stats table",
+        "Handles duplicate runs gracefully (upsert)",
+        "Can be triggered manually or via scheduler"
       ],
       "priority": 1,
       "passes": true,
-      "notes": "Commit d17ba61 - Extracted to settings.telegram_admin_chat_id"
+      "notes": "Commit 9520678 - AnalyticsService with aggregate_daily_stats(), get_today_stats(), format_stats_message()"
     },
     {
-      "id": "DEBT-002",
-      "title": "Implement Persistent Node Callback Storage",
-      "description": "Node callback mappings stored in memory are lost on restart. Implement PostgreSQL persistence.",
+      "id": "ANALYTICS-002",
+      "title": "Knowledge Base Health Metrics",
+      "description": "Track KB health: total atoms, atoms by manufacturer, coverage gaps (queries with no KB matches), stale atoms (not accessed in 30+ days).",
       "acceptanceCriteria": [
-        "Migration 027_node_callback_mappings.sql created and applied",
-        "callback.py uses PostgreSQL instead of in-memory dict",
-        "Callbacks persist across bot restarts",
-        "Expired mappings (>24h) are automatically cleaned up",
-        "No memory leak from accumulating mappings",
-        "Troubleshooting tree navigation works after restart"
+        "Function get_kb_health() returns structured health metrics",
+        "Counts atoms by manufacturer from knowledge_atoms table",
+        "Identifies coverage gaps from low-confidence responses",
+        "Tracks atom freshness (last_accessed timestamp)",
+        "Returns actionable insights (e.g., 'Siemens coverage: 85%')"
       ],
       "priority": 2,
       "passes": true,
-      "notes": "Commit 497c23d - PostgreSQL storage with 24h TTL and in-memory cache"
+      "notes": "Commit 9520678 - get_kb_health() returns KBHealthMetrics dataclass"
     },
     {
-      "id": "DEBT-003",
-      "title": "Implement Troubleshooting Tree Database Query",
-      "description": "The _query_cached_trees() and _load_tree_from_db() functions have TODO comments and aren't implemented, causing expensive Claude API fallback.",
+      "id": "ANALYTICS-003",
+      "title": "SME Chat Analytics",
+      "description": "Track SME chat usage: sessions by vendor, average turns per session, confidence distribution, safety warnings triggered.",
       "acceptanceCriteria": [
-        "_query_cached_trees() implemented with real database query",
-        "_load_tree_from_db() implemented with full tree retrieval",
-        "In-memory TTL cache (5 min) reduces database queries",
-        "Falls back to Claude only when no cached tree exists",
-        "Claude API calls measurably reduced for repeat queries",
-        "Existing tests still pass"
+        "Function get_sme_chat_analytics() returns chat metrics",
+        "Queries sme_chat_sessions and sme_chat_messages tables",
+        "Groups by vendor (Siemens, Rockwell, ABB, etc.)",
+        "Calculates avg messages per session",
+        "Tracks confidence level distribution (HIGH/MEDIUM/LOW)"
       ],
       "priority": 3,
       "passes": true,
-      "notes": "Commit 8d0b555 - DB query with fuzzy matching and 5-min cache"
+      "notes": "Commit 9520678 - get_sme_chat_analytics() returns SMEChatMetrics dataclass"
     },
     {
-      "id": "DEBT-004",
-      "title": "Replace Silent Error Handling with Proper Logging",
-      "description": "17 instances of bare 'except: pass' silently swallow errors, making debugging impossible.",
+      "id": "ANALYTICS-004",
+      "title": "Admin /stats Command",
+      "description": "Create /stats command for admin users showing quick stats: today's queries, active users, top equipment lookups, KB health summary.",
       "acceptanceCriteria": [
-        "No bare except: pass remains in codebase",
-        "All 5 files updated with proper exception handling",
-        "Each caught exception is logged with context",
-        "Critical exceptions (CancelledError, SystemExit) are re-raised",
-        "grep -rn 'except.*:.*pass' rivet_pro/ returns 0 results",
-        "Bot operates normally with new error handling",
-        "Errors now visible in logs for debugging"
+        "/stats command added to bot.py",
+        "Only accessible to admin users (telegram_id in admin list)",
+        "Shows: queries today, unique users today, top 5 equipment",
+        "Shows: KB atom count, SME sessions today",
+        "Fast response (<2s) using pre-aggregated data"
       ],
       "priority": 4,
       "passes": true,
-      "notes": "Commit fc51ef8 - Replaced 3 remaining bare except:pass with proper logging"
+      "notes": "Commit fc36b08 - /adminstats and /report commands added to bot.py"
+    },
+    {
+      "id": "ANALYTICS-005",
+      "title": "Weekly Report Generation",
+      "description": "Generate weekly report summarizing: usage trends, top queries, knowledge gaps, SME chat patterns. Send to admin via Telegram.",
+      "acceptanceCriteria": [
+        "Function generate_weekly_report() creates formatted report",
+        "Compares this week vs last week (trend arrows)",
+        "Lists top 10 unanswered queries (knowledge gaps)",
+        "Shows SME vendor popularity ranking",
+        "Can be triggered via /report command or scheduler"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Commit 9520678 - generate_weekly_report() with trend comparison"
+    },
+    {
+      "id": "ANALYTICS-006",
+      "title": "Response Time Tracking",
+      "description": "Add response time tracking to all bot interactions. Store in rivet_usage_log with millisecond precision.",
+      "acceptanceCriteria": [
+        "response_time_ms column added to rivet_usage_log (if not exists)",
+        "All message handlers track start/end time",
+        "Response time logged with each interaction",
+        "Average response time visible in /stats",
+        "Slow queries (>5s) flagged for review"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Response time tracking via _log_response_time() in bot.py, get_response_time_stats() in analytics_service.py"
     }
   ]
 }

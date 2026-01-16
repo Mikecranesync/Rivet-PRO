@@ -36,6 +36,7 @@ from rivet_pro.core.services.feedback_service import FeedbackService
 from rivet_pro.core.services.alerting_service import AlertingService
 from rivet_pro.core.services.kb_analytics_service import KnowledgeBaseAnalytics
 from rivet_pro.core.services.enrichment_queue_service import EnrichmentQueueService
+from rivet_pro.core.services.analytics_service import AnalyticsService
 from rivet_pro.core.utils import format_equipment_response
 
 logger = get_logger(__name__)
@@ -58,6 +59,7 @@ class TelegramBot:
         self.feedback_service = None  # Initialized after db connects
         self.kb_analytics_service = None  # Initialized after db connects
         self.enrichment_queue_service = None  # Initialized after db connects (AUTO-KB-004)
+        self.analytics_service = None  # Initialized after db connects (Phase 5 Analytics)
 
         # SME Chat service (Phase 4)
         self.atlas_db = None  # AtlasDatabase for SME chat
@@ -1352,6 +1354,70 @@ class TelegramBot:
             except Exception as alert_error:
                 logger.warning(f"Failed to send KB report failure alert: {alert_error}")
 
+    async def adminstats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Handle /adminstats command - Display admin analytics dashboard.
+        Admin-only command for monitoring system-wide usage (Phase 5 ANALYTICS-004).
+        """
+        user = update.effective_user
+        telegram_user_id = user.id
+
+        # Admin check - only allow authorized users
+        admin_list = [settings.telegram_admin_chat_id]
+        if telegram_user_id not in admin_list:
+            await update.message.reply_text(
+                "🔒 This command is admin-only.\n\n"
+                "Contact the system administrator for access."
+            )
+            logger.warning(f"Unauthorized /adminstats attempt | user_id={user.id}")
+            return
+
+        logger.info(f"/adminstats command | user_id={user.id}")
+
+        try:
+            # Use AnalyticsService to get formatted stats
+            message = await self.analytics_service.format_stats_message()
+            await update.message.reply_text(message, parse_mode="Markdown")
+
+        except Exception as e:
+            logger.error(f"Error in /adminstats command: {e}", exc_info=True)
+            await update.message.reply_text(
+                "❌ Failed to retrieve admin stats. Please try again later."
+            )
+
+    async def report_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Handle /report command - Generate weekly analytics report.
+        Admin-only command for comprehensive usage report (Phase 5 ANALYTICS-005).
+        """
+        user = update.effective_user
+        telegram_user_id = user.id
+
+        # Admin check - only allow authorized users
+        admin_list = [settings.telegram_admin_chat_id]
+        if telegram_user_id not in admin_list:
+            await update.message.reply_text(
+                "🔒 This command is admin-only.\n\n"
+                "Contact the system administrator for access."
+            )
+            logger.warning(f"Unauthorized /report attempt | user_id={user.id}")
+            return
+
+        logger.info(f"/report command | user_id={user.id}")
+
+        await update.message.reply_text("📊 Generating weekly report...")
+
+        try:
+            # Generate the weekly report
+            report = await self.analytics_service.generate_weekly_report()
+            await update.message.reply_text(report, parse_mode="Markdown")
+
+        except Exception as e:
+            logger.error(f"Error in /report command: {e}", exc_info=True)
+            await update.message.reply_text(
+                "❌ Failed to generate weekly report. Please try again later."
+            )
+
     async def upgrade_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
         Handle /upgrade command.
@@ -1641,6 +1707,9 @@ class TelegramBot:
         3. Pending validation yes/no → treat as validation response
         4. Otherwise → normal message handling
         """
+        import time
+        start_time = time.perf_counter()
+
         message = update.message
         user_id = str(update.effective_user.id)
 
@@ -1648,11 +1717,13 @@ class TelegramBot:
         if context.user_data.get('sme_chat_active') and message.text:
             handled = await self.handle_sme_chat_message(update, context)
             if handled:
+                await self._log_response_time(update.effective_user.id, 'sme_chat', start_time)
                 return
 
         # Check if this is a reply to the bot's own message
         if message.reply_to_message and message.reply_to_message.from_user.id == context.bot.id:
             await self._handle_feedback_reply(update, context)
+            await self._log_response_time(update.effective_user.id, 'feedback', start_time)
             return
 
         # Check if user has a pending validation and this looks like yes/no
@@ -1669,10 +1740,42 @@ class TelegramBot:
             if is_yes_no and is_recent:
                 await self._handle_pending_validation(update, context, text_lower, pending)
                 del self._pending_validations[user_id]
+                await self._log_response_time(update.effective_user.id, 'validation', start_time)
                 return
 
         # Default: normal message handling
         await self.handle_message(update, context)
+        await self._log_response_time(update.effective_user.id, 'message', start_time)
+
+    async def _log_response_time(self, telegram_user_id: int, action_type: str, start_time: float) -> None:
+        """
+        Log response time to rivet_usage_log for analytics (ANALYTICS-006).
+
+        Args:
+            telegram_user_id: Telegram user ID
+            action_type: Type of action (message, sme_chat, validation, etc.)
+            start_time: Start time from time.perf_counter()
+        """
+        import time
+        latency_ms = int((time.perf_counter() - start_time) * 1000)
+
+        # Flag slow queries (>5s)
+        if latency_ms > 5000:
+            logger.warning(f"Slow response | user={telegram_user_id} | action={action_type} | latency={latency_ms}ms")
+
+        try:
+            await self.db.execute(
+                """
+                INSERT INTO rivet_usage_log (telegram_id, action_type, latency_ms, success, created_at)
+                VALUES ($1, $2, $3, true, NOW())
+                """,
+                telegram_user_id,
+                action_type,
+                latency_ms
+            )
+        except Exception as e:
+            logger.debug(f"Failed to log response time: {e}")
+            # Don't break user experience for logging failures
 
     async def _handle_feedback_reply(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
@@ -2774,6 +2877,8 @@ Send a 📷 photo of any equipment nameplate and I'll identify it and find the m
         self.application.add_handler(CommandHandler("pipeline", self.pipeline_command))  # Phase 3 Pipeline
         self.application.add_handler(CommandHandler("kb_stats", self.kb_stats_command))
         self.application.add_handler(CommandHandler("kb_worker_status", self.kb_worker_status_command))  # AUTO-KB-005
+        self.application.add_handler(CommandHandler("adminstats", self.adminstats_command))  # Phase 5 Analytics
+        self.application.add_handler(CommandHandler("report", self.report_command))  # Phase 5 Weekly Report
         self.application.add_handler(CommandHandler("upgrade", self.upgrade_command))
         self.application.add_handler(CommandHandler("reset", self.reset_command))
         self.application.add_handler(CommandHandler("done", self.done_command))
@@ -2857,6 +2962,7 @@ Send a 📷 photo of any equipment nameplate and I'll identify it and find the m
         self.feedback_service = FeedbackService(self.db.pool)
         self.kb_analytics_service = KnowledgeBaseAnalytics(self.db.pool)
         self.enrichment_queue_service = EnrichmentQueueService(self.db.pool)  # AUTO-KB-004
+        self.analytics_service = AnalyticsService(self.db)  # Phase 5 Analytics
 
         # Initialize SME Chat service (Phase 4)
         try:
