@@ -20,7 +20,7 @@ from rivet.models.knowledge import KnowledgeAtom, KnowledgeSearchResult, AtomTyp
 from rivet.services.knowledge_service import KnowledgeService
 from rivet.services.embedding_service import EmbeddingService
 from rivet.atlas.database import AtlasDatabase
-from rivet.integrations.llm_router import LLMRouter  # For answer synthesis
+from rivet.integrations.llm import LLMRouter  # For answer synthesis
 
 logger = logging.getLogger(__name__)
 
