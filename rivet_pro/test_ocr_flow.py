@@ -125,9 +125,11 @@ async def test_telegram_photo_handler():
         from rivet_pro.core.services import analyze_image
 
         print("⏳ Analyzing image...")
+        # Use admin chat ID from env or default for testing
+        test_user_id = os.getenv("TELEGRAM_ADMIN_CHAT_ID", "8445149012")
         result = await analyze_image(
             image_bytes=test_photo_bytes,
-            user_id="8445149012"  # Your Telegram user ID
+            user_id=test_user_id
         )
 
         print()

@@ -79,7 +79,12 @@ class AgentExecutor:
         admin_chat_id: Optional[int] = None
     ):
         self.max_retries = max_retries
-        self.admin_chat_id = admin_chat_id or int(os.getenv("ADMIN_CHAT_ID", "8445149012"))
+        # Use settings if available, fallback to env var
+        try:
+            from rivet_pro.config.settings import settings
+            self.admin_chat_id = admin_chat_id or settings.telegram_admin_chat_id
+        except ImportError:
+            self.admin_chat_id = admin_chat_id or int(os.getenv("TELEGRAM_ADMIN_CHAT_ID", "8445149012"))
 
         # Agent implementations (lazy loaded)
         self._agents: Dict[VendorType, Any] = {}

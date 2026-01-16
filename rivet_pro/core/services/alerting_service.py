@@ -35,7 +35,7 @@ class AlertingService:
 
         Args:
             bot_token: Telegram bot token
-            ralph_chat_id: Ralph's Telegram chat ID (e.g., "8445149012")
+            ralph_chat_id: Admin/Ralph's Telegram chat ID (from settings.telegram_admin_chat_id)
         """
         self.bot_token = bot_token
         self.ralph_chat_id = ralph_chat_id

@@ -23,6 +23,10 @@ class Settings(BaseSettings):
 
     # Telegram Configuration
     telegram_bot_token: str = Field(..., description="Telegram bot token from @BotFather")
+    telegram_admin_chat_id: int = Field(
+        8445149012,
+        description="Admin/Ralph Telegram chat ID for alerts and notifications"
+    )
     telegram_bot_mode: Literal["polling", "webhook"] = Field(
         "polling",
         description="Bot mode: polling (dev) or webhook (production with HTTPS)"

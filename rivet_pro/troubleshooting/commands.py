@@ -24,8 +24,13 @@ from rivet_pro.infra.observability import get_logger
 
 logger = get_logger(__name__)
 
-# Admin user IDs (should come from config)
-ADMIN_USER_IDS = [8445149012]  # Add admin Telegram IDs here
+# Admin user IDs from config
+try:
+    from rivet_pro.config.settings import settings
+    ADMIN_USER_IDS = [settings.telegram_admin_chat_id]
+except ImportError:
+    import os
+    ADMIN_USER_IDS = [int(os.getenv("TELEGRAM_ADMIN_CHAT_ID", "8445149012"))]
 
 
 def is_admin(user_id: int) -> bool:
