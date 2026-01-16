@@ -31,8 +31,8 @@
         "Troubleshooting tree navigation works after restart"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Commit 497c23d - PostgreSQL storage with 24h TTL and in-memory cache"
     },
     {
       "id": "DEBT-003",
@@ -47,8 +47,8 @@
         "Existing tests still pass"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Commit 8d0b555 - DB query with fuzzy matching and 5-min cache"
     },
     {
       "id": "DEBT-004",
@@ -64,8 +64,8 @@
         "Errors now visible in logs for debugging"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Commit fc51ef8 - Replaced 3 remaining bare except:pass with proper logging"
     }
   ]
 }
