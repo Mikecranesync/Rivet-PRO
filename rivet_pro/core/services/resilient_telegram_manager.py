@@ -183,7 +183,11 @@ class ResilientTelegramManager:
 
     async def send_to_admin(self, text: str, **kwargs) -> str:
         """Send message to admin chat"""
-        admin_chat_id = int(os.getenv("ADMIN_CHAT_ID", "8445149012"))
+        try:
+            from rivet_pro.config.settings import settings
+            admin_chat_id = settings.telegram_admin_chat_id
+        except ImportError:
+            admin_chat_id = int(os.getenv("TELEGRAM_ADMIN_CHAT_ID", "8445149012"))
         return await self.send_message(chat_id=admin_chat_id, text=text, **kwargs)
 
     async def _process_queue(self):

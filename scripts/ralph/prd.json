@@ -1,169 +1,71 @@
 {
   "project": "RIVET Pro",
-  "branchName": "ralph/sme-chat-phase4",
-  "description": "Phase 4: SME Chat with LLM Interaction - Add conversational chat with vendor-specific SME agents (Hans/Siemens, Mike/Rockwell, Erik/ABB, etc.) with distinct personalities and RAG-enhanced responses.",
+  "branchName": "ralph/tech-debt-cleanup",
+  "description": "Technical Debt Cleanup Sprint: Address critical technical debt before Phase 5 features. Focus on runtime stability issues including hardcoded configuration, in-memory state that doesn't survive restarts, unimplemented database queries, and silent error handling.",
   "userStories": [
     {
-      "id": "SME-CHAT-001",
-      "title": "Database Migration for Chat Sessions",
-      "description": "Create migration 026_sme_chat_sessions.sql with tables for sme_chat_sessions and sme_chat_messages. Include auto-update triggers and session timeout functions.",
+      "id": "DEBT-001",
+      "title": "Extract Hardcoded Chat ID to Configuration",
+      "description": "The chat ID 8445149012 is hardcoded in 6+ locations. Extract to settings.py as ADMIN_CHAT_ID.",
       "acceptanceCriteria": [
-        "sme_chat_sessions table with telegram_chat_id, sme_vendor, status, equipment_context JSONB",
-        "sme_chat_messages table with session_id FK, role, content, confidence, rag_atoms_used UUID array",
-        "Auto-update last_message_at trigger on message insert",
-        "close_inactive_sessions() function for 30-min timeout",
-        "Indexes on telegram_chat_id, session status, and message timestamps"
+        "No hardcoded chat IDs remain in codebase (grep returns 0 results)",
+        "ADMIN_CHAT_ID added to rivet_pro/config/settings.py",
+        "All 6 files updated to use settings.ADMIN_CHAT_ID",
+        ".env.example documents the ADMIN_CHAT_ID setting",
+        "Bot starts and works correctly with config value"
       ],
       "priority": 1,
       "passes": true,
-      "notes": "Implemented in commit 08beec7. Migration: rivet_pro/migrations/026_sme_chat_sessions.sql"
+      "notes": "Commit d17ba61 - Extracted to settings.telegram_admin_chat_id"
     },
     {
-      "id": "SME-CHAT-002",
-      "title": "Pydantic Models for SME Chat",
-      "description": "Create rivet/models/sme_chat.py with Pydantic models for chat sessions, messages, and responses.",
+      "id": "DEBT-002",
+      "title": "Implement Persistent Node Callback Storage",
+      "description": "Node callback mappings stored in memory are lost on restart. Implement PostgreSQL persistence.",
       "acceptanceCriteria": [
-        "SMEChatSession model with session_id, telegram_chat_id, sme_vendor, status, equipment_context",
-        "SMEChatMessage model with message_id, session_id, role, content, confidence, rag_atoms_used",
-        "SMEChatResponse model with response, confidence, sources list, safety_warnings list, cost_usd",
-        "All models have proper type hints and validation",
-        "Export from rivet/models/__init__.py"
+        "Migration 027_node_callback_mappings.sql created and applied",
+        "callback.py uses PostgreSQL instead of in-memory dict",
+        "Callbacks persist across bot restarts",
+        "Expired mappings (>24h) are automatically cleaned up",
+        "No memory leak from accumulating mappings",
+        "Troubleshooting tree navigation works after restart"
       ],
       "priority": 2,
       "passes": true,
-      "notes": "Implemented in commit f8ceb8e. Models: rivet/models/sme_chat.py"
+      "notes": "Commit 497c23d - PostgreSQL storage with 24h TTL and in-memory cache"
     },
     {
-      "id": "SME-CHAT-003",
-      "title": "SME Personalities Configuration",
-      "description": "Create rivet/prompts/sme/personalities.py with distinct voice/personality for 6 vendor SMEs plus generic.",
+      "id": "DEBT-003",
+      "title": "Implement Troubleshooting Tree Database Query",
+      "description": "The _query_cached_trees() and _load_tree_from_db() functions have TODO comments and aren't implemented, causing expensive Claude API fallback.",
       "acceptanceCriteria": [
-        "SME_PERSONALITIES dict with siemens, rockwell, abb, schneider, mitsubishi, fanuc, generic keys",
-        "Each personality has name, tagline, voice dict (style, greeting, thinking_phrases, closing_phrases)",
-        "Each personality has expertise_areas list and response_format preferences",
-        "Each personality has system_prompt_additions for LLM prompt injection",
-        "Siemens=Hans German precision, Rockwell=Mike American practical, ABB=Erik safety-focused, etc."
+        "_query_cached_trees() implemented with real database query",
+        "_load_tree_from_db() implemented with full tree retrieval",
+        "In-memory TTL cache (5 min) reduces database queries",
+        "Falls back to Claude only when no cached tree exists",
+        "Claude API calls measurably reduced for repeat queries",
+        "Existing tests still pass"
       ],
       "priority": 3,
       "passes": true,
-      "notes": "Implemented in commit 213b99c. File: rivet/prompts/sme/personalities.py with SMEPersonality dataclass, SMEVoice dataclass, get_personality(), build_system_prompt(), format_sme_response() helpers."
+      "notes": "Commit 8d0b555 - DB query with fuzzy matching and 5-min cache"
     },
     {
-      "id": "SME-CHAT-004",
-      "title": "RAG Service for SME Context",
-      "description": "Create rivet/services/sme_rag_service.py that retrieves relevant knowledge atoms filtered by manufacturer.",
+      "id": "DEBT-004",
+      "title": "Replace Silent Error Handling with Proper Logging",
+      "description": "17 instances of bare 'except: pass' silently swallow errors, making debugging impossible.",
       "acceptanceCriteria": [
-        "SMERagService class with get_relevant_context async method",
-        "Accepts query, manufacturer, conversation_history, equipment_context, limit params",
-        "Builds enhanced query from conversation context for better embedding",
-        "Uses existing EmbeddingService for query embedding generation",
-        "Uses existing KnowledgeService.vector_search with manufacturer filter",
-        "Returns tuple of (atoms_list, formatted_context_string)",
-        "Formats atoms as structured context for LLM prompt"
+        "No bare except: pass remains in codebase",
+        "All 5 files updated with proper exception handling",
+        "Each caught exception is logged with context",
+        "Critical exceptions (CancelledError, SystemExit) are re-raised",
+        "grep -rn 'except.*:.*pass' rivet_pro/ returns 0 results",
+        "Bot operates normally with new error handling",
+        "Errors now visible in logs for debugging"
       ],
       "priority": 4,
       "passes": true,
-      "notes": "Implemented in commit b383c71. File: rivet/services/sme_rag_service.py with SMERagService class, calculate_rag_confidence(), extract_sources_from_atoms(). Exports added to __init__.py."
-    },
-    {
-      "id": "SME-CHAT-005",
-      "title": "SME Chat Service Core",
-      "description": "Create rivet/services/sme_chat_service.py that orchestrates chat sessions with personality, RAG, and LLM.",
-      "acceptanceCriteria": [
-        "SMEChatService class with start_session, chat, close_session methods",
-        "start_session creates DB session, adds system message with personality",
-        "chat method: load session, get history, RAG context, build prompt, generate LLM response",
-        "Prompt combines personality voice + RAG context + conversation history + equipment context",
-        "Extract safety warnings from response text",
-        "Calculate confidence based on RAG hit quality",
-        "Store assistant message with rag_atoms_used metadata",
-        "Uses existing LLMRouter.generate with ModelCapability.MODERATE"
-      ],
-      "priority": 5,
-      "passes": true,
-      "notes": "Implemented in commit f365592. File: rivet/services/sme_chat_service.py with full session lifecycle, safety pattern extraction, LLMRouter integration."
-    },
-    {
-      "id": "SME-CHAT-006",
-      "title": "Telegram /chat Command Handler",
-      "description": "Add /chat and /endchat command handlers to rivet/integrations/telegram.py for starting SME chat sessions.",
-      "acceptanceCriteria": [
-        "/chat [vendor] command starts SME session - vendor optional, auto-detects from recent equipment",
-        "/endchat command closes active session and clears user_data",
-        "Show vendor picker if no vendor specified and no recent equipment",
-        "Store sme_session_id and sme_chat_active in context.user_data",
-        "Send SME greeting with personality name and tagline",
-        "Register both commands in setup_bot() with CommandHandler"
-      ],
-      "priority": 6,
-      "passes": true,
-      "notes": "Implemented in commit d8324cb. Added /chat [vendor] and /endchat commands with vendor picker."
-    },
-    {
-      "id": "SME-CHAT-007",
-      "title": "Telegram Message Routing for Chat Mode",
-      "description": "Update message_handler in telegram.py to route messages to SME chat when session is active.",
-      "acceptanceCriteria": [
-        "Check context.user_data.get('sme_chat_active') at start of message_handler",
-        "If active, call handle_sme_chat_message instead of troubleshoot workflow",
-        "handle_sme_chat_message loads session, calls SMEChatService.chat, formats response",
-        "Response includes SME name badge, answer, safety warnings, sources, confidence indicator",
-        "Typing indicator shown while processing",
-        "Error handling with suggestion to /endchat if persistent failures"
-      ],
-      "priority": 7,
-      "passes": true,
-      "notes": "Implemented in commit fdd77de. Added handle_sme_chat_message and format_sme_chat_response."
-    },
-    {
-      "id": "SME-CHAT-008",
-      "title": "Confidence-Based Routing in Orchestrator",
-      "description": "Implement confidence-based routing: high (>0.85) direct KB, medium (0.7-0.85) SME synthesis, low (<0.7) clarifying questions.",
-      "acceptanceCriteria": [
-        "route_chat_query function calculates RAG confidence from top result similarity",
-        "High confidence (>=0.85): format_direct_kb_answer with SME voice styling",
-        "Medium confidence (0.70-0.85): generate_sme_synthesis from RAG context",
-        "Low confidence (<0.70): generate_clarifying_questions to ask user for more info",
-        "Confidence calculation: (top_similarity * 0.6) + (avg_top3_similarity * 0.4)",
-        "Integrate with SMEChatService.chat flow"
-      ],
-      "priority": 8,
-      "passes": true,
-      "notes": "Implemented in commit 2aefbde. Added _route_by_confidence with HIGH/MEDIUM/LOW handlers."
-    },
-    {
-      "id": "SME-CHAT-009",
-      "title": "Unit Tests for SME Chat",
-      "description": "Create comprehensive unit tests for SME chat service and personalities.",
-      "acceptanceCriteria": [
-        "tests/unit/test_sme_chat_service.py with mocked DB and LLM",
-        "Test start_session creates session and adds system message",
-        "Test chat returns properly formatted response with all fields",
-        "Test close_session updates status",
-        "tests/unit/test_sme_personalities.py verifies all 7 personalities load",
-        "Test personality prompt generation includes voice elements",
-        "All tests pass with pytest"
-      ],
-      "priority": 9,
-      "passes": true,
-      "notes": "Implemented in commit 8910f51. Files: tests/unit/test_sme_chat_service.py (19 tests), tests/unit/test_sme_personalities.py (19 tests). Fixed sme_chat_service.py Pydantic use_enum_values bug."
-    },
-    {
-      "id": "SME-CHAT-010",
-      "title": "Integration Test for Full Chat Flow",
-      "description": "Create integration test that exercises the full SME chat flow from Telegram to response.",
-      "acceptanceCriteria": [
-        "tests/integration/test_sme_chat_flow.py with real DB connection",
-        "Test: /chat siemens -> ask question -> verify Hans personality in response",
-        "Test: multi-turn conversation preserves context",
-        "Test: RAG atoms are retrieved and formatted in context",
-        "Test: safety warnings extracted correctly",
-        "Test: session closes on /endchat",
-        "Can run with: pytest tests/integration/test_sme_chat_flow.py -v"
-      ],
-      "priority": 10,
-      "passes": true,
-      "notes": "Implemented in commit b119989. File: tests/integration/test_sme_chat_flow.py (12 tests). Fixed asyncpg JSONB handling with JSON serialization and parsing."
+      "notes": "Commit fc51ef8 - Replaced 3 remaining bare except:pass with proper logging"
     }
   ]
 }

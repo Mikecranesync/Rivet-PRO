@@ -147,7 +147,7 @@ class EquipmentService:
             ...     serial_number="SR123456",
             ...     equipment_type="VFD",
             ...     location="Building A, Floor 2",
-            ...     user_id="telegram_8445149012"
+            ...     user_id="telegram_12345678"  # Example user ID
             ... )
             >>> print(f"Equipment: {equipment_number}, New: {is_new}")
         """

@@ -224,3 +224,84 @@ All 10 stories implemented and passing:
 
 Total: 50 tests passing
 ---
+
+=== Technical Debt Cleanup Sprint ===
+Started: Thu, Jan 16, 2026
+Branch: ralph/tech-debt-cleanup
+Stories: DEBT-001 through DEBT-004
+---
+
+## 2026-01-16 - DEBT-001
+- Extracted hardcoded chat ID (8445149012) to settings.telegram_admin_chat_id
+- Added telegram_admin_chat_id to rivet_pro/config/settings.py with default value
+- Updated 8 files to use config instead of hardcoded value
+- Added TELEGRAM_ADMIN_CHAT_ID to .env.example for documentation
+- Files using fallback to env var for robustness when settings unavailable
+- Files changed: settings.py, bot.py, agent_executor.py, alerting_service.py, equipment_service.py, resilient_telegram_manager.py, database.py, test_ocr_flow.py, commands.py, .env.example
+- Commit: d17ba61
+
+**Learnings for future iterations:**
+- Use try/except ImportError pattern for config fallbacks
+- Keep hardcoded defaults in settings.py as single source of truth
+- Update .env.example when adding new settings
+---
+
+## 2026-01-16 - DEBT-002
+- Created migration 027_node_callback_mappings.sql with PostgreSQL persistent storage
+- Table has tree_id, node_hash, node_id with 24-hour auto-expiry
+- Updated callback.py with async DB functions + in-memory cache
+- Graceful fallback to in-memory if DB unavailable
+- Fire-and-forget pattern for sync->async DB writes
+- Added cleanup_expired_mappings() function for maintenance
+- Files changed: callback.py, 027_node_callback_mappings.sql
+- Commit: 497c23d
+
+**Learnings for future iterations:**
+- Use asyncio.create_task for fire-and-forget from sync context
+- Keep in-memory cache as fast path, DB as persistent backup
+- Upsert (ON CONFLICT DO UPDATE) handles duplicate key gracefully
+- Expiry column enables automatic cleanup without cron jobs
+---
+
+## 2026-01-16 - DEBT-003
+- Implemented _query_cached_trees() with fuzzy ILIKE matching
+- Implemented _load_tree_from_db() with 5-minute in-memory cache
+- Added _find_best_matching_tree() with Jaccard similarity scoring
+- Created troubleshooting_trees table in database (ad-hoc SQL)
+- Updated get_or_generate_troubleshooting() to check DB before Claude
+- Added _format_steps_for_telegram() for displaying cached guides
+- Files changed: rivet_pro/troubleshooting/fallback.py
+- Commit: 8d0b555
+
+**Learnings for future iterations:**
+- Use ILIKE for case-insensitive fuzzy matching in PostgreSQL
+- Jaccard similarity (word intersection/union) is simple but effective
+- Cache TTL (5 min) balances freshness vs performance
+- Track usage_count to rank popular trees higher
+---
+
+## 2026-01-16 - DEBT-004
+- Replaced 3 remaining bare except:pass statements with proper logging
+- bot.py: Log KB report alert failures with warning level
+- feedback_service.py: Log acceptance_criteria parse failures at debug level
+- test_drafts.py: Documented expected cleanup failures in test fixtures
+- grep 'except.*:.*pass' rivet_pro/ now returns 0 results
+- Files changed: bot.py, feedback_service.py, test_drafts.py
+- Commit: fc51ef8
+
+**Learnings for future iterations:**
+- Use specific exception types (json.JSONDecodeError, TypeError) not bare except
+- Test fixture cleanup can use pass with a comment explaining why it's acceptable
+- Debug level logging for expected/non-critical parse failures
+- Warning level for alert/notification failures
+---
+
+=== Technical Debt Cleanup Sprint COMPLETE ===
+All 4 stories implemented and passing:
+- DEBT-001: Extracted hardcoded chat ID to settings (d17ba61)
+- DEBT-002: Persistent callback storage with PostgreSQL (497c23d)
+- DEBT-003: Troubleshooting tree DB query with fuzzy match (8d0b555)
+- DEBT-004: Silent error handling cleanup (fc51ef8)
+
+Ready for Phase 5 or merge to main.
+---

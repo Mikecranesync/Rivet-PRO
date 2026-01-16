@@ -116,7 +116,7 @@ class Database:
         try:
             import httpx
             bot_token = settings.telegram_bot_token
-            chat_id = "8445149012"  # Admin chat
+            chat_id = settings.telegram_admin_chat_id  # From config
 
             error_details = "\n".join([f"  - {p}: {e[:50]}" for p, e in errors])
             message = (

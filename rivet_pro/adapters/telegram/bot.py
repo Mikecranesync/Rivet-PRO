@@ -70,7 +70,7 @@ class TelegramBot:
         # Initialize alerting service for Ralph notifications (RALPH-BOT-3)
         self.alerting_service = AlertingService(
             bot_token=settings.telegram_bot_token,
-            ralph_chat_id="8445149012"  # Ralph's Telegram chat ID
+            ralph_chat_id=str(settings.telegram_admin_chat_id)  # From config
         )
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1349,8 +1349,8 @@ class TelegramBot:
                     text=f"❌ *Daily KB Report Failed*\n\nError: {str(e)[:200]}",
                     parse_mode="Markdown"
                 )
-            except:
-                pass  # Don't cascade errors
+            except Exception as alert_error:
+                logger.warning(f"Failed to send KB report failure alert: {alert_error}")
 
     async def upgrade_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """

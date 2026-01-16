@@ -24,11 +24,215 @@ Usage:
 import logging
 import os
 import re
-from typing import Dict, List, Optional, TypedDict
+import time
+from typing import Dict, List, Optional, TypedDict, Any
 from anthropic import Anthropic, AsyncAnthropic
 from rivet_pro.config.settings import settings
 
 logger = logging.getLogger(__name__)
+
+# In-memory cache for troubleshooting trees (TTL: 5 minutes)
+_tree_cache: Dict[str, tuple] = {}  # key -> (tree_data, timestamp)
+_CACHE_TTL_SECONDS = 300  # 5 minutes
+
+# Database connection (lazy loaded)
+_db_pool = None
+
+
+async def _get_db_pool():
+    """Get or create database connection pool for tree queries."""
+    global _db_pool
+    if _db_pool is None:
+        try:
+            from rivet_pro.infra.database import Database
+            _db_pool = Database()
+            await _db_pool.connect()
+            logger.info("Troubleshooting tree storage connected to database")
+        except Exception as e:
+            logger.warning(f"Database unavailable for tree queries: {e}")
+            _db_pool = "unavailable"
+    return _db_pool
+
+
+def _get_cache_key(equipment_type: str, problem: Optional[str] = None) -> str:
+    """Generate cache key from equipment type and problem."""
+    key = equipment_type.lower().strip()
+    if problem:
+        key += f":{problem.lower().strip()[:50]}"
+    return key
+
+
+async def _query_cached_trees(
+    equipment_type: str,
+    manufacturer: Optional[str] = None,
+    limit: int = 5
+) -> List[Dict[str, Any]]:
+    """
+    Query database for matching troubleshooting trees.
+
+    Args:
+        equipment_type: Type of equipment to find trees for
+        manufacturer: Optional manufacturer filter
+        limit: Maximum number of results
+
+    Returns:
+        List of matching tree metadata (id, equipment_type, problem, usage_count)
+    """
+    try:
+        db = await _get_db_pool()
+        if db == "unavailable":
+            return []
+
+        # Build query with optional manufacturer filter
+        if manufacturer:
+            query = """
+                SELECT id, equipment_type, manufacturer, problem, usage_count, created_at
+                FROM troubleshooting_trees
+                WHERE is_active = TRUE
+                  AND (equipment_type ILIKE $1 OR manufacturer ILIKE $2)
+                ORDER BY usage_count DESC, created_at DESC
+                LIMIT $3
+            """
+            results = await db.fetch(
+                query,
+                f"%{equipment_type}%",
+                f"%{manufacturer}%",
+                limit
+            )
+        else:
+            query = """
+                SELECT id, equipment_type, manufacturer, problem, usage_count, created_at
+                FROM troubleshooting_trees
+                WHERE is_active = TRUE
+                  AND equipment_type ILIKE $1
+                ORDER BY usage_count DESC, created_at DESC
+                LIMIT $2
+            """
+            results = await db.fetch(query, f"%{equipment_type}%", limit)
+
+        return [dict(r) for r in results] if results else []
+
+    except Exception as e:
+        logger.warning(f"Failed to query cached trees: {e}")
+        return []
+
+
+async def _load_tree_from_db(tree_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Load a specific troubleshooting tree from the database.
+
+    Args:
+        tree_id: Database ID of the tree to load
+
+    Returns:
+        Full tree data including tree_data JSONB, or None if not found
+    """
+    # Check in-memory cache first
+    cache_key = f"tree:{tree_id}"
+    if cache_key in _tree_cache:
+        cached_data, cached_time = _tree_cache[cache_key]
+        if time.time() - cached_time < _CACHE_TTL_SECONDS:
+            logger.debug(f"Tree {tree_id} loaded from cache")
+            return cached_data
+
+    try:
+        db = await _get_db_pool()
+        if db == "unavailable":
+            return None
+
+        result = await db.fetchrow(
+            """
+            SELECT id, equipment_type, manufacturer, problem, tree_data,
+                   usage_count, created_at, updated_at
+            FROM troubleshooting_trees
+            WHERE id = $1 AND is_active = TRUE
+            """,
+            tree_id
+        )
+
+        if result:
+            tree = dict(result)
+            # Cache for future lookups
+            _tree_cache[cache_key] = (tree, time.time())
+            # Increment usage count (fire and forget)
+            try:
+                await db.execute(
+                    "UPDATE troubleshooting_trees SET usage_count = usage_count + 1 WHERE id = $1",
+                    tree_id
+                )
+            except Exception:
+                pass  # Non-critical
+            return tree
+
+    except Exception as e:
+        logger.warning(f"Failed to load tree {tree_id} from DB: {e}")
+
+    return None
+
+
+async def _find_best_matching_tree(
+    equipment_type: str,
+    problem: str,
+    manufacturer: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """
+    Find the best matching troubleshooting tree for the given equipment and problem.
+
+    Uses fuzzy matching on equipment_type and problem text.
+
+    Args:
+        equipment_type: Type of equipment
+        problem: Problem description
+        manufacturer: Optional manufacturer filter
+
+    Returns:
+        Best matching tree data, or None if no good match found
+    """
+    # Check in-memory cache
+    cache_key = _get_cache_key(equipment_type, problem)
+    if cache_key in _tree_cache:
+        cached_data, cached_time = _tree_cache[cache_key]
+        if time.time() - cached_time < _CACHE_TTL_SECONDS:
+            logger.info(f"Tree for '{equipment_type}' found in cache")
+            return cached_data
+
+    # Query database for potential matches
+    candidates = await _query_cached_trees(equipment_type, manufacturer)
+
+    if not candidates:
+        logger.info(f"No cached trees found for equipment type: {equipment_type}")
+        return None
+
+    # Find best match by problem similarity (simple word overlap)
+    problem_words = set(problem.lower().split())
+    best_match = None
+    best_score = 0
+
+    for candidate in candidates:
+        candidate_problem_words = set(candidate['problem'].lower().split())
+        # Jaccard similarity
+        intersection = len(problem_words & candidate_problem_words)
+        union = len(problem_words | candidate_problem_words)
+        score = intersection / union if union > 0 else 0
+
+        # Boost score if equipment type matches exactly
+        if equipment_type.lower() in candidate['equipment_type'].lower():
+            score += 0.3
+
+        if score > best_score and score > 0.2:  # Minimum threshold
+            best_score = score
+            best_match = candidate
+
+    if best_match:
+        # Load full tree data
+        tree = await _load_tree_from_db(best_match['id'])
+        if tree:
+            # Cache for future lookups
+            _tree_cache[cache_key] = (tree, time.time())
+            logger.info(f"Found matching tree: {best_match['problem']} (score: {best_score:.2f})")
+            return tree
+
+    return None
 
 
 class TroubleshootingGuide(TypedDict):
@@ -355,39 +559,69 @@ def _format_guide_for_telegram(
     return '\n'.join(lines)
 
 
-def check_tree_exists(equipment_type: str) -> bool:
+async def check_tree_exists_async(equipment_type: str, manufacturer: Optional[str] = None) -> bool:
     """
     Check if a troubleshooting tree exists for the equipment type.
 
-    This function queries the database to see if there's a predefined
-    troubleshooting tree for this equipment type.
-
     Args:
         equipment_type: Type of equipment to check
+        manufacturer: Optional manufacturer filter
 
     Returns:
         True if tree exists, False if fallback needed
-
-    Note:
-        This is a placeholder. Actual implementation should query
-        the troubleshooting_trees table in PostgreSQL.
     """
-    # TODO: Implement database query
-    # Example query:
-    # SELECT COUNT(*) FROM troubleshooting_trees
-    # WHERE equipment_type ILIKE %s
-    # LIMIT 1
+    try:
+        db = await _get_db_pool()
+        if db == "unavailable":
+            return False
 
-    logger.warning(
-        f"check_tree_exists not yet implemented - assuming no tree for {equipment_type}"
-    )
+        if manufacturer:
+            result = await db.fetchrow(
+                """
+                SELECT 1 FROM troubleshooting_trees
+                WHERE is_active = TRUE
+                  AND (equipment_type ILIKE $1 OR manufacturer ILIKE $2)
+                LIMIT 1
+                """,
+                f"%{equipment_type}%",
+                f"%{manufacturer}%"
+            )
+        else:
+            result = await db.fetchrow(
+                """
+                SELECT 1 FROM troubleshooting_trees
+                WHERE is_active = TRUE
+                  AND equipment_type ILIKE $1
+                LIMIT 1
+                """,
+                f"%{equipment_type}%"
+            )
+
+        exists = result is not None
+        logger.info(f"Tree exists for '{equipment_type}': {exists}")
+        return exists
+
+    except Exception as e:
+        logger.warning(f"Failed to check tree existence: {e}")
+        return False
+
+
+def check_tree_exists(equipment_type: str) -> bool:
+    """
+    Synchronous wrapper for tree existence check.
+    Note: Returns False in sync context - use async version for actual check.
+    """
+    # In sync context, we can't query DB - return False to trigger Claude fallback
+    # This is acceptable since the async version is preferred
+    logger.debug(f"Sync check_tree_exists called for {equipment_type} - returning False")
     return False
 
 
 async def get_or_generate_troubleshooting(
     equipment_type: str,
     problem: str,
-    context: Optional[str] = None
+    context: Optional[str] = None,
+    manufacturer: Optional[str] = None
 ) -> TroubleshootingGuide:
     """
     Get existing troubleshooting tree or generate new guide via Claude API.
@@ -399,6 +633,7 @@ async def get_or_generate_troubleshooting(
         equipment_type: Type of equipment
         problem: Problem description
         context: Additional context
+        manufacturer: Optional manufacturer for filtering
 
     Returns:
         TroubleshootingGuide with steps and formatted text
@@ -410,13 +645,28 @@ async def get_or_generate_troubleshooting(
         ... )
         >>> print(guide["formatted_text"])
     """
-    # Check if tree exists
-    has_tree = check_tree_exists(equipment_type)
+    # Try to find matching tree in database
+    tree = await _find_best_matching_tree(equipment_type, problem, manufacturer)
 
-    if has_tree:
+    if tree and tree.get('tree_data'):
         logger.info(f"Found existing troubleshooting tree for {equipment_type}")
-        # TODO: Load and return tree from database
-        raise NotImplementedError("Tree loading not yet implemented")
+        # Convert stored tree to TroubleshootingGuide format
+        tree_data = tree['tree_data']
+        if isinstance(tree_data, str):
+            import json
+            tree_data = json.loads(tree_data)
+
+        steps = tree_data.get('steps', [])
+        formatted_text = _format_steps_for_telegram(steps, equipment_type, problem)
+
+        return TroubleshootingGuide(
+            equipment_type=equipment_type,
+            problem=problem,
+            steps=steps,
+            formatted_text=formatted_text,
+            can_save=False,  # Already saved
+            raw_response=str(tree_data)
+        )
 
     # No tree found - generate via Claude API
     logger.info(f"No tree found for {equipment_type} - using Claude fallback")
@@ -425,6 +675,23 @@ async def get_or_generate_troubleshooting(
         problem=problem,
         context=context
     )
+
+
+def _format_steps_for_telegram(steps: List[str], equipment_type: str, problem: str) -> str:
+    """Format troubleshooting steps for Telegram display."""
+    lines = [
+        f"*Troubleshooting: {_escape_telegram_markdown(equipment_type)}*",
+        f"Problem: {_escape_telegram_markdown(problem)}",
+        "",
+    ]
+
+    for i, step in enumerate(steps, 1):
+        lines.append(f"{i}. {_escape_telegram_markdown(step)}")
+
+    lines.append("")
+    lines.append("_From saved troubleshooting guide_")
+
+    return "\n".join(lines)
 
 
 # Synchronous wrapper for non-async contexts

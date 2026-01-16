@@ -20,8 +20,30 @@ Collision rate: ~1 in 65,536 for node_id hashing (acceptable for tree depth 10)
 
 import hashlib
 import time
+import asyncio
 from dataclasses import dataclass
 from typing import Tuple, Optional
+
+from rivet_pro.infra.observability import get_logger
+
+logger = get_logger(__name__)
+
+# Database connection (lazy loaded)
+_db_pool = None
+
+async def _get_db_pool():
+    """Get or create database connection pool for callback storage."""
+    global _db_pool
+    if _db_pool is None:
+        try:
+            from rivet_pro.infra.database import Database
+            _db_pool = Database()
+            await _db_pool.connect()
+            logger.info("Callback storage connected to database")
+        except Exception as e:
+            logger.warning(f"Database unavailable for callback storage, using in-memory fallback: {e}")
+            _db_pool = "fallback"
+    return _db_pool
 
 
 # Base62 character set (0-9, A-Z, a-z)
@@ -134,37 +156,80 @@ def _hash_node_id(node_id: str) -> str:
     return hash_bytes.hex()
 
 
-def _store_node_mapping(tree_id: int, node_hash: str, node_id: str):
-    """
-    Store node_hash -> node_id mapping in cache for collision detection.
+# In-memory cache for fallback and performance
+_memory_cache = {}
 
-    In production, this would use Redis or database. For MVP, we use in-memory
-    dict with LRU eviction (max 10,000 entries per tree).
+
+def _store_node_mapping_sync(tree_id: int, node_hash: str, node_id: str):
+    """
+    Synchronous wrapper for storing node mapping.
+    Uses in-memory cache immediately and schedules DB write.
 
     Args:
         tree_id: Tree identifier
         node_hash: 4-character hash
         node_id: Full node identifier
     """
-    # TODO: Implement persistent storage (Redis/PostgreSQL)
-    # For now, store in module-level dict
-    if not hasattr(_store_node_mapping, 'cache'):
-        _store_node_mapping.cache = {}
-
+    # Always store in memory for immediate access
     key = f"{tree_id}:{node_hash}"
-    if key in _store_node_mapping.cache:
+
+    if key in _memory_cache:
         # Collision detection
-        if _store_node_mapping.cache[key] != node_id:
-            # Log collision (in production, this should alert monitoring)
-            print(f"[WARNING] Hash collision detected: {node_hash} maps to both "
-                  f"'{_store_node_mapping.cache[key]}' and '{node_id}'")
+        if _memory_cache[key] != node_id:
+            logger.warning(f"Hash collision detected: {node_hash} maps to both "
+                          f"'{_memory_cache[key]}' and '{node_id}'")
 
-    _store_node_mapping.cache[key] = node_id
+    _memory_cache[key] = node_id
+
+    # Schedule async DB write (fire and forget)
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.create_task(_store_node_mapping_async(tree_id, node_hash, node_id))
+    except RuntimeError:
+        # No event loop, skip DB write (CLI usage)
+        pass
 
 
-def _retrieve_node_mapping(tree_id: int, node_hash: str) -> Optional[str]:
+async def _store_node_mapping_async(tree_id: int, node_hash: str, node_id: str):
     """
-    Retrieve original node_id from hash.
+    Store node_hash -> node_id mapping in PostgreSQL.
+
+    Uses upsert to handle updates and automatic 24-hour TTL.
+    Falls back to in-memory storage if DB unavailable.
+
+    Args:
+        tree_id: Tree identifier
+        node_hash: 4-character hash
+        node_id: Full node identifier
+    """
+    try:
+        db = await _get_db_pool()
+        if db == "fallback":
+            return  # Already stored in memory
+
+        await db.execute(
+            """
+            INSERT INTO node_callback_mappings (tree_id, node_hash, node_id, created_at, expires_at)
+            VALUES ($1, $2, $3, NOW(), NOW() + INTERVAL '24 hours')
+            ON CONFLICT (tree_id, node_hash)
+            DO UPDATE SET
+                node_id = EXCLUDED.node_id,
+                created_at = NOW(),
+                expires_at = NOW() + INTERVAL '24 hours'
+            """,
+            tree_id, node_hash, node_id
+        )
+        logger.debug(f"Stored callback mapping: tree={tree_id}, hash={node_hash}")
+    except Exception as e:
+        logger.warning(f"Failed to store callback mapping in DB: {e}")
+        # In-memory fallback already done
+
+
+def _retrieve_node_mapping_sync(tree_id: int, node_hash: str) -> Optional[str]:
+    """
+    Synchronous wrapper for retrieving node mapping.
+    Checks in-memory cache first, then schedules DB lookup.
 
     Args:
         tree_id: Tree identifier
@@ -173,11 +238,91 @@ def _retrieve_node_mapping(tree_id: int, node_hash: str) -> Optional[str]:
     Returns:
         Original node_id or None if not found
     """
-    if not hasattr(_store_node_mapping, 'cache'):
-        return None
-
+    # Check memory cache first (fast path)
     key = f"{tree_id}:{node_hash}"
-    return _store_node_mapping.cache.get(key)
+    if key in _memory_cache:
+        return _memory_cache[key]
+
+    # For sync context, can't await DB - return None
+    # Caller should use async version for full lookup
+    return None
+
+
+async def _retrieve_node_mapping_async(tree_id: int, node_hash: str) -> Optional[str]:
+    """
+    Retrieve original node_id from PostgreSQL or cache.
+
+    Args:
+        tree_id: Tree identifier
+        node_hash: 4-character hash
+
+    Returns:
+        Original node_id or None if not found
+    """
+    # Check memory cache first (fast path)
+    key = f"{tree_id}:{node_hash}"
+    if key in _memory_cache:
+        return _memory_cache[key]
+
+    # Query database
+    try:
+        db = await _get_db_pool()
+        if db == "fallback":
+            return None
+
+        result = await db.fetchrow(
+            """
+            SELECT node_id FROM node_callback_mappings
+            WHERE tree_id = $1 AND node_hash = $2 AND expires_at > NOW()
+            """,
+            tree_id, node_hash
+        )
+
+        if result:
+            node_id = result['node_id']
+            # Cache for future lookups
+            _memory_cache[key] = node_id
+            return node_id
+    except Exception as e:
+        logger.warning(f"Failed to retrieve callback mapping from DB: {e}")
+
+    return None
+
+
+async def cleanup_expired_mappings() -> int:
+    """
+    Clean up expired callback mappings from the database.
+    Call this periodically (e.g., daily) to prevent table bloat.
+
+    Returns:
+        Number of deleted mappings
+    """
+    try:
+        db = await _get_db_pool()
+        if db == "fallback":
+            return 0
+
+        result = await db.execute(
+            "DELETE FROM node_callback_mappings WHERE expires_at < NOW()"
+        )
+        # Parse DELETE count from result
+        count = int(result.split()[-1]) if result else 0
+        logger.info(f"Cleaned up {count} expired callback mappings")
+        return count
+    except Exception as e:
+        logger.warning(f"Failed to cleanup expired mappings: {e}")
+        return 0
+
+
+# Backwards compatibility aliases
+def _store_node_mapping(tree_id: int, node_hash: str, node_id: str):
+    """Store mapping (sync wrapper for backwards compatibility)."""
+    _store_node_mapping_sync(tree_id, node_hash, node_id)
+
+
+def _retrieve_node_mapping(tree_id: int, node_hash: str) -> Optional[str]:
+    """Retrieve mapping (sync wrapper for backwards compatibility)."""
+    return _retrieve_node_mapping_sync(tree_id, node_hash)
 
 
 def encode_callback(tree_id: int, node_id: str, action: str) -> str:
