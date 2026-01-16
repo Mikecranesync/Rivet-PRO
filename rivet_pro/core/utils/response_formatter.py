@@ -442,7 +442,7 @@ def format_equipment_response(
         # Manual not found - check for best candidate
         best_candidate = search_report.best_candidate if search_report else None
 
-        if best_candidate and best_candidate.confidence >= 0.7:
+        if best_candidate and best_candidate.confidence >= 0.5:
             # We have a good candidate - ask user for validation
             response += "📖 <b>Possible Manual Found</b>\n\n"
 
