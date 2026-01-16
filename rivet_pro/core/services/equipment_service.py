@@ -413,20 +413,24 @@ class EquipmentService:
                 name_parts.append(model_number)
             asset_name = " ".join(name_parts)
 
+            # Get next ID (Atlas CMMS doesn't have auto-increment)
+            max_id_result = await atlas_db.fetchval("SELECT COALESCE(MAX(id), 0) + 1 FROM asset")
+            next_id = max_id_result or 1
+
             # Insert into Atlas CMMS asset table
             await atlas_db.execute(
                 """
                 INSERT INTO asset (
                     id, name, model, serial_number, area, bar_code,
-                    company_id, archived, has_children,
+                    company_id, archived, is_demo,
                     created_at, updated_at
                 ) VALUES (
-                    nextval('asset_id_seq'),
-                    $1, $2, $3, $4, $5,
+                    $1, $2, $3, $4, $5, $6,
                     46, false, false,
                     NOW(), NOW()
                 )
                 """,
+                next_id,                             # id
                 asset_name,                          # name
                 model_number,                        # model
                 serial_number,                       # serial_number
