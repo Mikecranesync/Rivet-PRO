@@ -185,8 +185,8 @@ class SMEChatService:
         if session.status != SessionStatus.ACTIVE:
             raise ValueError(f"Session not active: {session_id} (status={session.status})")
 
-        # Get personality
-        personality = get_personality(session.sme_vendor.value)
+        # Get personality (sme_vendor is already a string due to use_enum_values=True)
+        personality = get_personality(session.sme_vendor)
 
         # Store user message
         await self._add_message(
@@ -201,7 +201,7 @@ class SMEChatService:
         # Get RAG context
         atoms, formatted_context = await self.rag_service.get_relevant_context(
             query=user_message,
-            manufacturer=session.sme_vendor.value,
+            manufacturer=session.sme_vendor,  # Already a string due to use_enum_values=True
             conversation_history=history,
             equipment_context=session.equipment_context,
             limit=5
