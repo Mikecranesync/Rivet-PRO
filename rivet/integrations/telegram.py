@@ -1021,31 +1021,159 @@ If the problem persists, contact support: @rivet_support
 
 
 # ============================================================================
+# SME CHAT MESSAGE HANDLING
+# ============================================================================
+
+
+async def handle_sme_chat_message(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    text: str
+) -> None:
+    """
+    Handle messages when user has an active SME chat session.
+
+    Flow:
+    1. Load session from user_data
+    2. Send typing indicator
+    3. Call SMEChatService.chat()
+    4. Format response with SME badge, answer, warnings, sources
+    5. Send formatted response
+    6. Handle errors with retry guidance
+    """
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    session_id_str = context.user_data.get('sme_session_id')
+    sme_name = context.user_data.get('sme_name', 'Expert')
+    sme_vendor = context.user_data.get('sme_vendor', 'generic')
+
+    logger.info(f"[SME Chat] Message from user {user_id}, session={session_id_str[:8]}...")
+
+    # Send typing indicator
+    await update.message.chat.send_action(action="typing")
+
+    # Track consecutive errors for this session
+    error_count = context.user_data.get('sme_error_count', 0)
+
+    try:
+        from uuid import UUID
+        sme_service = get_sme_chat_service()
+
+        # Call SMEChatService.chat()
+        response = await sme_service.chat(
+            session_id=UUID(session_id_str),
+            user_message=text
+        )
+
+        # Reset error count on success
+        context.user_data['sme_error_count'] = 0
+
+        # Format and send response
+        formatted = format_sme_chat_response(response, sme_name, sme_vendor)
+        await update.message.reply_text(formatted, parse_mode="Markdown")
+
+        logger.info(
+            f"[SME Chat] Response sent: confidence={response.confidence:.0%}, "
+            f"sources={len(response.sources)}, cost=${response.cost_usd:.4f}"
+        )
+
+    except Exception as e:
+        logger.error(f"[SME Chat] Error processing message: {e}", exc_info=True)
+
+        # Increment error count
+        error_count += 1
+        context.user_data['sme_error_count'] = error_count
+
+        # Different error messages based on consecutive failures
+        if error_count >= 3:
+            error_msg = (
+                f"I'm having persistent issues processing your questions.\n\n"
+                f"Please try:\n"
+                f"1. Type `/endchat` to end this session\n"
+                f"2. Start fresh with `/chat {sme_vendor}`\n\n"
+                f"_If the problem continues, contact @rivet_support_"
+            )
+        else:
+            error_msg = (
+                f"Sorry, I had trouble processing that. Let me try again.\n\n"
+                f"_Please rephrase your question, or type `/endchat` to end the session._"
+            )
+
+        await update.message.reply_text(error_msg, parse_mode="Markdown")
+
+
+def format_sme_chat_response(
+    response,  # SMEChatResponse
+    sme_name: str,
+    sme_vendor: str
+) -> str:
+    """
+    Format SME chat response for Telegram display.
+
+    Includes:
+    - SME name badge
+    - Main answer
+    - Safety warnings (if any)
+    - Sources (if any)
+    - Confidence indicator
+    """
+    lines = []
+
+    # SME name badge with confidence
+    confidence_emoji = "🟢" if response.confidence >= 0.85 else "🟡" if response.confidence >= 0.70 else "🟠"
+    confidence_label = response.confidence_level.value.upper() if hasattr(response.confidence_level, 'value') else str(response.confidence_level).upper()
+    lines.append(f"**{sme_name}** {confidence_emoji} _{confidence_label} confidence_\n")
+
+    # Main response
+    lines.append(response.response)
+
+    # Safety warnings
+    if response.safety_warnings:
+        lines.append("\n\n⚠️ **Safety Warnings:**")
+        for warning in response.safety_warnings:
+            lines.append(f"  {warning}")
+
+    # Sources (limit to 3 for readability)
+    if response.sources:
+        lines.append("\n\n📚 **Sources:**")
+        for source in response.sources[:3]:
+            # Truncate long source strings
+            source_display = source[:80] + "..." if len(source) > 80 else source
+            lines.append(f"• {source_display}")
+
+    # Footer with subtle metadata
+    lines.append(f"\n_💬 Chatting with {sme_name} | /endchat to end_")
+
+    return "\n".join(lines)
+
+
+# ============================================================================
 # MESSAGE HANDLER - TROUBLESHOOTING WORKFLOW
 # ============================================================================
 
 
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    Handle text messages - Conversation flows OR troubleshooting queries.
+    Handle text messages - Conversation flows, SME chat, OR troubleshooting queries.
 
     Flow:
-    1. Check if user is in active conversation flow (equipment/WO creation)
-    2. If yes, route to appropriate handler
-    3. If no, call troubleshoot() workflow
-    4. Format response by route (KB/SME/Research/General)
-    5. Send answer with metadata
-
-    TODO: Integrate harvest block from Harvester (Round 7)
-    - Query preprocessing
-    - Response formatting by route
-    - Safety warning display
+    1. Check if user has active SME chat session -> route to SME chat
+    2. Check if user is in active conversation flow (equipment/WO creation)
+    3. If yes, route to appropriate handler
+    4. If no, call troubleshoot() workflow
+    5. Format response by route (KB/SME/Research/General)
+    6. Send answer with metadata
     """
     user_id = update.effective_user.id
     username = update.effective_user.username or "User"
     text = update.message.text
 
-    # Check for active conversation flows first
+    # Check for active SME chat session FIRST (highest priority)
+    if context.user_data.get('sme_chat_active'):
+        await handle_sme_chat_message(update, context, text)
+        return
+
+    # Check for active conversation flows
     if 'equip_create_state' in context.user_data:
         await handle_equipment_creation_flow(update, context, text)
         return
