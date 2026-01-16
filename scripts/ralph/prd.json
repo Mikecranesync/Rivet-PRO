@@ -15,8 +15,8 @@
         "Can be triggered manually or via scheduler"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Commit 9520678 - AnalyticsService with aggregate_daily_stats(), get_today_stats(), format_stats_message()"
     },
     {
       "id": "ANALYTICS-002",
@@ -30,8 +30,8 @@
         "Returns actionable insights (e.g., 'Siemens coverage: 85%')"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Commit 9520678 - get_kb_health() returns KBHealthMetrics dataclass"
     },
     {
       "id": "ANALYTICS-003",
@@ -45,8 +45,8 @@
         "Tracks confidence level distribution (HIGH/MEDIUM/LOW)"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Commit 9520678 - get_sme_chat_analytics() returns SMEChatMetrics dataclass"
     },
     {
       "id": "ANALYTICS-004",
@@ -75,8 +75,8 @@
         "Can be triggered via /report command or scheduler"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Commit 9520678 - generate_weekly_report() with trend comparison"
     },
     {
       "id": "ANALYTICS-006",
