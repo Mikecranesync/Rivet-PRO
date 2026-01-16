@@ -15,8 +15,8 @@
         "Bot starts and works correctly with config value"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Commit d17ba61 - Extracted to settings.telegram_admin_chat_id"
     },
     {
       "id": "DEBT-002",

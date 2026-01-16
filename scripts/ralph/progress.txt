@@ -224,3 +224,24 @@ All 10 stories implemented and passing:
 
 Total: 50 tests passing
 ---
+
+=== Technical Debt Cleanup Sprint ===
+Started: Thu, Jan 16, 2026
+Branch: ralph/tech-debt-cleanup
+Stories: DEBT-001 through DEBT-004
+---
+
+## 2026-01-16 - DEBT-001
+- Extracted hardcoded chat ID (8445149012) to settings.telegram_admin_chat_id
+- Added telegram_admin_chat_id to rivet_pro/config/settings.py with default value
+- Updated 8 files to use config instead of hardcoded value
+- Added TELEGRAM_ADMIN_CHAT_ID to .env.example for documentation
+- Files using fallback to env var for robustness when settings unavailable
+- Files changed: settings.py, bot.py, agent_executor.py, alerting_service.py, equipment_service.py, resilient_telegram_manager.py, database.py, test_ocr_flow.py, commands.py, .env.example
+- Commit: d17ba61
+
+**Learnings for future iterations:**
+- Use try/except ImportError pattern for config fallbacks
+- Keep hardcoded defaults in settings.py as single source of truth
+- Update .env.example when adding new settings
+---
