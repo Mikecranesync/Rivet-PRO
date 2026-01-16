@@ -118,36 +118,42 @@ class AgentExecutor:
         return self._agents[vendor]
 
     def _create_generic_agent(self, specialty: str):
-        """Create a generic agent wrapper"""
-        from rivet_pro.core.services.llm_manager import get_llm_manager
+        """Create a generic agent wrapper that uses existing SME service"""
 
         class GenericAgentWrapper:
             def __init__(self, specialty: str):
                 self.specialty = specialty
-                self.llm = get_llm_manager()
 
             async def handle(self, query: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
-                prompt = f"""You are an industrial automation expert specializing in {self.specialty}.
+                """
+                Use the existing SME service which has full LLMRouter failover.
 
-Answer the following question:
-{query}
+                The SME service (route_to_sme) already handles:
+                - Vendor detection from query
+                - Routing to vendor-specific prompts
+                - LLMRouter with Groq -> OpenAI -> Claude failover
+                - Cost tracking and response formatting
+                """
+                from rivet_pro.core.services.sme_service import route_to_sme
 
-Provide:
-1. A clear, concise answer
-2. Any safety warnings
-3. Suggested next steps
-
-Format your response as a helpful guide for a field technician."""
-
-                response, metadata = self.llm.generate(prompt, max_tokens=1000)
+                # Route to SME (uses LLMRouter internally)
+                result = await route_to_sme(
+                    query=query,
+                    vendor=self.specialty if self.specialty != "generic" else None,
+                    ocr_result=context.get("ocr_result") if context else None
+                )
 
                 return {
-                    "answer": response,
-                    "confidence": 0.7,
-                    "citations": [],
+                    "answer": result.get("answer", ""),
+                    "confidence": result.get("confidence", 0.7),
+                    "citations": result.get("sources", []),
                     "suggested_actions": [],
-                    "warnings": [],
-                    "metadata": metadata
+                    "warnings": result.get("safety_warnings", []),
+                    "metadata": {
+                        "llm_calls": result.get("llm_calls", 1),
+                        "cost_usd": result.get("cost_usd", 0),
+                        "provider": "sme_service"
+                    }
                 }
 
         return GenericAgentWrapper(specialty)

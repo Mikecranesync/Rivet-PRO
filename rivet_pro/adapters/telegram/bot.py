@@ -588,37 +588,50 @@ class TelegramBot:
 
     async def _handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
-        Handle text messages with SME routing.
+        Handle text messages with Pipeline Integration.
+
+        Uses Phase 3 pipeline components:
+        - WorkflowStateMachine for state tracking
+        - AgentExecutor with vendor routing
+        - SME service with LLMRouter failover
         """
-        from rivet_pro.core.services import route_to_sme
+        from rivet_pro.core.services.pipeline_integration import get_pipeline
 
         user_id = str(update.effective_user.id)
         user_message = update.message.text
 
         # Send initial message
-        msg = await update.message.reply_text("🤔 Analyzing your question...")
+        msg = await update.message.reply_text("Analyzing your question...")
 
         try:
-            # Route to appropriate SME
-            await msg.edit_text("🤔 Analyzing your question...\n⏳ Consulting expert...")
+            # Route through pipeline (tracks state, uses AgentExecutor with failover)
+            await msg.edit_text("Analyzing your question...\nConsulting expert...")
 
-            response = await route_to_sme(
-                user_message=user_message,
-                user_id=user_id
+            pipeline = get_pipeline()
+            result = await pipeline.process_text_message(
+                user_id=user_id,
+                query=user_message
             )
 
-            # Format response
-            await msg.edit_text(response)
+            # Format response with metadata
+            response_text = result.answer
+            if result.confidence < 0.5:
+                response_text += "\n\n_Note: Low confidence response. Consider asking a more specific question._"
+
+            await msg.edit_text(response_text, parse_mode="Markdown")
 
             logger.info(
-                f"SME routing complete | user_id={user_id} | "
-                f"question_length={len(user_message)}"
+                f"Pipeline complete | user_id={user_id} | "
+                f"pipeline_id={result.pipeline_id} | "
+                f"vendor={result.vendor} | "
+                f"confidence={result.confidence:.2f} | "
+                f"time={result.execution_time_ms:.0f}ms"
             )
 
         except Exception as e:
             logger.error(f"Error in text handler: {e}", exc_info=True)
             await msg.edit_text(
-                "❌ I had trouble understanding your question. "
+                "I had trouble understanding your question. "
                 "Try asking about a specific equipment model or issue."
             )
 
@@ -1082,7 +1095,61 @@ class TelegramBot:
 
         except Exception as e:
             logger.error(f"Error in /status command: {e}", exc_info=True)
-            await update.message.reply_text("❌ An error occurred. Please try again.")
+            await update.message.reply_text("An error occurred. Please try again.")
+
+    async def pipeline_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Handle /pipeline command.
+        Show pipeline execution statistics and active workflows.
+        """
+        try:
+            from rivet_pro.core.services.pipeline_integration import get_pipeline
+            from rivet_pro.core.services.workflow_state_machine import get_state_machine
+
+            pipeline = get_pipeline()
+            state_machine = get_state_machine()
+
+            # Get stats
+            stats = pipeline.get_stats()
+            active_workflows = state_machine.get_active_workflows()
+
+            # Get recent history
+            recent_count = 0
+            try:
+                result = await self.db.fetchval(
+                    """
+                    SELECT COUNT(*) FROM pipeline_execution_history
+                    WHERE created_at > NOW() - INTERVAL '24 hours'
+                    """
+                )
+                recent_count = result or 0
+            except Exception:
+                pass  # Table might not exist yet
+
+            response = "*Pipeline Status*\n\n"
+            response += f"*Active Workflows:* {stats['active_workflows']}\n"
+            response += f"*Last 24h Executions:* {recent_count}\n\n"
+
+            if active_workflows:
+                response += "*Active Workflows:*\n"
+                for wf in active_workflows[:5]:  # Limit to 5
+                    wf_type = wf.get('workflow_type', 'unknown')
+                    state = wf.get('current_state', 'unknown')
+                    response += f"  - {wf_type}: {state}\n"
+            else:
+                response += "_No active workflows_\n"
+
+            # Show state distribution if any
+            if stats.get('states'):
+                response += "\n*States:*\n"
+                for state, count in stats['states'].items():
+                    response += f"  - {state}: {count}\n"
+
+            await update.message.reply_text(response, parse_mode="Markdown")
+
+        except Exception as e:
+            logger.error(f"Error in /pipeline command: {e}", exc_info=True)
+            await update.message.reply_text("Pipeline status unavailable. Database may be initializing.")
 
     async def kb_worker_status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
@@ -2248,6 +2315,7 @@ Send a 📷 photo of any equipment nameplate and I'll identify it and find the m
         self.application.add_handler(CommandHandler("stats", self.stats_command))
         self.application.add_handler(CommandHandler("tier", self.tier_command))
         self.application.add_handler(CommandHandler("status", self.status_command))
+        self.application.add_handler(CommandHandler("pipeline", self.pipeline_command))  # Phase 3 Pipeline
         self.application.add_handler(CommandHandler("kb_stats", self.kb_stats_command))
         self.application.add_handler(CommandHandler("kb_worker_status", self.kb_worker_status_command))  # AUTO-KB-005
         self.application.add_handler(CommandHandler("upgrade", self.upgrade_command))
