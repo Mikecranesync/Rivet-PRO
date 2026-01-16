@@ -419,6 +419,34 @@ class TelegramBot:
                     confidence
                 )
                 logger.info(f"Logged interaction | interaction_id={interaction_id} | user_id={user_id}")
+            except Exception as e:
+                logger.warning(f"Failed to log interaction: {e}")
+                # Continue anyway - don't break user experience
+
+            # Create or match equipment in CMMS
+            equipment_id = None
+            equipment_number = None
+            is_new = False
+
+            try:
+                equipment_id, equipment_number, is_new = await self.equipment_service.match_or_create_equipment(
+                    manufacturer=result.manufacturer,
+                    model_number=result.model_number,
+                    serial_number=result.serial_number,
+                    equipment_type=getattr(result, 'equipment_type', None),
+                    location=photo_caption,  # From photo caption (e.g., "Stardust Racers")
+                    user_id=f"telegram_{user_id}"
+                )
+                trace.add_step("equipment_match", "success", {
+                    "action": "created" if is_new else "matched",
+                    "equipment_id": str(equipment_id) if equipment_id else None,
+                    "equipment_number": equipment_number,
+                    "is_new": is_new
+                })
+                logger.info(
+                    f"Equipment {'created' if is_new else 'matched'} | "
+                    f"equipment_number={equipment_number} | user_id={user_id}"
+                )
 
                 # Update interaction with equipment_id (CRITICAL-LOGGING-001)
                 if interaction_id and equipment_id:
