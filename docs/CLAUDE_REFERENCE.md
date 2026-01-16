@@ -2,7 +2,7 @@
 
 **Purpose:** Complete technical reference for any AI agent to understand and operate the RIVET Pro system.
 
-**Last Updated:** January 16, 2026 (Dual-Write Sync Added)
+**Last Updated:** January 16, 2026
 
 ---
 
@@ -120,11 +120,6 @@ journalctl -u rivet-bot -f  # Follow logs
 | `infra_redis_1` | `redis:7` | 6379 | Redis cache |
 | `infra_ollama_1` | `ollama/ollama:latest` | 11434 | Local LLM (stopped) |
 
-**Atlas CMMS Web UI Access:**
-- **URL:** http://72.60.175.144:3000
-- **Login:** admin@example.com / admin
-- **Assets:** Navigate to Assets to see equipment synced from Telegram bot
-
 **Docker Commands:**
 ```bash
 docker ps -a                    # List all containers
@@ -139,70 +134,21 @@ docker exec -it atlas-cmms sh   # Shell into container
 
 ### 3.1 Primary Database: Neon PostgreSQL
 
-**IMPORTANT: Dual-Database Architecture**
-
-RIVET Pro uses TWO databases on the same Neon project:
-
-| Database | Purpose | Connection Variable |
-|----------|---------|---------------------|
-| `neondb` | RIVET Pro bot (equipment, users, work orders) | `DATABASE_URL` |
-| `atlas_cmms` | Atlas CMMS web UI (asset table) | `ATLAS_DATABASE_URL` |
-
-**Dual-Write Sync:** Equipment created via Telegram is automatically written to BOTH databases, making it visible in both the bot AND the Atlas CMMS web UI.
-
-**Connection Strings:**
-```bash
-# RIVET Pro Bot Database
-DATABASE_URL=postgresql://neondb_owner:npg_c3UNa4KOlCeL@ep-purple-hall-ahimeyn0-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require
-
-# Atlas CMMS Web UI Database
-ATLAS_DATABASE_URL=postgresql://neondb_owner:npg_c3UNa4KOlCeL@ep-purple-hall-ahimeyn0-pooler.c-3.us-east-1.aws.neon.tech/atlas_cmms?sslmode=require
+**Connection String:**
+```
+postgresql://neondb_owner:npg_c3UNa4KOlCeL@ep-purple-hall-ahimeyn0-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require
 ```
 
 **Quick Query from VPS:**
 ```bash
-# Query neondb (bot data)
 ssh root@72.60.175.144 "PGPASSWORD='npg_c3UNa4KOlCeL' psql 'postgresql://neondb_owner@ep-purple-hall-ahimeyn0-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require' -c \"YOUR_QUERY\""
-
-# Query atlas_cmms (web UI data)
-ssh root@72.60.175.144 "PGPASSWORD='npg_c3UNa4KOlCeL' psql 'postgresql://neondb_owner@ep-purple-hall-ahimeyn0-pooler.c-3.us-east-1.aws.neon.tech/atlas_cmms?sslmode=require' -c \"YOUR_QUERY\""
 ```
 
 **Neon Console:** https://console.neon.tech
 - Project ID: `ep-purple-hall-ahimeyn0`
 - API Key: `napi_hgqhaj45dryk5t509877pkgkkywszz2hatvvbwvdlg4vp5we6m3l19qs50l08ggf`
 
-### 3.2 Dual-Write Sync (Equipment → Atlas CMMS)
-
-When equipment is created via Telegram photo OCR, it's written to:
-1. `neondb.cmms_equipment` (primary)
-2. `atlas_cmms.asset` (synced for web UI visibility)
-
-**Field Mapping:**
-
-| RIVET Pro (cmms_equipment) | Atlas CMMS (asset) | Example |
-|---|---|---|
-| manufacturer + model_number | name | "Siemens G120C" |
-| model_number | model | "G120C" |
-| serial_number | serial_number | "SR123456" |
-| location (from photo caption) | area | "Stardust Racers" |
-| equipment_number | bar_code | "EQ-2026-000044" |
-| - | company_id | 46 (hardcoded) |
-
-**Implementation:** `rivet_pro/core/services/equipment_service.py` → `_sync_to_atlas_cmms()`
-
-**Verify Sync:**
-```sql
--- Check neondb
-SELECT equipment_number, location FROM cmms_equipment ORDER BY created_at DESC LIMIT 5;
-
--- Check atlas_cmms (should match)
-SELECT bar_code, area FROM asset WHERE bar_code LIKE 'EQ-%' ORDER BY id DESC LIMIT 5;
-```
-
-### 3.3 Key Tables
-
-**neondb (RIVET Pro Bot):**
+### 3.2 Key Tables
 
 | Table | Purpose |
 |-------|---------|
@@ -218,16 +164,7 @@ SELECT bar_code, area FROM asset WHERE bar_code LIKE 'EQ-%' ORDER BY id DESC LIM
 | `rivet_usage_log` | Usage analytics |
 | `enrichment_queue` | Background enrichment jobs |
 
-**atlas_cmms (Web UI):**
-
-| Table | Purpose |
-|-------|---------|
-| `asset` | Equipment (synced from cmms_equipment) |
-| `work_order` | Work orders (Atlas native) |
-| `company` | Company (id=46 for RIVET) |
-| `own_user` | Web UI users |
-
-### 3.4 Common Queries
+### 3.3 Common Queries
 
 **Check recent equipment:**
 ```sql
@@ -266,7 +203,7 @@ WHERE project_id = 1
 ORDER BY priority;
 ```
 
-### 3.5 Failover Databases
+### 3.4 Failover Databases
 
 | Provider | Connection | Status |
 |----------|------------|--------|
