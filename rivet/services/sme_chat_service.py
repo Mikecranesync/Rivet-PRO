@@ -11,6 +11,7 @@ Uses:
 - Database for session/message persistence
 """
 
+import json
 import logging
 import re
 from typing import Optional, Dict, Any, List
@@ -114,9 +115,11 @@ class SMEChatService:
         system_prompt = build_system_prompt(personality, equipment_context)
 
         # Create session record
+        # Note: asyncpg requires JSONB to be passed as a JSON string
+        equipment_json = json.dumps(equipment_context) if equipment_context else None
         query = """
             INSERT INTO sme_chat_sessions (telegram_chat_id, sme_vendor, status, equipment_context)
-            VALUES ($1, $2, 'active', $3)
+            VALUES ($1, $2, 'active', $3::jsonb)
             RETURNING session_id, telegram_chat_id, sme_vendor, status, equipment_context,
                       created_at, last_message_at, closed_at
         """
@@ -124,19 +127,10 @@ class SMEChatService:
             query,
             telegram_chat_id,
             sme_vendor.lower(),
-            equipment_context
+            equipment_json
         )
 
-        session = SMEChatSession(
-            session_id=result['session_id'],
-            telegram_chat_id=result['telegram_chat_id'],
-            sme_vendor=SMEVendor(result['sme_vendor']),
-            status=SessionStatus(result['status']),
-            equipment_context=result['equipment_context'],
-            created_at=result['created_at'],
-            last_message_at=result['last_message_at'],
-            closed_at=result['closed_at'],
-        )
+        session = self._result_to_session(result)
 
         # Add system message with personality
         await self._add_message(
@@ -306,16 +300,7 @@ class SMEChatService:
         if not result:
             return None
 
-        return SMEChatSession(
-            session_id=result['session_id'],
-            telegram_chat_id=result['telegram_chat_id'],
-            sme_vendor=SMEVendor(result['sme_vendor']),
-            status=SessionStatus(result['status']),
-            equipment_context=result['equipment_context'],
-            created_at=result['created_at'],
-            last_message_at=result['last_message_at'],
-            closed_at=result['closed_at'],
-        )
+        return self._result_to_session(result)
 
     async def get_active_session(self, telegram_chat_id: int) -> Optional[SMEChatSession]:
         """Get active session for a chat ID, if any."""
@@ -331,12 +316,21 @@ class SMEChatService:
         if not result:
             return None
 
+        return self._result_to_session(result)
+
+    def _result_to_session(self, result: Dict[str, Any]) -> SMEChatSession:
+        """Convert database result to SMEChatSession model."""
+        # Parse equipment_context if returned as string (asyncpg JSONB behavior varies)
+        eq_context = result['equipment_context']
+        if isinstance(eq_context, str):
+            eq_context = json.loads(eq_context)
+
         return SMEChatSession(
             session_id=result['session_id'],
             telegram_chat_id=result['telegram_chat_id'],
             sme_vendor=SMEVendor(result['sme_vendor']),
             status=SessionStatus(result['status']),
-            equipment_context=result['equipment_context'],
+            equipment_context=eq_context,
             created_at=result['created_at'],
             last_message_at=result['last_message_at'],
             closed_at=result['closed_at'],
