@@ -209,27 +209,25 @@ class SMEChatService:
 
         # Calculate RAG confidence
         rag_confidence = calculate_rag_confidence(atoms)
+        confidence_level = self._get_confidence_level(rag_confidence)
 
-        # Build full prompt
-        full_prompt = self._build_chat_prompt(
+        # Route based on confidence level
+        llm_response = await self._route_by_confidence(
+            confidence_level=confidence_level,
+            rag_confidence=rag_confidence,
+            atoms=atoms,
+            formatted_context=formatted_context,
             personality=personality,
             user_message=user_message,
-            rag_context=formatted_context,
             conversation_history=history,
             equipment_context=session.equipment_context
         )
-
-        # Generate LLM response
-        llm_response = await self._generate_response(full_prompt)
 
         # Extract safety warnings
         safety_warnings = self._extract_safety_warnings(llm_response.text)
 
         # Extract sources from atoms
         sources = extract_sources_from_atoms(atoms)
-
-        # Determine confidence level
-        confidence_level = self._get_confidence_level(rag_confidence)
 
         # Get atom IDs for storage
         atom_ids = [atom['atom_id'] for atom in atoms if atom.get('atom_id')]
@@ -508,6 +506,216 @@ class SMEChatService:
             return ConfidenceLevel.MEDIUM
         else:
             return ConfidenceLevel.LOW
+
+    # ===== Confidence-Based Routing =====
+
+    async def _route_by_confidence(
+        self,
+        confidence_level: ConfidenceLevel,
+        rag_confidence: float,
+        atoms: List[Dict[str, Any]],
+        formatted_context: str,
+        personality: SMEPersonality,
+        user_message: str,
+        conversation_history: List[Dict[str, str]],
+        equipment_context: Optional[Dict[str, Any]] = None
+    ) -> LLMResponse:
+        """
+        Route chat query based on RAG confidence level.
+
+        - HIGH (>=0.85): Direct KB answer with SME voice styling
+        - MEDIUM (0.70-0.85): Full SME synthesis from RAG context
+        - LOW (<0.70): Generate clarifying questions
+
+        Args:
+            confidence_level: Calculated confidence level
+            rag_confidence: Raw confidence score
+            atoms: Retrieved knowledge atoms
+            formatted_context: Pre-formatted RAG context
+            personality: SME personality
+            user_message: User's question
+            conversation_history: Recent conversation
+            equipment_context: Optional equipment context
+
+        Returns:
+            LLMResponse with appropriate response based on confidence
+        """
+        logger.info(
+            f"[SME Chat] Routing: confidence={rag_confidence:.0%}, "
+            f"level={confidence_level.value}, atoms={len(atoms)}"
+        )
+
+        if confidence_level == ConfidenceLevel.HIGH:
+            return await self._format_direct_kb_answer(
+                atoms=atoms,
+                personality=personality,
+                user_message=user_message
+            )
+        elif confidence_level == ConfidenceLevel.MEDIUM:
+            return await self._generate_sme_synthesis(
+                personality=personality,
+                user_message=user_message,
+                rag_context=formatted_context,
+                conversation_history=conversation_history,
+                equipment_context=equipment_context
+            )
+        else:  # LOW confidence
+            return await self._generate_clarifying_questions(
+                personality=personality,
+                user_message=user_message,
+                atoms=atoms,
+                equipment_context=equipment_context
+            )
+
+    async def _format_direct_kb_answer(
+        self,
+        atoms: List[Dict[str, Any]],
+        personality: SMEPersonality,
+        user_message: str
+    ) -> LLMResponse:
+        """
+        Format direct KB answer with minimal LLM processing.
+
+        Used for HIGH confidence (>=0.85) when RAG has excellent match.
+        Combines top atom content with SME voice styling.
+        """
+        if not atoms:
+            # Fallback to synthesis if no atoms
+            return await self._generate_response(
+                f"As {personality.name}, briefly answer: {user_message}"
+            )
+
+        # Get top atom content
+        top_atom = atoms[0]
+        atom_content = top_atom.get('content', '')[:1500]
+        atom_title = top_atom.get('title', 'Knowledge Base')
+
+        # Build minimal prompt for voice styling
+        prompt = f"""You are {personality.name}, {personality.tagline}.
+
+Add minimal SME voice styling to this knowledge base answer. Keep it brief and technical.
+DO NOT add new information - just style the existing content with your voice.
+
+Knowledge Base Content ({atom_title}):
+{atom_content}
+
+User Question: {user_message}
+
+Respond as {personality.name} with ONE of your thinking phrases, then the answer, then ONE closing phrase.
+Keep it concise - the KB content is authoritative."""
+
+        try:
+            response = await self.llm_router.generate(
+                prompt=prompt,
+                capability=ModelCapability.SIMPLE,  # Use cheaper model for styling
+                max_tokens=800,
+                temperature=0.3  # Low temperature for consistency
+            )
+            logger.info(f"[SME Chat] Direct KB answer: {len(response.text)} chars")
+            return response
+        except Exception as e:
+            logger.error(f"[SME Chat] Direct KB formatting failed: {e}")
+            # Return raw KB content as fallback
+            return LLMResponse(
+                text=f"{atom_content}\n\n_Source: {atom_title}_",
+                cost_usd=0.0,
+                model="fallback",
+                provider="none"
+            )
+
+    async def _generate_sme_synthesis(
+        self,
+        personality: SMEPersonality,
+        user_message: str,
+        rag_context: str,
+        conversation_history: List[Dict[str, str]],
+        equipment_context: Optional[Dict[str, Any]] = None
+    ) -> LLMResponse:
+        """
+        Generate full SME synthesis from RAG context.
+
+        Used for MEDIUM confidence (0.70-0.85) when RAG has relevant but
+        not exact matches. LLM synthesizes comprehensive answer.
+        """
+        # Use existing _build_chat_prompt and _generate_response
+        full_prompt = self._build_chat_prompt(
+            personality=personality,
+            user_message=user_message,
+            rag_context=rag_context,
+            conversation_history=conversation_history,
+            equipment_context=equipment_context
+        )
+        return await self._generate_response(full_prompt)
+
+    async def _generate_clarifying_questions(
+        self,
+        personality: SMEPersonality,
+        user_message: str,
+        atoms: List[Dict[str, Any]],
+        equipment_context: Optional[Dict[str, Any]] = None
+    ) -> LLMResponse:
+        """
+        Generate clarifying questions when confidence is low.
+
+        Used for LOW confidence (<0.70) when RAG doesn't have good matches.
+        Asks user for more specific information to provide better answer.
+        """
+        # Extract what partial info we have
+        partial_topics = []
+        for atom in atoms[:3]:
+            if atom.get('title'):
+                partial_topics.append(atom['title'])
+
+        # Build prompt for clarifying questions
+        equipment_info = ""
+        if equipment_context:
+            if equipment_context.get('model'):
+                equipment_info = f"Equipment: {equipment_context['model']}"
+
+        prompt = f"""You are {personality.name}, {personality.tagline}.
+
+The user asked a question but I don't have enough information to give a confident answer.
+
+User Question: {user_message}
+{equipment_info}
+
+Related topics I found (but not confident matches):
+{', '.join(partial_topics) if partial_topics else 'None found'}
+
+Generate a helpful response that:
+1. Acknowledge you understood the question
+2. Explain what additional information would help (2-3 specific clarifying questions)
+3. Offer what general guidance you can based on the question
+4. Stay in character as {personality.name}
+
+Keep it conversational and helpful, not frustrating."""
+
+        try:
+            response = await self.llm_router.generate(
+                prompt=prompt,
+                capability=ModelCapability.SIMPLE,  # Clarifying questions are simpler
+                max_tokens=600,
+                temperature=0.5
+            )
+            logger.info(f"[SME Chat] Clarifying questions generated")
+            return response
+        except Exception as e:
+            logger.error(f"[SME Chat] Clarifying questions failed: {e}")
+            # Return basic fallback
+            fallback = (
+                f"I'd like to help, but I need a bit more information. "
+                f"Could you tell me:\n"
+                f"- What specific equipment or system you're working with?\n"
+                f"- What symptoms or error codes you're seeing?\n"
+                f"- What you've already tried?\n\n"
+                f"This will help me give you more accurate guidance."
+            )
+            return LLMResponse(
+                text=fallback,
+                cost_usd=0.0,
+                model="fallback",
+                provider="none"
+            )
 
 
 __all__ = ["SMEChatService"]
