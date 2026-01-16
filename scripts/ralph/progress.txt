@@ -44,3 +44,183 @@ Stories: FEEDBACK-LINK-001, FEEDBACK-USEREG-001, CRITICAL-MANUAL-001, FEEDBACK-L
 - Interactions should be logged early in flow, then updated as more data comes
 - Always provide fallback copy-able URLs for mobile users
 ---
+
+=== Phase 4: SME Chat with LLM Interaction ===
+Started: Thu, Jan 16, 2026
+Branch: ralph/sme-chat-phase4
+Stories: SME-CHAT-001 through SME-CHAT-010
+---
+
+## 2026-01-16 - SME-CHAT-003
+- Created rivet/prompts/sme/personalities.py with 7 vendor SME personalities
+- Used dataclasses (SMEPersonality, SMEVoice) for structured personality definitions
+- Each SME has: name, tagline, voice characteristics, expertise_areas, system_prompt_additions
+- Helper functions: get_personality(), get_personality_by_enum(), build_system_prompt(), format_sme_response()
+- Files changed: rivet/prompts/sme/personalities.py (new, 478 lines)
+- Commit: 213b99c
+
+**Learnings for future iterations:**
+- SME models already exist in rivet/models/sme_chat.py with SMEVendor enum
+- Existing SME prompts in rivet/prompts/sme/*.py have troubleshooting functions - personalities.py adds voice/chat characteristics
+- Use dataclasses for structured config, Pydantic for validated models
+- Personality system_prompt_additions should be concise but distinctive
+---
+
+## 2026-01-16 - SME-CHAT-004
+- Created rivet/services/sme_rag_service.py for RAG context retrieval
+- SMERagService.get_relevant_context() is the main async method
+- Builds enhanced query from conversation history + equipment context
+- Uses EmbeddingService and KnowledgeService.vector_search with manufacturer filter
+- Helper functions: calculate_rag_confidence(), extract_sources_from_atoms()
+- Updated rivet/services/__init__.py with exports
+- Files changed: rivet/services/sme_rag_service.py (new), rivet/services/__init__.py
+- Commit: b383c71
+
+**Learnings for future iterations:**
+- KnowledgeService.vector_search expects manufacturer to be capitalized (e.g., "Siemens" not "siemens")
+- Confidence formula: (top_similarity * 0.6) + (avg_top3_similarity * 0.4)
+- Truncate enhanced query to ~2000 chars for embedding to avoid token limits
+---
+
+## 2026-01-16 - SME-CHAT-005
+- Created rivet/services/sme_chat_service.py (515 lines) - core SME chat orchestration
+- SMEChatService class with start_session(), chat(), close_session() methods
+- Session lifecycle: creates DB session, adds system message with personality
+- Chat flow: load session -> get history -> RAG context -> build prompt -> LLM response
+- Safety pattern extraction via regex (voltage, LOTO, arc flash, safety systems, mechanical, chemical)
+- Confidence level mapping: HIGH (>=0.85), MEDIUM (0.70-0.85), LOW (<0.70)
+- Uses LLMRouter.generate with ModelCapability.MODERATE
+- Updated rivet/services/__init__.py with SMEChatService export
+- Files changed: rivet/services/sme_chat_service.py (new), rivet/services/__init__.py
+- Commit: f365592
+
+**Learnings for future iterations:**
+- LLMRouter returns LLMResponse with text, cost_usd, model, provider fields
+- Safety patterns should use case-insensitive regex (response_lower)
+- Store rag_atoms_used as UUID array for tracking which atoms contributed to response
+- Keep fallback response for LLM failures to maintain conversation flow
+---
+
+## 2026-01-16 - SME-CHAT-006
+- Added /chat and /endchat commands to rivet/integrations/telegram.py
+- /chat [vendor] starts SME session with specific vendor
+- /chat without args shows vendor picker (inline keyboard)
+- Auto-detects vendor from recent equipment context (pending_equipment)
+- /endchat closes active session and clears user_data
+- Stores sme_session_id, sme_chat_active, sme_vendor, sme_name in context.user_data
+- Sends SME greeting with personality name and tagline
+- CommandHandler registered in setup_bot() for both commands
+- BotCommand menu updated for Telegram command hints
+- Fixed pre-existing import bug in kb_search.py (llm_router -> llm)
+- Files changed: rivet/integrations/telegram.py, rivet/workflows/kb_search.py
+- Commit: d8324cb
+
+**Learnings for future iterations:**
+- Telegram inline keyboards use callback_data prefix pattern (sme_vendor_xxx)
+- Store session info in context.user_data for persistence across messages
+- Use get_personality() from personalities.py for greeting construction
+- Include aliases for vendors (allen-bradley, ab -> rockwell)
+---
+
+## 2026-01-16 - SME-CHAT-007
+- Updated message_handler to check sme_chat_active at start
+- Added handle_sme_chat_message function for SME chat routing
+- Calls SMEChatService.chat() with session_id from user_data
+- Added format_sme_chat_response for Telegram display
+- Response includes: SME name badge, confidence emoji, answer, safety warnings, sources
+- Confidence indicator: green (>=0.85), yellow (0.70-0.85), orange (<0.70)
+- Error handling tracks consecutive failures (sme_error_count)
+- After 3+ errors, suggests /endchat and restart
+- Typing indicator shown during processing
+- Files changed: rivet/integrations/telegram.py
+- Commit: fdd77de
+
+**Learnings for future iterations:**
+- Track error counts in user_data for progressive error handling
+- Use confidence_level.value to get string from enum
+- Limit sources display (3 max) and truncate long source strings
+- Include footer reminder about /endchat command
+---
+
+## 2026-01-16 - SME-CHAT-008
+- Added _route_by_confidence method to SMEChatService
+- HIGH (>=0.85): _format_direct_kb_answer - minimal LLM styling, uses SIMPLE capability
+- MEDIUM (0.70-0.85): _generate_sme_synthesis - full SME synthesis, MODERATE capability
+- LOW (<0.70): _generate_clarifying_questions - asks for more info, SIMPLE capability
+- Each route maintains SME personality voice
+- HIGH confidence uses temp=0.3 for consistency, LOW uses temp=0.5
+- Confidence calculation formula already in calculate_rag_confidence()
+- Integration with chat() flow via _route_by_confidence dispatch
+- Files changed: rivet/services/sme_chat_service.py
+- Commit: 2aefbde
+
+**Learnings for future iterations:**
+- Use cheaper model (SIMPLE) for high confidence since KB is authoritative
+- Use cheaper model for clarifying questions - they don't need synthesis
+- Ask clarifying questions when low confidence rather than hallucinating
+- Include partial matches in clarifying questions for context
+---
+
+## 2026-01-16 - SME-CHAT-009
+- Created tests/unit/test_sme_personalities.py with 19 tests
+  - All 7 personalities load correctly
+  - get_personality, get_personality_by_enum functions work
+  - build_system_prompt includes voice elements and equipment context
+  - format_sme_response handles warnings, sources, confidence indicators
+- Created tests/unit/test_sme_chat_service.py with 19 tests
+  - start_session creates record and adds system message
+  - chat returns properly formatted SMEChatResponse with all fields
+  - close_session updates status correctly
+  - Confidence level calculation (HIGH/MEDIUM/LOW)
+  - Safety warning extraction (voltage, LOTO, arc flash)
+  - get_session and get_active_session work correctly
+- Fixed bug in sme_chat_service.py - removed .value calls on enum fields
+  - Pydantic use_enum_values=True means enums are already strings
+- Files changed: tests/unit/test_sme_*.py (new), rivet/services/sme_chat_service.py
+- Commit: 8910f51
+
+**Learnings for future iterations:**
+- Pydantic use_enum_values=True stores enum as primitive value, not enum object
+- When mocking database for tests, use side_effect for multiple fetch_one calls
+- Use patch() context manager to avoid settings/config loading issues in tests
+- Track consecutive errors in user_data for progressive error handling
+---
+
+## 2026-01-16 - SME-CHAT-010
+- Created tests/integration/test_sme_chat_flow.py with 12 tests
+  - TestSiemensSession: Start session, chat with Hans, extract safety warnings
+  - TestMultiTurnConversation: Multi-turn preserves context in RAG queries
+  - TestRAGIntegration: Atoms included in response, confidence reflects similarity
+  - TestSessionLifecycle: Close session, error on closed, get active session
+  - TestDifferentVendors: Rockwell (Mike), ABB (Erik) personality verification
+  - TestEquipmentContext: Session preserves OCR equipment context
+- Fixed asyncpg JSONB handling in sme_chat_service.py
+  - Serialize equipment_context as JSON string with json.dumps() for INSERT
+  - Parse JSONB results (handle both string and dict) consistently
+  - Added _result_to_session() helper for DRY session creation
+- All integration tests use real database but mock LLM for determinism
+- Files changed: tests/integration/test_sme_chat_flow.py (new), rivet/services/sme_chat_service.py
+- Commit: b119989
+
+**Learnings for future iterations:**
+- asyncpg requires JSONB to be passed as a JSON string with ::jsonb cast
+- JSONB may return as string or dict depending on query context - always handle both
+- Integration tests should use unique IDs (timestamp-based) to avoid collisions
+- Cleanup fixtures with autouse=True ensure test isolation
+---
+
+=== Phase 4: SME Chat COMPLETE ===
+All 10 stories implemented and passing:
+- SME-CHAT-001: Database migration (026_sme_chat_sessions.sql)
+- SME-CHAT-002: Pydantic models (rivet/models/sme_chat.py)
+- SME-CHAT-003: SME personalities (rivet/prompts/sme/personalities.py)
+- SME-CHAT-004: RAG service (rivet/services/sme_rag_service.py)
+- SME-CHAT-005: Chat service core (rivet/services/sme_chat_service.py)
+- SME-CHAT-006: Telegram /chat command
+- SME-CHAT-007: Telegram message routing
+- SME-CHAT-008: Confidence-based routing
+- SME-CHAT-009: Unit tests (38 tests)
+- SME-CHAT-010: Integration tests (12 tests)
+
+Total: 50 tests passing
+---

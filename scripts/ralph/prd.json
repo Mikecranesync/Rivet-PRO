@@ -1,86 +1,169 @@
 {
   "project": "RIVET Pro",
-  "branchName": "ralph/bug-fixes-round1",
-  "description": "Bug Fixes Round 1 - Fix critical user-reported issues: PDF links, user registration, manual search, and interaction logging",
+  "branchName": "ralph/sme-chat-phase4",
+  "description": "Phase 4: SME Chat with LLM Interaction - Add conversational chat with vendor-specific SME agents (Hans/Siemens, Mike/Rockwell, Erik/ABB, etc.) with distinct personalities and RAG-enhanced responses.",
   "userStories": [
     {
-      "id": "FEEDBACK-LINK-001",
-      "title": "Fix Manual PDF Link Not Opening",
-      "description": "User clicked manual PDF link from bot and it did not work. URL is valid (HTTP 200 server-side). Possible issues: Telegram link formatting, mobile client PDF handling, or URL encoding. Fix the link formatting in format_equipment_response() in response_formatter.py to ensure PDF URLs open correctly on mobile.",
+      "id": "SME-CHAT-001",
+      "title": "Database Migration for Chat Sessions",
+      "description": "Create migration 026_sme_chat_sessions.sql with tables for sme_chat_sessions and sme_chat_messages. Include auto-update triggers and session timeout functions.",
       "acceptanceCriteria": [
-        "Check format_equipment_response() in rivet_pro/core/utils/response_formatter.py",
-        "Ensure PDF URLs are properly formatted for Telegram (no special characters breaking link)",
-        "Test with actual Rockwell URL: https://literature.rockwellautomation.com/idc/groups/literature/documents/in/2080-in009_-en-p.pdf",
-        "If URL has issues, provide alternative: plain text URL user can copy, or shortened link",
-        "Add fallback message: 'If link doesn't open, copy and paste URL into browser'",
-        "Typecheck passes"
+        "sme_chat_sessions table with telegram_chat_id, sme_vendor, status, equipment_context JSONB",
+        "sme_chat_messages table with session_id FK, role, content, confidence, rag_atoms_used UUID array",
+        "Auto-update last_message_at trigger on message insert",
+        "close_inactive_sessions() function for 30-min timeout",
+        "Indexes on telegram_chat_id, session status, and message timestamps"
       ],
       "priority": 1,
       "passes": true,
-      "notes": "Fixed: Escape underscores, added fallback URL in backticks. Commit 2a49f63"
+      "notes": "Implemented in commit 08beec7. Migration: rivet_pro/migrations/026_sme_chat_sessions.sql"
     },
     {
-      "id": "FEEDBACK-USEREG-001",
-      "title": "Fix /start Command Not Creating User",
-      "description": "When user sends /start, bot logs it but doesn't create user record in database. This breaks usage tracking and subscriptions. Fix start_command handler in bot.py to INSERT user or use get_or_create pattern.",
+      "id": "SME-CHAT-002",
+      "title": "Pydantic Models for SME Chat",
+      "description": "Create rivet/models/sme_chat.py with Pydantic models for chat sessions, messages, and responses.",
       "acceptanceCriteria": [
-        "Find start_command handler in rivet_pro/adapters/telegram/bot.py",
-        "Add database INSERT or get_or_create for user with telegram_id",
-        "Set defaults: subscription_tier='free', subscription_status='active'",
-        "Make idempotent - duplicate /start should not error or create duplicate",
-        "Log user creation: 'User created | telegram_id=X | tier=free'",
-        "Typecheck passes"
+        "SMEChatSession model with session_id, telegram_chat_id, sme_vendor, status, equipment_context",
+        "SMEChatMessage model with message_id, session_id, role, content, confidence, rag_atoms_used",
+        "SMEChatResponse model with response, confidence, sources list, safety_warnings list, cost_usd",
+        "All models have proper type hints and validation",
+        "Export from rivet/models/__init__.py"
       ],
       "priority": 2,
       "passes": true,
-      "notes": "Fixed: Added INSERT with ON CONFLICT in start_command. Commit f6c7db7"
+      "notes": "Implemented in commit f8ceb8e. Models: rivet/models/sme_chat.py"
     },
     {
-      "id": "CRITICAL-MANUAL-001",
-      "title": "Fix Manual Search Not Finding New Manuals",
-      "description": "Manual search shows cache MISS but never attempts external search. Check manual_service.py - the _search_external() method may not be called, or Tavily API key missing. Ensure cache miss triggers Tavily search, validates result, and caches it.",
+      "id": "SME-CHAT-003",
+      "title": "SME Personalities Configuration",
+      "description": "Create rivet/prompts/sme/personalities.py with distinct voice/personality for 6 vendor SMEs plus generic.",
       "acceptanceCriteria": [
-        "Check rivet_pro/core/services/manual_service.py search_manual() method",
-        "Verify _search_external() is called after cache miss",
-        "Confirm TAVILY_API_KEY is loaded from settings",
-        "Add logging: 'Searching Tavily for {manufacturer} {model}'",
-        "Test with Siemens 3RV2011-1CA20 - should find and cache manual",
-        "Typecheck passes"
+        "SME_PERSONALITIES dict with siemens, rockwell, abb, schneider, mitsubishi, fanuc, generic keys",
+        "Each personality has name, tagline, voice dict (style, greeting, thinking_phrases, closing_phrases)",
+        "Each personality has expertise_areas list and response_format preferences",
+        "Each personality has system_prompt_additions for LLM prompt injection",
+        "Siemens=Hans German precision, Rockwell=Mike American practical, ABB=Erik safety-focused, etc."
       ],
       "priority": 3,
       "passes": true,
-      "notes": "Fixed: Improved logging, expanded URL pre-filter. Commit 09bd082"
+      "notes": "Implemented in commit 213b99c. File: rivet/prompts/sme/personalities.py with SMEPersonality dataclass, SMEVoice dataclass, get_personality(), build_system_prompt(), format_sme_response() helpers."
     },
     {
-      "id": "FEEDBACK-LIMIT-001",
-      "title": "Bypass Usage Limits for Testing Account",
-      "description": "User 8445149012 (frankumbria) is the owner and should never hit free tier limits. Already set to Pro tier manually, but verify the code path respects subscription_tier='pro' in usage_service.py.",
+      "id": "SME-CHAT-004",
+      "title": "RAG Service for SME Context",
+      "description": "Create rivet/services/sme_rag_service.py that retrieves relevant knowledge atoms filtered by manufacturer.",
       "acceptanceCriteria": [
-        "Verify user 8445149012 has subscription_tier='pro' in database",
-        "Check rivet_pro/core/services/usage_service.py is_pro_user() method",
-        "Ensure can_use_service() returns (True, count, 'pro') for Pro users",
-        "Test: Pro user should never see 'Free Limit Reached' message",
-        "Typecheck passes"
+        "SMERagService class with get_relevant_context async method",
+        "Accepts query, manufacturer, conversation_history, equipment_context, limit params",
+        "Builds enhanced query from conversation context for better embedding",
+        "Uses existing EmbeddingService for query embedding generation",
+        "Uses existing KnowledgeService.vector_search with manufacturer filter",
+        "Returns tuple of (atoms_list, formatted_context_string)",
+        "Formats atoms as structured context for LLM prompt"
       ],
       "priority": 4,
       "passes": true,
-      "notes": "Already resolved - user set to Pro tier, code correctly bypasses limits"
+      "notes": "Implemented in commit b383c71. File: rivet/services/sme_rag_service.py with SMERagService class, calculate_rag_confidence(), extract_sources_from_atoms(). Exports added to __init__.py."
     },
     {
-      "id": "CRITICAL-LOGGING-001",
-      "title": "Fix Interactions Table Not Recording Lookups",
-      "description": "Equipment lookups are tracked in usage_tracking but interactions table is empty. The _handle_photo method in bot.py should log interactions after successful OCR. This is needed for analytics and KB learning.",
+      "id": "SME-CHAT-005",
+      "title": "SME Chat Service Core",
+      "description": "Create rivet/services/sme_chat_service.py that orchestrates chat sessions with personality, RAG, and LLM.",
       "acceptanceCriteria": [
-        "Find _handle_photo method in rivet_pro/adapters/telegram/bot.py",
-        "Add interaction logging after successful OCR result",
-        "Insert to interactions table with: telegram_user_id, interaction_type='equipment_lookup', equipment_id (if matched), ocr_confidence, timestamp",
-        "Also log text queries in _handle_text method",
-        "Verify interactions table populated after photo lookup",
-        "Typecheck passes"
+        "SMEChatService class with start_session, chat, close_session methods",
+        "start_session creates DB session, adds system message with personality",
+        "chat method: load session, get history, RAG context, build prompt, generate LLM response",
+        "Prompt combines personality voice + RAG context + conversation history + equipment context",
+        "Extract safety warnings from response text",
+        "Calculate confidence based on RAG hit quality",
+        "Store assistant message with rag_atoms_used metadata",
+        "Uses existing LLMRouter.generate with ModelCapability.MODERATE"
       ],
       "priority": 5,
       "passes": true,
-      "notes": "Fixed: Added interaction logging for ALL lookups. Commit e61e628"
+      "notes": "Implemented in commit f365592. File: rivet/services/sme_chat_service.py with full session lifecycle, safety pattern extraction, LLMRouter integration."
+    },
+    {
+      "id": "SME-CHAT-006",
+      "title": "Telegram /chat Command Handler",
+      "description": "Add /chat and /endchat command handlers to rivet/integrations/telegram.py for starting SME chat sessions.",
+      "acceptanceCriteria": [
+        "/chat [vendor] command starts SME session - vendor optional, auto-detects from recent equipment",
+        "/endchat command closes active session and clears user_data",
+        "Show vendor picker if no vendor specified and no recent equipment",
+        "Store sme_session_id and sme_chat_active in context.user_data",
+        "Send SME greeting with personality name and tagline",
+        "Register both commands in setup_bot() with CommandHandler"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Implemented in commit d8324cb. Added /chat [vendor] and /endchat commands with vendor picker."
+    },
+    {
+      "id": "SME-CHAT-007",
+      "title": "Telegram Message Routing for Chat Mode",
+      "description": "Update message_handler in telegram.py to route messages to SME chat when session is active.",
+      "acceptanceCriteria": [
+        "Check context.user_data.get('sme_chat_active') at start of message_handler",
+        "If active, call handle_sme_chat_message instead of troubleshoot workflow",
+        "handle_sme_chat_message loads session, calls SMEChatService.chat, formats response",
+        "Response includes SME name badge, answer, safety warnings, sources, confidence indicator",
+        "Typing indicator shown while processing",
+        "Error handling with suggestion to /endchat if persistent failures"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "Implemented in commit fdd77de. Added handle_sme_chat_message and format_sme_chat_response."
+    },
+    {
+      "id": "SME-CHAT-008",
+      "title": "Confidence-Based Routing in Orchestrator",
+      "description": "Implement confidence-based routing: high (>0.85) direct KB, medium (0.7-0.85) SME synthesis, low (<0.7) clarifying questions.",
+      "acceptanceCriteria": [
+        "route_chat_query function calculates RAG confidence from top result similarity",
+        "High confidence (>=0.85): format_direct_kb_answer with SME voice styling",
+        "Medium confidence (0.70-0.85): generate_sme_synthesis from RAG context",
+        "Low confidence (<0.70): generate_clarifying_questions to ask user for more info",
+        "Confidence calculation: (top_similarity * 0.6) + (avg_top3_similarity * 0.4)",
+        "Integrate with SMEChatService.chat flow"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "Implemented in commit 2aefbde. Added _route_by_confidence with HIGH/MEDIUM/LOW handlers."
+    },
+    {
+      "id": "SME-CHAT-009",
+      "title": "Unit Tests for SME Chat",
+      "description": "Create comprehensive unit tests for SME chat service and personalities.",
+      "acceptanceCriteria": [
+        "tests/unit/test_sme_chat_service.py with mocked DB and LLM",
+        "Test start_session creates session and adds system message",
+        "Test chat returns properly formatted response with all fields",
+        "Test close_session updates status",
+        "tests/unit/test_sme_personalities.py verifies all 7 personalities load",
+        "Test personality prompt generation includes voice elements",
+        "All tests pass with pytest"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "Implemented in commit 8910f51. Files: tests/unit/test_sme_chat_service.py (19 tests), tests/unit/test_sme_personalities.py (19 tests). Fixed sme_chat_service.py Pydantic use_enum_values bug."
+    },
+    {
+      "id": "SME-CHAT-010",
+      "title": "Integration Test for Full Chat Flow",
+      "description": "Create integration test that exercises the full SME chat flow from Telegram to response.",
+      "acceptanceCriteria": [
+        "tests/integration/test_sme_chat_flow.py with real DB connection",
+        "Test: /chat siemens -> ask question -> verify Hans personality in response",
+        "Test: multi-turn conversation preserves context",
+        "Test: RAG atoms are retrieved and formatted in context",
+        "Test: safety warnings extracted correctly",
+        "Test: session closes on /endchat",
+        "Can run with: pytest tests/integration/test_sme_chat_flow.py -v"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": "Implemented in commit b119989. File: tests/integration/test_sme_chat_flow.py (12 tests). Fixed asyncpg JSONB handling with JSON serialization and parsing."
     }
   ]
 }
