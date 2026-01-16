@@ -384,5 +384,54 @@ class Database:
         logger.info(f"Rolled back migration: {migration_name} | Result: {result}")
 
 
-# Singleton database instance
+# Singleton database instance (primary - neondb)
 db = Database()
+
+
+class AtlasCMMSDatabase(Database):
+    """
+    Dedicated database connection for Atlas CMMS (atlas_cmms database).
+    Used for dual-write sync to make equipment visible in Atlas CMMS web UI.
+    """
+
+    async def connect(self) -> None:
+        """
+        Create database connection pool for Atlas CMMS.
+        Uses ATLAS_DATABASE_URL environment variable.
+        """
+        if self.pool is not None:
+            logger.warning("Atlas CMMS database pool already exists")
+            return
+
+        atlas_url = os.getenv("ATLAS_DATABASE_URL")
+        if not atlas_url:
+            logger.warning("ATLAS_DATABASE_URL not configured - Atlas sync disabled")
+            return
+
+        try:
+            logger.info("Attempting Atlas CMMS database connection")
+
+            self.pool = await asyncpg.create_pool(
+                dsn=atlas_url,
+                min_size=1,
+                max_size=3,  # Smaller pool - only for sync writes
+                command_timeout=30,
+            )
+
+            # Test connection
+            async with self.pool.acquire() as conn:
+                version = await conn.fetchval("SELECT version()")
+                logger.info(
+                    f"Atlas CMMS database connected | "
+                    f"PostgreSQL: {version[:50]}..."
+                )
+
+            self.active_provider = "atlas_cmms"
+
+        except Exception as e:
+            logger.warning(f"Atlas CMMS connection failed (non-blocking): {e}")
+            self.pool = None
+
+
+# Singleton database instance for Atlas CMMS (dual-write target)
+atlas_db = AtlasCMMSDatabase()

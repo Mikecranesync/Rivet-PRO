@@ -26,7 +26,7 @@ from rivet.models.sme_chat import SMEVendor, ConfidenceLevel
 from rivet.atlas.database import AtlasDatabase
 from rivet_pro.config.settings import settings
 from rivet_pro.infra.observability import get_logger
-from rivet_pro.infra.database import Database
+from rivet_pro.infra.database import Database, atlas_db
 from rivet_pro.core.services.equipment_service import EquipmentService
 from rivet_pro.core.services.work_order_service import WorkOrderService
 from rivet_pro.core.services.usage_service import UsageService, FREE_TIER_LIMIT
@@ -2964,6 +2964,14 @@ Send a 📷 photo of any equipment nameplate and I'll identify it and find the m
 
         # Connect to database
         await self.db.connect()
+
+        # Connect to Atlas CMMS database for dual-write sync
+        try:
+            await atlas_db.connect()
+            logger.info("Atlas CMMS database connected for equipment sync")
+        except Exception as e:
+            logger.warning(f"Atlas CMMS database connection failed (non-blocking): {e}")
+
         self.equipment_service = EquipmentService(self.db)
         self.work_order_service = WorkOrderService(self.db)
         self.usage_service = UsageService(self.db)

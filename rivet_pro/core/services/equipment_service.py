@@ -17,6 +17,8 @@ from typing import Optional, Dict, Any, Tuple
 from uuid import UUID
 from difflib import SequenceMatcher
 
+from rivet_pro.infra.database import atlas_db
+
 logger = logging.getLogger(__name__)
 
 
@@ -198,6 +200,15 @@ class EquipmentService:
             f"({manufacturer} {model_number})"
         )
 
+        # Dual-write: Sync to Atlas CMMS for web UI visibility
+        await self._sync_to_atlas_cmms(
+            manufacturer=manufacturer or "Unknown",
+            model_number=model_number,
+            serial_number=serial_number,
+            location=location,
+            equipment_number=equipment_number
+        )
+
         return (equipment_id, equipment_number, True)
 
     async def _match_by_serial(self, serial_number: str) -> Optional[Dict]:
@@ -358,6 +369,78 @@ class EquipmentService:
         except Exception as e:
             logger.error(f"Failed to create equipment: {e}", exc_info=True)
             raise
+
+    async def _sync_to_atlas_cmms(
+        self,
+        manufacturer: str,
+        model_number: Optional[str],
+        serial_number: Optional[str],
+        location: Optional[str],
+        equipment_number: str
+    ) -> bool:
+        """
+        Sync equipment to Atlas CMMS asset table for web UI visibility.
+
+        This enables dual-write so equipment created via Telegram bot
+        appears in the Atlas CMMS web interface.
+
+        Field Mapping:
+            manufacturer + model_number → name
+            model_number → model
+            serial_number → serial_number
+            location → area
+            equipment_number → bar_code
+
+        Args:
+            manufacturer: Equipment manufacturer
+            model_number: Model number
+            serial_number: Serial number
+            location: Physical location
+            equipment_number: RIVET equipment number (EQ-YYYY-NNNNN)
+
+        Returns:
+            True if sync succeeded, False otherwise (non-blocking)
+        """
+        # Check if atlas_db is connected
+        if atlas_db.pool is None:
+            logger.debug("Atlas CMMS database not connected - skipping sync")
+            return False
+
+        try:
+            # Build asset name from manufacturer + model
+            name_parts = [manufacturer]
+            if model_number:
+                name_parts.append(model_number)
+            asset_name = " ".join(name_parts)
+
+            # Insert into Atlas CMMS asset table
+            await atlas_db.execute(
+                """
+                INSERT INTO asset (
+                    id, name, model, serial_number, area, bar_code,
+                    company_id, archived, has_children,
+                    created_at, updated_at
+                ) VALUES (
+                    nextval('asset_id_seq'),
+                    $1, $2, $3, $4, $5,
+                    46, false, false,
+                    NOW(), NOW()
+                )
+                """,
+                asset_name,                          # name
+                model_number,                        # model
+                serial_number,                       # serial_number
+                location,                            # area
+                equipment_number                     # bar_code (our EQ-2026-XXXXX)
+            )
+
+            logger.info(f"Synced to Atlas CMMS | equipment={equipment_number} | name={asset_name}")
+            return True
+
+        except Exception as e:
+            # Non-blocking - log warning but don't fail the main operation
+            logger.warning(f"Atlas CMMS sync failed (non-blocking): {e}")
+            return False
 
     async def update_equipment_stats(
         self,
