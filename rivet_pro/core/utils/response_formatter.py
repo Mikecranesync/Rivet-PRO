@@ -439,24 +439,48 @@ def format_equipment_response(
             response += f"\n<i>Source: {source}</i>"
 
     else:
-        # Manual not found
-        response += "📖 <b>Manual Not Found</b>\n\n"
+        # Manual not found - check for best candidate
+        best_candidate = search_report.best_candidate if search_report else None
 
-        # Add LLM-generated helpful response if available
-        if helpful_response:
-            response += f"💡 {helpful_response}\n\n"
+        if best_candidate and best_candidate.confidence >= 0.7:
+            # We have a good candidate - ask user for validation
+            response += "📖 <b>Possible Manual Found</b>\n\n"
 
-        # Add search transparency section if report available
-        if search_report:
-            transparency = format_search_transparency(search_report)
-            if transparency:
-                response += f"{transparency}\n\n"
+            # Show the candidate URL
+            title = best_candidate.title or f"{mfr} {model} Manual"
+            url = best_candidate.url
+            conf_pct = int(best_candidate.confidence * 100)
 
-        # Suggest manual search query
-        search_query = f"{mfr} {model} manual PDF"
-        response += f"Try searching: {search_query}\n\n"
+            response += f"🔍 <b>Best match ({conf_pct}% confidence):</b>\n"
+            response += f'<a href="{url}">{title}</a>\n\n'
+            response += f"📎 <code>{url}</code>\n\n"
 
-        # Helpful tip
-        response += "<i>Send a clearer photo if the ID looks wrong.</i>"
+            # Explain why it wasn't auto-accepted
+            response += f"⚠️ <i>Not auto-verified: {best_candidate.rejection_reason[:80]}...</i>\n\n"
+
+            # Human-in-the-loop prompt
+            response += "👆 <b>Is this the correct manual?</b>\n"
+            response += "Reply <b>Yes</b> or <b>No</b> to help improve future searches."
+
+        else:
+            # No good candidates - show not found
+            response += "📖 <b>Manual Not Found</b>\n\n"
+
+            # Add LLM-generated helpful response if available
+            if helpful_response:
+                response += f"💡 {helpful_response}\n\n"
+
+            # Add search transparency section if report available
+            if search_report:
+                transparency = format_search_transparency(search_report)
+                if transparency:
+                    response += f"{transparency}\n\n"
+
+            # Suggest manual search query
+            search_query = f"{mfr} {model} manual PDF"
+            response += f"Try searching: {search_query}\n\n"
+
+            # Helpful tip
+            response += "<i>Send a clearer photo if the ID looks wrong.</i>"
 
     return response

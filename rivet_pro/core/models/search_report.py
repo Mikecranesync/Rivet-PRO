@@ -151,6 +151,18 @@ class SearchReport:
             "manual_url": self.manual_url
         }
 
+    @property
+    def best_candidate(self) -> Optional[RejectedURL]:
+        """
+        Get the best rejected URL candidate for human-in-the-loop validation.
+
+        Returns the rejected URL with highest confidence score.
+        Used when no direct PDF found but we have close matches to show the user.
+        """
+        if not self.rejected_urls:
+            return None
+        return max(self.rejected_urls, key=lambda r: r.confidence)
+
     def __str__(self) -> str:
         status = "FOUND" if self.manual_found else "NOT_FOUND"
         return (

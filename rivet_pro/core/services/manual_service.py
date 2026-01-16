@@ -434,135 +434,7 @@ NOT PDF: /search?, /results, catalog pages, homepages, shopping carts"""
 
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
-                # Try Anthropic Claude first (preferred)
-                if self.anthropic_api_key:
-                    logger.info(f"Attempting Claude API validation | url={url[:80]}")
-                    try:
-                        response = await client.post(
-                            "https://api.anthropic.com/v1/messages",
-                            headers={
-                                "x-api-key": self.anthropic_api_key,
-                                "anthropic-version": "2023-06-01",
-                                "content-type": "application/json"
-                            },
-                            json={
-                                "model": "claude-3-5-sonnet-20241022",
-                                "max_tokens": 200,
-                                "messages": [
-                                    {"role": "user", "content": prompt}
-                                ]
-                            }
-                        )
-
-                        logger.info(f"Claude API response | status={response.status_code}")
-
-                        if response.status_code == 200:
-                            data = response.json()
-                            logger.info(f"Claude response data keys: {list(data.keys())}")
-
-                            content = data.get('content', [{}])[0].get('text', '{}')
-                            logger.info(f"Claude content (first 200 chars): {content[:200]}")
-
-                            try:
-                                result = json.loads(content)
-                                logger.info(
-                                    f"URL validation (Claude) SUCCESS | {manufacturer} {model} | "
-                                    f"url={url} | is_direct_pdf={result.get('is_direct_pdf')} | "
-                                    f"confidence={result.get('confidence'):.2f} | "
-                                    f"reasoning={result.get('reasoning', 'N/A')[:100]}"
-                                )
-                                return result
-                            except json.JSONDecodeError as json_err:
-                                logger.error(
-                                    f"Claude JSON parse failed | content={content[:300]} | "
-                                    f"error={json_err}"
-                                )
-                                raise
-                        else:
-                            logger.error(
-                                f"Claude API failed | status={response.status_code} | "
-                                f"body={response.text[:500]}"
-                            )
-
-                    except httpx.HTTPStatusError as http_err:
-                        logger.error(
-                            f"Claude HTTP error | status={http_err.response.status_code} | "
-                            f"body={http_err.response.text[:500]}"
-                        )
-                    except json.JSONDecodeError as json_err:
-                        logger.error(f"Claude JSON decode error | error={json_err}")
-                    except Exception as e:
-                        logger.error(
-                            f"Claude validation error | type={type(e).__name__} | "
-                            f"error={e}",
-                            exc_info=True
-                        )
-
-                # Fallback to OpenAI GPT-4o-mini
-                if self.openai_api_key:
-                    logger.info(f"Attempting OpenAI API validation | url={url[:80]}")
-                    try:
-                        response = await client.post(
-                            "https://api.openai.com/v1/chat/completions",
-                            headers={
-                                "Authorization": f"Bearer {self.openai_api_key}",
-                                "Content-Type": "application/json"
-                            },
-                            json={
-                                "model": "gpt-4o-mini",
-                                "max_tokens": 200,
-                                "temperature": 0.1,
-                                "messages": [
-                                    {"role": "user", "content": prompt}
-                                ]
-                            }
-                        )
-
-                        logger.info(f"OpenAI API response | status={response.status_code}")
-
-                        if response.status_code == 200:
-                            data = response.json()
-                            logger.info(f"OpenAI response data keys: {list(data.keys())}")
-
-                            content = data.get('choices', [{}])[0].get('message', {}).get('content', '{}')
-                            logger.info(f"OpenAI content (first 200 chars): {content[:200]}")
-
-                            try:
-                                result = json.loads(content)
-                                logger.info(
-                                    f"URL validation (GPT-4o-mini) SUCCESS | {manufacturer} {model} | "
-                                    f"url={url} | is_direct_pdf={result.get('is_direct_pdf')} | "
-                                    f"confidence={result.get('confidence'):.2f} | "
-                                    f"reasoning={result.get('reasoning', 'N/A')[:100]}"
-                                )
-                                return result
-                            except json.JSONDecodeError as json_err:
-                                logger.error(
-                                    f"OpenAI JSON parse failed | content={content[:300]} | "
-                                    f"error={json_err}"
-                                )
-                                raise
-                        else:
-                            logger.error(
-                                f"OpenAI API failed | status={response.status_code} | "
-                                f"body={response.text[:500]}"
-                            )
-
-                    except httpx.HTTPStatusError as http_err:
-                        logger.error(
-                            f"OpenAI HTTP error | status={http_err.response.status_code} | "
-                            f"body={http_err.response.text[:500]}"
-                        )
-                    except json.JSONDecodeError as json_err:
-                        logger.error(f"OpenAI JSON decode error | error={json_err}")
-                    except Exception as e:
-                        logger.error(
-                            f"OpenAI validation error | type={type(e).__name__} | "
-                            f"error={e}",
-                            exc_info=True
-                        )
-
-                # Fallback to Groq
+                # Try Groq first (free, fastest)
                 if self.groq_api_key:
                     logger.info(f"Attempting Groq API validation | url={url[:80]}")
                     try:
@@ -626,7 +498,7 @@ NOT PDF: /search?, /results, catalog pages, homepages, shopping carts"""
                             exc_info=True
                         )
 
-                # Final fallback to DeepSeek
+                # Fallback to DeepSeek (cheap)
                 if self.deepseek_api_key:
                     logger.info(f"Attempting DeepSeek API validation | url={url[:80]}")
                     try:
@@ -686,6 +558,70 @@ NOT PDF: /search?, /results, catalog pages, homepages, shopping carts"""
                     except Exception as e:
                         logger.error(
                             f"DeepSeek validation error | type={type(e).__name__} | "
+                            f"error={e}",
+                            exc_info=True
+                        )
+
+                # Final fallback to Claude (expensive, best quality)
+                if self.anthropic_api_key:
+                    logger.info(f"Attempting Claude API validation | url={url[:80]}")
+                    try:
+                        response = await client.post(
+                            "https://api.anthropic.com/v1/messages",
+                            headers={
+                                "x-api-key": self.anthropic_api_key,
+                                "anthropic-version": "2023-06-01",
+                                "content-type": "application/json"
+                            },
+                            json={
+                                "model": "claude-sonnet-4-20250514",
+                                "max_tokens": 200,
+                                "messages": [
+                                    {"role": "user", "content": prompt}
+                                ]
+                            }
+                        )
+
+                        logger.info(f"Claude API response | status={response.status_code}")
+
+                        if response.status_code == 200:
+                            data = response.json()
+                            logger.info(f"Claude response data keys: {list(data.keys())}")
+
+                            content = data.get('content', [{}])[0].get('text', '{}')
+                            logger.info(f"Claude content (first 200 chars): {content[:200]}")
+
+                            try:
+                                result = json.loads(content)
+                                logger.info(
+                                    f"URL validation (Claude) SUCCESS | {manufacturer} {model} | "
+                                    f"url={url} | is_direct_pdf={result.get('is_direct_pdf')} | "
+                                    f"confidence={result.get('confidence'):.2f} | "
+                                    f"reasoning={result.get('reasoning', 'N/A')[:100]}"
+                                )
+                                return result
+                            except json.JSONDecodeError as json_err:
+                                logger.error(
+                                    f"Claude JSON parse failed | content={content[:300]} | "
+                                    f"error={json_err}"
+                                )
+                                raise
+                        else:
+                            logger.error(
+                                f"Claude API failed | status={response.status_code} | "
+                                f"body={response.text[:500]}"
+                            )
+
+                    except httpx.HTTPStatusError as http_err:
+                        logger.error(
+                            f"Claude HTTP error | status={http_err.response.status_code} | "
+                            f"body={http_err.response.text[:500]}"
+                        )
+                    except json.JSONDecodeError as json_err:
+                        logger.error(f"Claude JSON decode error | error={json_err}")
+                    except Exception as e:
+                        logger.error(
+                            f"Claude validation error | type={type(e).__name__} | "
                             f"error={e}",
                             exc_info=True
                         )

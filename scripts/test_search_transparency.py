@@ -249,9 +249,9 @@ async def test_n8n_search(manufacturer: str, model: str, chat_id: int = 12345) -
 
 def format_result(result: TestResult, verbose: bool = True) -> str:
     """Format a test result for display"""
-    status = "✅ FOUND" if result.success else "❌ NOT FOUND"
+    status = "[OK] FOUND" if result.success else "[X] NOT FOUND"
     if result.error:
-        status = f"⚠️ ERROR: {result.error[:50]}"
+        status = f"[!] ERROR: {result.error[:50]}"
 
     output = f"""
 {'='*60}
@@ -266,13 +266,13 @@ Duration: {result.duration_ms}ms
         output += f"Confidence: {result.confidence:.0%}\n"
 
     if verbose and result.transparency_report:
-        output += "\n📊 TRANSPARENCY REPORT:\n"
+        output += "\n[TRANSPARENCY REPORT]\n"
         report = result.transparency_report
 
         # Show stages
         if 'stages' in report:
             for stage in report['stages']:
-                emoji = "✅" if stage.get('status') == 'success' else "❌"
+                emoji = "[OK]" if stage.get('status') == 'success' else "[X]"
                 output += f"  {emoji} {stage.get('stage', 'unknown')}: {stage.get('details', 'N/A')}\n"
 
         # Show rejected URLs
@@ -289,7 +289,7 @@ Duration: {result.duration_ms}ms
             output += f"\n  Total search time: {report['total_duration_ms']}ms\n"
 
     if result.helpful_response:
-        output += f"\n💡 HELPFUL RESPONSE:\n{result.helpful_response[:300]}\n"
+        output += f"\n[HELPFUL RESPONSE]\n{result.helpful_response[:300]}\n"
 
     return output
 
@@ -303,11 +303,11 @@ COMPARISON: {python_result.manufacturer} {python_result.model}
 
                     PYTHON              N8N
                     ------              ---
-Found:              {'✅ Yes' if python_result.success else '❌ No':<20}{'✅ Yes' if n8n_result.success else '❌ No'}
+Found:              {'Yes' if python_result.success else 'No':<20}{'Yes' if n8n_result.success else 'No'}
 Duration:           {python_result.duration_ms}ms{' '*(16-len(str(python_result.duration_ms)))}{n8n_result.duration_ms}ms
 Confidence:         {python_result.confidence:.0%}{' '*(18-len(f'{python_result.confidence:.0%}'))}{n8n_result.confidence:.0%}
-Has Transparency:   {'✅' if python_result.transparency_report else '❌':<20}{'✅' if n8n_result.transparency_report else '❌'}
-Has Helpful Resp:   {'✅' if python_result.helpful_response else '❌':<20}{'✅' if n8n_result.helpful_response else '❌'}
+Has Transparency:   {'Yes' if python_result.transparency_report else 'No':<20}{'Yes' if n8n_result.transparency_report else 'No'}
+Has Helpful Resp:   {'Yes' if python_result.helpful_response else 'No':<20}{'Yes' if n8n_result.helpful_response else 'No'}
 """
 
     if python_result.error or n8n_result.error:
@@ -328,9 +328,9 @@ Has Helpful Resp:   {'✅' if python_result.helpful_response else '❌':<20}{'�
         # Check if same URL
         if python_result.manual_url and n8n_result.manual_url:
             if python_result.manual_url == n8n_result.manual_url:
-                output += "  ✅ MATCH - Same URL found!\n"
+                output += "  [MATCH] Same URL found!\n"
             else:
-                output += "  ⚠️ DIFFERENT - URLs don't match\n"
+                output += "  [DIFF] URLs don't match\n"
 
     return output
 
@@ -341,12 +341,12 @@ async def run_single_test(manufacturer: str, model: str, python_only: bool, n8n_
     n8n_result = None
 
     if not n8n_only:
-        print(f"\n🐍 Testing Python: {manufacturer} {model}...")
+        print(f"\n[Python] Testing: {manufacturer} {model}...")
         python_result = await test_python_search(manufacturer, model)
         print(format_result(python_result, verbose))
 
     if not python_only:
-        print(f"\n⚙️ Testing n8n: {manufacturer} {model}...")
+        print(f"\n[n8n] Testing: {manufacturer} {model}...")
         n8n_result = await test_n8n_search(manufacturer, model)
         print(format_result(n8n_result, verbose))
 
@@ -361,13 +361,13 @@ async def run_all_tests(python_only: bool, n8n_only: bool, verbose: bool, limit:
     equipment_list = TEST_EQUIPMENT[:limit] if limit else TEST_EQUIPMENT
 
     print(f"""
-╔══════════════════════════════════════════════════════════════════╗
-║           SEARCH TRANSPARENCY TEST SUITE                         ║
-║                                                                  ║
-║  Testing {len(equipment_list)} equipment items                                      ║
-║  Python: {'✅ Enabled' if not n8n_only else '❌ Disabled'}                                             ║
-║  n8n:    {'✅ Enabled' if not python_only else '❌ Disabled'}                                             ║
-╚══════════════════════════════════════════════════════════════════╝
+======================================================================
+           SEARCH TRANSPARENCY TEST SUITE
+======================================================================
+  Testing {len(equipment_list)} equipment items
+  Python: {'[x] Enabled' if not n8n_only else '[ ] Disabled'}
+  n8n:    {'[x] Enabled' if not python_only else '[ ] Disabled'}
+======================================================================
 """)
 
     results = []
@@ -394,14 +394,14 @@ async def run_all_tests(python_only: bool, n8n_only: bool, verbose: bool, limit:
 
         # Small delay between tests to avoid rate limiting
         if i < len(equipment_list):
-            print("\n⏳ Waiting 2 seconds before next test...")
+            print("\n[...] Waiting 2 seconds before next test...")
             await asyncio.sleep(2)
 
     # Summary
     print(f"""
-╔══════════════════════════════════════════════════════════════════╗
-║                         SUMMARY                                  ║
-╚══════════════════════════════════════════════════════════════════╝
+======================================================================
+                         SUMMARY
+======================================================================
 """)
 
     python_found = sum(1 for r in results if r['python'] and r['python']['success'])

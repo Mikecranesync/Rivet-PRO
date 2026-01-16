@@ -1552,15 +1552,21 @@ class TelegramBot:
         """
         Process user feedback on bot's previous response.
         User replied to bot message with issue description.
+        Also handles Yes/No replies for manual validation (human-in-the-loop).
         """
         user = update.effective_user
-        feedback_text = update.message.text
-        original_message = update.message.reply_to_message.text
+        feedback_text = update.message.text.strip().lower()
+        original_message = update.message.reply_to_message.text or ""
 
         logger.info(
             f"Feedback received | user_id={user.id} | "
             f"feedback='{feedback_text[:50]}...'"
         )
+
+        # Check if this is a manual validation response (Yes/No)
+        if "Is this the correct manual?" in original_message or "Possible Manual Found" in original_message:
+            await self._handle_manual_validation_reply(update, context, feedback_text, original_message)
+            return
 
         try:
             # Extract context from original bot message
@@ -1614,6 +1620,116 @@ class TelegramBot:
             await update.message.reply_text(
                 "❌ Failed to process feedback. Please try again."
             )
+
+    async def _handle_manual_validation_reply(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        reply_text: str,
+        original_message: str
+    ) -> None:
+        """
+        Handle user Yes/No reply for manual URL validation (human-in-the-loop).
+
+        If user says Yes: Store URL as validated, cache for future searches
+        If user says No: Log as rejected, don't cache
+        """
+        import re
+        user = update.effective_user
+
+        # Parse Yes/No response
+        is_yes = reply_text in ('yes', 'y', 'yep', 'yeah', 'correct', 'right', 'si', 'oui')
+        is_no = reply_text in ('no', 'n', 'nope', 'nah', 'wrong', 'incorrect')
+
+        if not is_yes and not is_no:
+            await update.message.reply_text(
+                "🤔 Please reply <b>Yes</b> or <b>No</b> to confirm if the manual is correct.",
+                parse_mode="HTML"
+            )
+            return
+
+        # Extract URL from original message (look for the code block with URL)
+        url_match = re.search(r'<code>(https?://[^<]+)</code>', original_message)
+        if not url_match:
+            # Try plain URL pattern
+            url_match = re.search(r'(https?://\S+\.pdf\S*)', original_message)
+
+        if not url_match:
+            logger.warning(f"Could not extract URL from original message for validation")
+            await update.message.reply_text(
+                "❌ Could not find the URL to validate. Please try searching again."
+            )
+            return
+
+        url = url_match.group(1).strip()
+
+        # Extract manufacturer/model from original message
+        mfr_match = re.search(r'Manufacturer:\s*([^\n]+)', original_message)
+        model_match = re.search(r'Model:\s*([^\n]+)', original_message)
+
+        manufacturer = mfr_match.group(1).strip() if mfr_match else "Unknown"
+        model = model_match.group(1).strip() if model_match else "Unknown"
+
+        logger.info(
+            f"Manual validation | user={user.id} | "
+            f"validated={'yes' if is_yes else 'no'} | "
+            f"mfr={manufacturer} | model={model} | url={url[:60]}..."
+        )
+
+        if is_yes:
+            # Store validated URL in cache for future searches
+            try:
+                await self.db.execute(
+                    """
+                    INSERT INTO manual_cache (manufacturer, model, url, source, confidence, validated_by_user, created_at)
+                    VALUES ($1, $2, $3, 'user_validated', 1.0, TRUE, NOW())
+                    ON CONFLICT (manufacturer, model) DO UPDATE SET
+                        url = EXCLUDED.url,
+                        source = 'user_validated',
+                        confidence = 1.0,
+                        validated_by_user = TRUE,
+                        updated_at = NOW()
+                    """,
+                    manufacturer, model, url
+                )
+
+                await update.message.reply_text(
+                    "✅ <b>Thanks for confirming!</b>\n\n"
+                    "I've saved this manual for future reference. "
+                    "Next time someone asks about this equipment, I'll provide this link directly.",
+                    parse_mode="HTML"
+                )
+
+                logger.info(f"Manual URL validated and cached | {manufacturer} {model} | url={url[:60]}")
+
+            except Exception as e:
+                logger.error(f"Failed to cache validated URL: {e}", exc_info=True)
+                await update.message.reply_text(
+                    "✅ Thanks for the feedback! (Note: Had trouble saving for future use)"
+                )
+
+        else:
+            # User said No - log the rejection
+            try:
+                await self.db.execute(
+                    """
+                    INSERT INTO manual_feedback (manufacturer, model, url, is_correct, telegram_user_id, created_at)
+                    VALUES ($1, $2, $3, FALSE, $4, NOW())
+                    """,
+                    manufacturer, model, url, str(user.id)
+                )
+            except Exception as e:
+                # Table might not exist - that's ok
+                logger.debug(f"Could not log manual rejection: {e}")
+
+            await update.message.reply_text(
+                "👍 <b>Thanks for letting me know!</b>\n\n"
+                "I won't suggest this link again. "
+                f"Try searching: <code>{manufacturer} {model} manual PDF</code>",
+                parse_mode="HTML"
+            )
+
+            logger.info(f"Manual URL rejected by user | {manufacturer} {model} | url={url[:60]}")
 
     async def handle_proposal_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
