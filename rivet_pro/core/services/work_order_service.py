@@ -360,3 +360,58 @@ class WorkOrderService:
         except Exception as e:
             logger.error(f"Error listing work orders for equipment: {e}")
             return []
+
+    async def get_equipment_maintenance_history(
+        self,
+        equipment_id: UUID,
+        days: int = 90
+    ) -> List[Dict]:
+        """
+        Get maintenance history for equipment within specified time period.
+
+        Used by photo pipeline to provide historical context for AI analysis.
+
+        Args:
+            equipment_id: UUID of equipment to get history for
+            days: Number of days to look back (default 90)
+
+        Returns:
+            List of work order history records with:
+            - work_order_number: WO identifier
+            - created_at: When WO was created
+            - completed_at: When WO was completed (if applicable)
+            - status: Current status
+            - title: WO title
+            - fault_codes: List of fault codes
+            - priority: Priority level
+            - resolution_time_hours: Hours from creation to completion (if completed)
+        """
+        try:
+            results = await self.db.execute_query_async(
+                """
+                SELECT
+                    work_order_number,
+                    created_at,
+                    completed_at,
+                    status,
+                    title,
+                    fault_codes,
+                    priority,
+                    CASE
+                        WHEN completed_at IS NOT NULL THEN
+                            EXTRACT(EPOCH FROM (completed_at - created_at)) / 3600.0
+                        ELSE NULL
+                    END AS resolution_time_hours
+                FROM work_orders
+                WHERE equipment_id = $1
+                  AND created_at >= NOW() - INTERVAL '%s days'
+                ORDER BY created_at DESC
+                """ % days,
+                (str(equipment_id),)
+            )
+
+            return results or []
+
+        except Exception as e:
+            logger.error(f"Error getting equipment maintenance history: {e}")
+            return []
