@@ -1,97 +1,240 @@
 {
   "project": "RIVET Pro",
-  "branchName": "ralph/analytics-phase5",
-  "description": "Phase 5: Analytics Dashboard - Build admin analytics for usage tracking, knowledge base health, and SME chat metrics. Telegram-first with /stats and /report commands.",
+  "branchName": "ralph/photo-pipeline-phase6",
+  "description": "Phase 6: Photo Intelligence Pipeline - Implement multi-LLM photo analysis with Groq screening, DeepSeek extraction, Claude synthesis. Includes security fixes, retry logic, and documentation.",
   "userStories": [
     {
-      "id": "ANALYTICS-001",
-      "title": "Daily Usage Statistics Aggregation",
-      "description": "Create a background job that aggregates daily usage stats from rivet_usage_log into daily_stats table. Track: total queries, unique users, queries by category (equipment/troubleshooting/manual/sme_chat), average response time.",
+      "id": "PHOTO-SEC-001",
+      "title": "Secrets Rotation and Fly.io Migration",
+      "description": "Rotate all exposed secrets from .env and migrate to Fly.io secrets management.",
       "acceptanceCriteria": [
-        "Function aggregate_daily_stats() created in rivet_pro/core/services/analytics_service.py",
-        "Queries rivet_usage_log for previous day's data",
-        "Inserts aggregated row into daily_stats table",
-        "Handles duplicate runs gracefully (upsert)",
-        "Can be triggered manually or via scheduler"
+        "All API keys rotated (Anthropic, OpenAI, Groq, Google, DeepSeek)",
+        "Database passwords changed",
+        "Telegram bot tokens rotated",
+        ".env removed from git history",
+        "Fly.io secrets set and verified"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Commit 9520678 - AnalyticsService with aggregate_daily_stats(), get_today_stats(), format_stats_message()"
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "ANALYTICS-002",
-      "title": "Knowledge Base Health Metrics",
-      "description": "Track KB health: total atoms, atoms by manufacturer, coverage gaps (queries with no KB matches), stale atoms (not accessed in 30+ days).",
+      "id": "PHOTO-ORCH-001",
+      "title": "Ralph Wiggum Orchestrator Base Class",
+      "description": "Create base orchestration framework for multi-LLM photo pipeline.",
       "acceptanceCriteria": [
-        "Function get_kb_health() returns structured health metrics",
-        "Counts atoms by manufacturer from knowledge_atoms table",
-        "Identifies coverage gaps from low-confidence responses",
-        "Tracks atom freshness (last_accessed timestamp)",
-        "Returns actionable insights (e.g., 'Siemens coverage: 85%')"
+        "RalphOrchestrator class with retry helper",
+        "Cost tracking property",
+        "Photo hash computation for caching",
+        "Export from rivet_pro/core/llm/"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Commit 9520678 - get_kb_health() returns KBHealthMetrics dataclass"
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "ANALYTICS-003",
-      "title": "SME Chat Analytics",
-      "description": "Track SME chat usage: sessions by vendor, average turns per session, confidence distribution, safety warnings triggered.",
+      "id": "PHOTO-GROQ-001",
+      "title": "Groq Vision Industrial Screening Service",
+      "description": "Implement Groq first-pass screening for industrial equipment detection.",
       "acceptanceCriteria": [
-        "Function get_sme_chat_analytics() returns chat metrics",
-        "Queries sme_chat_sessions and sme_chat_messages tables",
-        "Groups by vendor (Siemens, Rockwell, ABB, etc.)",
-        "Calculates avg messages per session",
-        "Tracks confidence level distribution (HIGH/MEDIUM/LOW)"
+        "screen_industrial_photo() returns ScreeningResult",
+        "Confidence threshold >= 0.80 to proceed",
+        "Category detection (plc, vfd, motor, etc.)",
+        "Response time < 2 seconds",
+        "Cost ~$0.001 per image"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Commit 9520678 - get_sme_chat_analytics() returns SMEChatMetrics dataclass"
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "ANALYTICS-004",
-      "title": "Admin /stats Command",
-      "description": "Create /stats command for admin users showing quick stats: today's queries, active users, top equipment lookups, KB health summary.",
+      "id": "PHOTO-DEEP-001",
+      "title": "DeepSeek Component Specification Extraction",
+      "description": "Implement DeepSeek second-pass for spec extraction with caching.",
       "acceptanceCriteria": [
-        "/stats command added to bot.py",
-        "Only accessible to admin users (telegram_id in admin list)",
-        "Shows: queries today, unique users today, top 5 equipment",
-        "Shows: KB atom count, SME sessions today",
-        "Fast response (<2s) using pre-aggregated data"
+        "extract_component_specs() returns ExtractionResult",
+        "Photo hash caching (24h TTL)",
+        "Response time < 3 seconds",
+        "Cost ~$0.002 per image"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Commit fc36b08 - /adminstats and /report commands added to bot.py"
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "ANALYTICS-005",
-      "title": "Weekly Report Generation",
-      "description": "Generate weekly report summarizing: usage trends, top queries, knowledge gaps, SME chat patterns. Send to admin via Telegram.",
+      "id": "PHOTO-CACHE-001",
+      "title": "Photo Analysis Cache Table Migration",
+      "description": "Create database migration for caching photo analysis by hash.",
       "acceptanceCriteria": [
-        "Function generate_weekly_report() creates formatted report",
-        "Compares this week vs last week (trend arrows)",
-        "Lists top 10 unanswered queries (knowledge gaps)",
-        "Shows SME vendor popularity ranking",
-        "Can be triggered via /report command or scheduler"
+        "Migration 028_photo_analysis_cache.sql created",
+        "photo_analysis_cache table with hash, results, expiry",
+        "Cleanup function for expired entries"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "Commit 9520678 - generate_weekly_report() with trend comparison"
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "ANALYTICS-006",
-      "title": "Response Time Tracking",
-      "description": "Add response time tracking to all bot interactions. Store in rivet_usage_log with millisecond precision.",
+      "id": "PHOTO-TIMEOUT-001",
+      "title": "Photo Handler 60-Second Timeout Protection",
+      "description": "Add asyncio.timeout wrapper to prevent indefinite photo handler hangs.",
       "acceptanceCriteria": [
-        "response_time_ms column added to rivet_usage_log (if not exists)",
-        "All message handlers track start/end time",
-        "Response time logged with each interaction",
-        "Average response time visible in /stats",
-        "Slow queries (>5s) flagged for review"
+        "asyncio.timeout(60) wrapper in _handle_photo",
+        "TimeoutError caught with user-friendly message",
+        "Alert sent to admin on timeout",
+        "Trace saved in finally block"
       ],
       "priority": 6,
-      "passes": true,
-      "notes": "Response time tracking via _log_response_time() in bot.py, get_response_time_stats() in analytics_service.py"
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "PHOTO-HIST-001",
+      "title": "Equipment Maintenance History Retrieval",
+      "description": "Add method to retrieve work order history for equipment.",
+      "acceptanceCriteria": [
+        "get_equipment_maintenance_history() method added",
+        "Returns last 90 days by default",
+        "Includes resolution time calculation"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "PHOTO-HIST-002",
+      "title": "Technician Work History Retrieval",
+      "description": "Add method to retrieve technician work history.",
+      "acceptanceCriteria": [
+        "get_technician_work_history() method added",
+        "Optional status filter parameter",
+        "Includes equipment details"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "PHOTO-CLAUDE-001",
+      "title": "Claude AI Analysis and KB Synthesis",
+      "description": "Implement Claude third-pass for troubleshooting with KB integration.",
+      "acceptanceCriteria": [
+        "analyze_with_kb() returns AnalysisResult",
+        "Combines specs + history + KB context",
+        "Includes citations and safety warnings",
+        "Fallback if Claude fails"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "PHOTO-RETRY-001",
+      "title": "Database Retry Logic with Exponential Backoff",
+      "description": "Add retry mechanism to Database class for transient errors.",
+      "acceptanceCriteria": [
+        "_execute_with_retry helper added",
+        "Max 3 retries with exponential backoff",
+        "Only retries connection errors, not query errors"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "PHOTO-FLOW-001",
+      "title": "Telegram Photo Upload Pipeline Integration",
+      "description": "Wire complete Groq -> DeepSeek -> Claude pipeline into handler.",
+      "acceptanceCriteria": [
+        "PhotoPipelineService created",
+        "All three stages orchestrated",
+        "Cache check before DeepSeek",
+        "Cost tracking at each stage"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "PHOTO-RESP-001",
+      "title": "Photo Response Formatting for Telegram",
+      "description": "Create Telegram-optimized response formatting function.",
+      "acceptanceCriteria": [
+        "format_photo_pipeline_response() function created",
+        "Includes all pipeline results",
+        "Under 4096 char limit",
+        "Markdown formatting"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "PHOTO-TEST-001",
+      "title": "Unit Tests for Photo Pipeline Services",
+      "description": "Create unit tests for Groq, DeepSeek, Claude services.",
+      "acceptanceCriteria": [
+        "test_groq_screening.py with mocked API",
+        "test_deepseek_extraction.py",
+        "test_claude_analysis.py",
+        "test_photo_cache.py",
+        "All tests pass"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "PHOTO-TEST-002",
+      "title": "Integration Tests for Full Pipeline",
+      "description": "Create integration tests for end-to-end pipeline.",
+      "acceptanceCriteria": [
+        "test_photo_pipeline.py with real DB",
+        "Tests all success and failure paths",
+        "Tests cache hit/miss scenarios"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "PHOTO-DOC-001",
+      "title": "PRD Document Creation",
+      "description": "Create complete PRD document for photo pipeline.",
+      "acceptanceCriteria": [
+        "PRD_PHOTO_PIPELINE.md created",
+        "Vision, features, metrics, acceptance criteria",
+        "Architecture diagram included"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "PHOTO-DOC-002",
+      "title": "Technical Manual Creation",
+      "description": "Create technical documentation for operators.",
+      "acceptanceCriteria": [
+        "TECHNICAL_MANUAL.md created",
+        "API docs, schema, deployment checklist",
+        "Troubleshooting guide"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "PHOTO-DOC-003",
+      "title": "User Manual Creation",
+      "description": "Create user documentation for field technicians.",
+      "acceptanceCriteria": [
+        "USER_MANUAL.md created",
+        "Getting started, photo tips, FAQ",
+        "Screenshots of actual bot responses"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": ""
     }
   ]
 }
