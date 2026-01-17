@@ -1,0 +1,8 @@
+{
+  "locked": true,
+  "locked_by": "hharp",
+  "locked_at": "2026-01-17T00:00:00Z",
+  "reason": "Production utility - changes require review",
+  "version": "1.0.0",
+  "unlock_command": "ralph unlock --confirm"
+}

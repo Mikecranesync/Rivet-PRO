@@ -1,0 +1,86 @@
+name: Branch Protection
+
+on:
+  push:
+    branches:
+      - ralph-standalone
+  pull_request:
+    branches:
+      - ralph-standalone
+
+jobs:
+  validate:
+    name: Validate Changes
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+
+      - name: Check lock file
+        run: |
+          if [ -f .ralph-lock ]; then
+            LOCKED=$(python -c "import json; print(json.load(open('.ralph-lock'))['locked'])")
+            if [ "$LOCKED" = "True" ]; then
+              echo "WARNING: Branch is locked. Ensure changes are reviewed."
+            fi
+          fi
+
+      - name: Lint Python code
+        run: |
+          pip install ruff
+          ruff check src/ bin/ --ignore E501
+
+      - name: Run syntax checks
+        run: |
+          python -m py_compile src/ralph_api.py
+          python -m py_compile src/ralph_local.py
+          python -m py_compile src/ralph_gateway.py
+          python -m py_compile src/core/orchestrator.py
+
+      - name: Verify imports
+        run: |
+          python -c "from src import __version__; print(f'Version: {__version__}')"
+          python -c "from src.core import RalphOrchestrator; print('Orchestrator import OK')"
+
+      - name: Check VERSION file
+        run: |
+          VERSION=$(cat VERSION)
+          echo "VERSION file: $VERSION"
+          INIT_VERSION=$(python -c "from src import __version__; print(__version__)")
+          echo "src/__init__.py: $INIT_VERSION"
+          if [ "$VERSION" != "$INIT_VERSION" ]; then
+            echo "ERROR: VERSION mismatch!"
+            exit 1
+          fi
+
+  security:
+    name: Security Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for secrets
+        run: |
+          # Check for potential API keys or secrets
+          if grep -rn "sk-ant-" src/ bin/ 2>/dev/null; then
+            echo "ERROR: Potential Anthropic API key found in code!"
+            exit 1
+          fi
+          if grep -rn "postgresql://.*:.*@" src/ bin/ 2>/dev/null; then
+            echo "ERROR: Potential database credentials found in code!"
+            exit 1
+          fi
+          echo "No secrets detected"

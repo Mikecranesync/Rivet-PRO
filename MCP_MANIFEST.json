@@ -1,0 +1,243 @@
+{
+  "name": "ralph",
+  "version": "1.0.0",
+  "description": "Autonomous coding agent for task execution",
+  "author": "Rivet Pro",
+  "license": "MIT",
+  "homepage": "https://github.com/Mikecranesync/Rivet-PRO",
+  "tools": [
+    {
+      "name": "ralph_execute",
+      "description": "Execute coding tasks autonomously. Ralph will read stories from the database, implement them using Claude API with tool use, and commit the changes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "max_stories": {
+            "type": "integer",
+            "description": "Maximum number of stories to execute (default: 5)",
+            "default": 5
+          },
+          "story_id": {
+            "type": "string",
+            "description": "Specific story ID to execute (optional)"
+          },
+          "prefix": {
+            "type": "string",
+            "description": "Story ID prefix filter, e.g., 'TASK-' (optional)"
+          },
+          "model": {
+            "type": "string",
+            "description": "Claude model to use",
+            "default": "claude-sonnet-4-20250514",
+            "enum": ["claude-sonnet-4-20250514", "claude-3-5-sonnet-20241022", "claude-haiku-20250305"]
+          },
+          "project_root": {
+            "type": "string",
+            "description": "Project root directory (default: current directory)"
+          }
+        },
+        "required": []
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "execution_id": {
+            "type": "string",
+            "description": "Unique execution identifier"
+          },
+          "status": {
+            "type": "string",
+            "description": "Execution status (started/completed/failed)"
+          },
+          "stories_completed": {
+            "type": "integer",
+            "description": "Number of stories successfully completed"
+          },
+          "stories_failed": {
+            "type": "integer",
+            "description": "Number of stories that failed"
+          }
+        }
+      }
+    },
+    {
+      "name": "ralph_story_create",
+      "description": "Create a new story in the Ralph queue for autonomous execution",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "story_id": {
+            "type": "string",
+            "description": "Unique story identifier (e.g., TASK-001)"
+          },
+          "title": {
+            "type": "string",
+            "description": "Story title"
+          },
+          "description": {
+            "type": "string",
+            "description": "Detailed description of what needs to be implemented"
+          },
+          "acceptance_criteria": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "List of acceptance criteria"
+          },
+          "priority": {
+            "type": "integer",
+            "description": "Priority (lower number = higher priority)",
+            "default": 0
+          },
+          "ai_model": {
+            "type": "string",
+            "description": "Claude model to use for this story",
+            "default": "claude-sonnet-4-20250514"
+          }
+        },
+        "required": ["story_id", "title", "description", "acceptance_criteria"]
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Creation status"
+          },
+          "story_id": {
+            "type": "string",
+            "description": "Created story ID"
+          }
+        }
+      }
+    },
+    {
+      "name": "ralph_story_status",
+      "description": "Get the status of a specific story",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "story_id": {
+            "type": "string",
+            "description": "Story ID to check"
+          }
+        },
+        "required": ["story_id"]
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "story_id": {"type": "string"},
+          "title": {"type": "string"},
+          "status": {"type": "string"},
+          "priority": {"type": "integer"},
+          "commit_hash": {"type": "string"},
+          "error_message": {"type": "string"}
+        }
+      }
+    },
+    {
+      "name": "ralph_story_list",
+      "description": "List stories with optional filtering",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Filter by status (todo, in_progress, done, failed)",
+            "enum": ["todo", "in_progress", "done", "failed"]
+          },
+          "prefix": {
+            "type": "string",
+            "description": "Filter by story ID prefix"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of stories to return",
+            "default": 50
+          }
+        },
+        "required": []
+      },
+      "returns": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "story_id": {"type": "string"},
+            "title": {"type": "string"},
+            "status": {"type": "string"},
+            "priority": {"type": "integer"}
+          }
+        }
+      }
+    },
+    {
+      "name": "ralph_health",
+      "description": "Check Ralph health status including database and API connectivity",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "status": {"type": "string"},
+          "version": {"type": "string"},
+          "database": {"type": "string"},
+          "timestamp": {"type": "string"}
+        }
+      }
+    }
+  ],
+  "discovery": {
+    "keywords": [
+      "coding",
+      "automation",
+      "agent",
+      "tasks",
+      "autonomous",
+      "development",
+      "story",
+      "implementation",
+      "claude",
+      "ai"
+    ],
+    "categories": [
+      "development",
+      "ai-agent",
+      "automation",
+      "coding-assistant"
+    ]
+  },
+  "api": {
+    "type": "http",
+    "base_url": "http://localhost:8765",
+    "endpoints": {
+      "health": "GET /api/v1/health",
+      "version": "GET /api/v1/version",
+      "stories": "GET /api/v1/stories",
+      "story_create": "POST /api/v1/stories",
+      "story_get": "GET /api/v1/stories/{story_id}",
+      "story_update": "PATCH /api/v1/stories/{story_id}",
+      "story_delete": "DELETE /api/v1/stories/{story_id}",
+      "execute": "POST /api/v1/execute",
+      "executions": "GET /api/v1/executions",
+      "execution_get": "GET /api/v1/executions/{execution_id}"
+    }
+  },
+  "requirements": {
+    "python": ">=3.9",
+    "environment": [
+      "DATABASE_URL",
+      "ANTHROPIC_API_KEY"
+    ],
+    "dependencies": [
+      "anthropic",
+      "psycopg2-binary",
+      "asyncpg",
+      "fastapi",
+      "uvicorn"
+    ]
+  }
+}
