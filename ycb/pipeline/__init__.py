@@ -16,6 +16,8 @@ Cost: $0/month with free providers.
 from .video_generator import VideoGenerator, GeneratedVideo
 from .video_assembler import VideoAssembler, assemble_from_package
 from .quality_iteration import QualityIterativeGenerator, QualityIterationResult
+from .metrics import PipelineMetrics, VideoMetric, DailyStats
+from .autonomous_loop import AutonomousLoop, TopicQueue
 
 __all__ = [
     "VideoGenerator",
@@ -24,4 +26,9 @@ __all__ = [
     "assemble_from_package",
     "QualityIterativeGenerator",
     "QualityIterationResult",
+    "PipelineMetrics",
+    "VideoMetric",
+    "DailyStats",
+    "AutonomousLoop",
+    "TopicQueue",
 ]
