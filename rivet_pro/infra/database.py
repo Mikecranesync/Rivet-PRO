@@ -6,14 +6,31 @@ Includes failover logic: Neon -> Supabase -> CockroachDB (emergency)
 """
 
 import os
+import asyncio
 import asyncpg
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Callable, TypeVar, Any
 from contextlib import asynccontextmanager
 from pathlib import Path
 from rivet_pro.config.settings import settings
 from rivet_pro.infra.observability import get_logger
 
 logger = get_logger(__name__)
+
+# Type variable for retry helper return type
+T = TypeVar('T')
+
+# Transient connection errors that should be retried
+RETRYABLE_ERRORS = (
+    asyncpg.ConnectionDoesNotExistError,
+    asyncpg.InterfaceError,
+    asyncpg.TooManyConnectionsError,
+    asyncpg.CannotConnectNowError,
+    OSError,
+)
+
+# Retry configuration
+MAX_RETRIES = 3
+RETRY_DELAYS = [0.1, 0.5, 0.5]  # 100ms, 500ms, 500ms (capped)
 
 
 def get_database_providers() -> List[Tuple[str, str]]:
@@ -168,9 +185,71 @@ class Database:
         async with self.pool.acquire() as connection:
             yield connection
 
+    async def _execute_with_retry(
+        self,
+        operation: Callable[..., Any],
+        query: str,
+        *args
+    ) -> T:
+        """
+        Execute a database operation with retry logic for transient errors.
+
+        Retries on connection errors with exponential backoff:
+        - Attempt 1: immediate
+        - Attempt 2: after 100ms
+        - Attempt 3: after 500ms
+        - Attempt 4: after 500ms (capped)
+
+        Does NOT retry on query errors (syntax errors, unique violations, etc.)
+
+        Args:
+            operation: The async method to call (e.g., conn.fetch)
+            query: SQL query string
+            *args: Query parameters
+
+        Returns:
+            Result from the database operation
+
+        Raises:
+            The last exception if all retries fail
+        """
+        last_exception = None
+
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                async with self.acquire() as conn:
+                    method = getattr(conn, operation)
+                    return await method(query, *args)
+
+            except RETRYABLE_ERRORS as e:
+                last_exception = e
+
+                if attempt < MAX_RETRIES:
+                    delay = RETRY_DELAYS[attempt]
+                    logger.warning(
+                        f"Database connection error (attempt {attempt + 1}/{MAX_RETRIES + 1}), "
+                        f"retrying in {delay}s | Error: {type(e).__name__}: {e}"
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error(
+                        f"Database connection failed after {MAX_RETRIES + 1} attempts | "
+                        f"Error: {type(e).__name__}: {e}"
+                    )
+                    raise
+
+            except Exception:
+                # Non-retryable errors (query errors, etc.) - raise immediately
+                raise
+
+        # Should not reach here, but just in case
+        raise last_exception
+
     async def execute(self, query: str, *args) -> str:
         """
         Execute a query without returning results.
+
+        Includes automatic retry with exponential backoff for transient errors.
 
         Args:
             query: SQL query string
@@ -179,12 +258,13 @@ class Database:
         Returns:
             Status string from database
         """
-        async with self.acquire() as conn:
-            return await conn.execute(query, *args)
+        return await self._execute_with_retry("execute", query, *args)
 
     async def fetch(self, query: str, *args) -> list:
         """
         Execute a query and return all results.
+
+        Includes automatic retry with exponential backoff for transient errors.
 
         Args:
             query: SQL query string
@@ -193,12 +273,13 @@ class Database:
         Returns:
             List of records
         """
-        async with self.acquire() as conn:
-            return await conn.fetch(query, *args)
+        return await self._execute_with_retry("fetch", query, *args)
 
     async def fetchrow(self, query: str, *args) -> Optional[asyncpg.Record]:
         """
         Execute a query and return a single row.
+
+        Includes automatic retry with exponential backoff for transient errors.
 
         Args:
             query: SQL query string
@@ -207,12 +288,13 @@ class Database:
         Returns:
             Single record or None
         """
-        async with self.acquire() as conn:
-            return await conn.fetchrow(query, *args)
+        return await self._execute_with_retry("fetchrow", query, *args)
 
     async def fetchval(self, query: str, *args):
         """
         Execute a query and return a single value.
+
+        Includes automatic retry with exponential backoff for transient errors.
 
         Args:
             query: SQL query string
@@ -221,8 +303,7 @@ class Database:
         Returns:
             Single value
         """
-        async with self.acquire() as conn:
-            return await conn.fetchval(query, *args)
+        return await self._execute_with_retry("fetchval", query, *args)
 
     async def execute_query_async(self, query: str, params: tuple = (), fetch_mode: str = "all"):
         """
