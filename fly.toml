@@ -7,9 +7,47 @@ primary_region = "ord"  # Chicago
 [env]
   TELEGRAM_BOT_MODE = "polling"
   PYTHONUNBUFFERED = "1"
+  LOG_LEVEL = "INFO"
+  ENVIRONMENT = "production"
 
-# No HTTP services needed - this is a worker (Telegram polling)
-# The bot connects outbound to Telegram, no inbound needed
+# Health check HTTP server runs alongside the bot
+[[services]]
+  internal_port = 8080
+  protocol = "tcp"
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
 
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  [[services.http_checks]]
+    interval = "30s"
+    timeout = "10s"
+    grace_period = "30s"
+    method = "GET"
+    path = "/health"
+
+# Process definition
 [processes]
   app = "python run_bot.py"
+
+# VM configuration
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpus = 1
+
+# Restart policy - auto-restart on crash
+[restart]
+  policy = "always"
+  max_retries = 10
+
+# Deployment settings
+[deploy]
+  strategy = "rolling"
