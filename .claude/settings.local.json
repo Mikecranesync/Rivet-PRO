@@ -1,5 +1,4 @@
 {
-  "enableAllProjectMcpServers": true,
   "permissions": {
     "allow": [
       "mcp__n8n-mcp__*",
@@ -70,7 +69,10 @@
       "Bash(docker stop:*)",
       "Bash(docker start:*)",
       "Bash(cmd /c \"C:\\Users\\hharp\\OneDrive\\Desktop\\grashjs-cmms\\restart_cmms.bat\")",
-      "Bash(cmd /c \"docker-compose down && docker-compose up -d\")"
+      "Bash(cmd /c \"docker-compose down && docker-compose up -d\")",
+      "Bash(git config:*)",
+      "Bash(GIT_EDITOR=true git rebase:*)"
     ]
-  }
+  },
+  "enableAllProjectMcpServers": true
 }
