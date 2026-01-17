@@ -1,0 +1,38 @@
+You are implementing a feature for RIVET Pro, an AI-powered maintenance assistant.
+
+# Story: WA-001
+# Title: Git Branch Setup for WhatsApp
+
+## Description
+Create whatsapp branch from main for all WhatsApp integration work.
+
+## Acceptance Criteria
+["git checkout main and git pull origin main", "git checkout -b whatsapp", "Branch created and checked out", "No uncommitted changes from main"]
+
+## Context
+- Repository: C:\Users\hharp\OneDrive\Desktop\Rivet-PRO
+- This is an n8n-based system with PostgreSQL database
+- Telegram bot for user interface
+- Keep code SIMPLE - field techs need FAST responses
+- Use existing patterns in the codebase
+- DO NOT over-engineer or refactor unrelated code
+
+## Instructions
+1. Implement this feature completely
+2. Test that it works
+3. Commit with message: feat(WA-001): Git Branch Setup for WhatsApp
+
+When done, output a JSON summary:
+{
+  "success": true,
+  "commit_hash": "the-commit-hash",
+  "files_changed": ["list", "of", "files"],
+  "notes": "Brief description of what was implemented"
+}
+
+If blocked:
+{
+  "success": false,
+  "error_message": "What went wrong",
+  "notes": "What needs to happen to unblock"
+}

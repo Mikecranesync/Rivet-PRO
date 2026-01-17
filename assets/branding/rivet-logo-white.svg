@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <!-- Gradient for modern industrial look - lighter for visibility on dark -->
+    <linearGradient id="rivetGradientLight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#818CF8;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#A78BFA;stop-opacity:1" />
+    </linearGradient>
+    <!-- Glow effect for dark backgrounds -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Outer rivet/bolt head shape (hexagonal) -->
+  <polygon points="100,10 175,50 175,150 100,190 25,150 25,50"
+           fill="url(#rivetGradientLight)"
+           filter="url(#glow)"/>
+
+  <!-- Inner circle (rivet center) -->
+  <circle cx="100" cy="100" r="55" fill="#1e1b4b" stroke="#c4b5fd" stroke-width="3"/>
+
+  <!-- R letter - bold industrial style -->
+  <path d="M75,70 L75,130 L85,130 L85,108 L100,108 L115,130 L127,130 L110,105
+           C118,102 125,94 125,82 C125,72 118,65 105,65 L75,65 L75,70 Z
+           M85,75 L102,75 C110,75 115,78 115,85 C115,92 110,98 102,98 L85,98 Z"
+        fill="#ffffff"/>
+</svg>

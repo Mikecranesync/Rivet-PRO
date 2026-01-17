@@ -12,6 +12,7 @@ Usage:
 import os
 import sys
 import json
+import time
 import argparse
 import psycopg2
 import subprocess
@@ -242,7 +243,8 @@ def process_tool_call(tool_name: str, tool_input: dict) -> str:
 
 def execute_story_with_tools(story_id: str, title: str, description: str,
                              acceptance_criteria: str, priority: int,
-                             model: str = "claude-sonnet-4-20250514") -> tuple:
+                             model: str = "claude-sonnet-4-20250514",
+                             delay: float = 2.0, max_turns: int = 30) -> tuple:
     """Execute story using Claude with tool use"""
     print(f"\n{'='*80}")
     print(f"Executing {story_id}: {title}")
@@ -287,72 +289,85 @@ Start by reading the relevant files to understand the current implementation."""
     messages = [{"role": "user", "content": prompt}]
     completed = False
     commit_info = None
-    max_turns = 20  # Prevent infinite loops
 
     for turn in range(max_turns):
         print(f"\n📍 Turn {turn + 1}/{max_turns}")
 
-        try:
-            # Call Claude with tools
-            response = client.messages.create(
-                model=model,
-                max_tokens=4096,
-                tools=TOOLS,
-                messages=messages
-            )
+        # Retry loop with exponential backoff for rate limits
+        response = None
+        for retry in range(4):
+            try:
+                # Call Claude with tools
+                response = client.messages.create(
+                    model=model,
+                    max_tokens=4096,
+                    tools=TOOLS,
+                    messages=messages
+                )
+                # Add delay between API calls to avoid rate limits
+                time.sleep(delay)
+                break  # Success, exit retry loop
+            except Exception as e:
+                error_str = str(e)
+                if "429" in error_str or "rate_limit" in error_str:
+                    wait_time = (retry + 1) * 30  # 30s, 60s, 90s, 120s
+                    print(f"  ⚠️ Rate limited, waiting {wait_time}s (retry {retry + 1}/4)...")
+                    time.sleep(wait_time)
+                else:
+                    # Non-rate-limit error, raise immediately
+                    raise
 
-            # Process response
-            assistant_content = []
+        if response is None:
+            return False, {"error": "Max retries exceeded due to rate limiting"}
 
-            for block in response.content:
-                if block.type == "text":
-                    print(f"💬 Claude: {block.text[:200]}...")
-                    assistant_content.append(block)
+        # Process response
+        assistant_content = []
 
-                elif block.type == "tool_use":
-                    # Execute tool
-                    tool_result = process_tool_call(block.name, block.input)
-                    print(f"  ✅ Result: {tool_result[:100]}...")
+        for block in response.content:
+            if block.type == "text":
+                print(f"💬 Claude: {block.text[:200]}...")
+                assistant_content.append(block)
 
-                    # Check if story is complete
-                    if block.name == "complete_story":
-                        try:
-                            commit_info = json.loads(tool_result)
-                            completed = True
-                        except:
-                            pass
+            elif block.type == "tool_use":
+                # Execute tool
+                tool_result = process_tool_call(block.name, block.input)
+                print(f"  ✅ Result: {tool_result[:100]}...")
 
-                    assistant_content.append(block)
+                # Check if story is complete
+                if block.name == "complete_story":
+                    try:
+                        commit_info = json.loads(tool_result)
+                        completed = True
+                    except:
+                        pass
 
-                    # Add tool result to messages
-                    messages.append({
-                        "role": "assistant",
-                        "content": assistant_content
-                    })
-                    messages.append({
-                        "role": "user",
-                        "content": [{
-                            "type": "tool_result",
-                            "tool_use_id": block.id,
-                            "content": tool_result
-                        }]
-                    })
-                    assistant_content = []
+                assistant_content.append(block)
 
-            # If no tool use, add assistant message
-            if assistant_content and not completed:
+                # Add tool result to messages
                 messages.append({
                     "role": "assistant",
                     "content": assistant_content
                 })
+                messages.append({
+                    "role": "user",
+                    "content": [{
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": tool_result
+                    }]
+                })
+                assistant_content = []
 
-            # Check stop reason
-            if response.stop_reason == "end_turn" or completed:
-                break
+        # If no tool use, add assistant message
+        if assistant_content and not completed:
+            messages.append({
+                "role": "assistant",
+                "content": assistant_content
+            })
 
-        except Exception as e:
-            print(f"❌ Error in turn {turn + 1}: {e}")
-            return False, {"error": str(e)}
+        # Check stop reason
+        if response.stop_reason == "end_turn" or completed:
+            break
 
     if completed and commit_info:
         # Create git commit
@@ -430,6 +445,9 @@ def main():
     parser.add_argument("--prefix", type=str, help="Story ID prefix filter (e.g., TASK-9, KB-)")
     parser.add_argument("--story", type=str, help="Specific story ID to run")
     parser.add_argument("--model", type=str, default="claude-sonnet-4-20250514", help="Claude model to use")
+    parser.add_argument("--delay", type=float, default=2.0, help="Delay between API calls in seconds (default: 2.0)")
+    parser.add_argument("--story-delay", type=float, default=10.0, help="Delay between stories in seconds (default: 10.0)")
+    parser.add_argument("--max-turns", type=int, default=30, help="Max turns per story (default: 30)")
     args = parser.parse_args()
 
     print("="*80)
@@ -475,7 +493,9 @@ def main():
             success, result = execute_story_with_tools(
                 story_id, title, description,
                 str(acceptance_criteria), priority,
-                model=args.model
+                model=args.model,
+                delay=args.delay,
+                max_turns=args.max_turns
             )
 
             # Update status based on result
@@ -493,6 +513,11 @@ def main():
             print(f"\n[ERROR] {e}")
             update_story_status(conn, story_id, 'failed')
             failed += 1
+
+        # Delay between stories to avoid rate limiting
+        if args.story_delay > 0:
+            print(f"\n⏳ Waiting {args.story_delay}s before next story...")
+            time.sleep(args.story_delay)
 
     conn.close()
 

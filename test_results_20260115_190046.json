@@ -1,0 +1,222 @@
+[
+  {
+    "equipment": {
+      "manufacturer": "Siemens",
+      "model": "6SL3210-1PE21-4UL0",
+      "description": "Siemens SINAMICS Power Module - should find manual",
+      "expect_found": true
+    },
+    "python": {
+      "source": "python",
+      "manufacturer": "Siemens",
+      "model": "6SL3210-1PE21-4UL0",
+      "success": true,
+      "manual_url": "https://support.industry.siemens.com/cs/attachments/109763155/PM240-2_HIM_en-US.pdf",
+      "confidence": 0.0,
+      "duration_ms": 1780,
+      "error": null,
+      "has_transparency": true,
+      "has_helpful_response": false
+    },
+    "n8n": null,
+    "expected_found": true
+  },
+  {
+    "equipment": {
+      "manufacturer": "ABB",
+      "model": "ACS580-01-12A5-4",
+      "description": "ABB VFD - popular, should find manual",
+      "expect_found": true
+    },
+    "python": {
+      "source": "python",
+      "manufacturer": "ABB",
+      "model": "ACS580-01-12A5-4",
+      "success": false,
+      "manual_url": null,
+      "confidence": 0.0,
+      "duration_ms": 2243,
+      "error": null,
+      "has_transparency": true,
+      "has_helpful_response": true
+    },
+    "n8n": null,
+    "expected_found": true
+  },
+  {
+    "equipment": {
+      "manufacturer": "Allen-Bradley",
+      "model": "1756-L72",
+      "description": "Rockwell ControlLogix PLC - should find manual",
+      "expect_found": true
+    },
+    "python": {
+      "source": "python",
+      "manufacturer": "Allen-Bradley",
+      "model": "1756-L72",
+      "success": true,
+      "manual_url": "https://literature.rockwellautomation.com/idc/groups/literature/documents/in/1756-in088_-en-p.pdf",
+      "confidence": 0.0,
+      "duration_ms": 1076,
+      "error": null,
+      "has_transparency": true,
+      "has_helpful_response": false
+    },
+    "n8n": null,
+    "expected_found": true
+  },
+  {
+    "equipment": {
+      "manufacturer": "Schneider Electric",
+      "model": "ATV320U22N4B",
+      "description": "Schneider Altivar VFD - should find manual",
+      "expect_found": true
+    },
+    "python": {
+      "source": "python",
+      "manufacturer": "Schneider Electric",
+      "model": "ATV320U22N4B",
+      "success": true,
+      "manual_url": "https://iportal2.schneider-electric.com/Contents/docs/ATV320_GETTING_STARTED_MANUAL_EN_NVE21763_04.PDF",
+      "confidence": 0.0,
+      "duration_ms": 1023,
+      "error": null,
+      "has_transparency": true,
+      "has_helpful_response": false
+    },
+    "n8n": null,
+    "expected_found": true
+  },
+  {
+    "equipment": {
+      "manufacturer": "Nextys",
+      "model": "NPST96148",
+      "description": "Nextys DIN rail power supply - obscure, unlikely to find",
+      "expect_found": false
+    },
+    "python": {
+      "source": "python",
+      "manufacturer": "Nextys",
+      "model": "NPST96148",
+      "success": false,
+      "manual_url": null,
+      "confidence": 0.0,
+      "duration_ms": 5192,
+      "error": null,
+      "has_transparency": true,
+      "has_helpful_response": true
+    },
+    "n8n": null,
+    "expected_found": false
+  },
+  {
+    "equipment": {
+      "manufacturer": "IDEC",
+      "model": "PS5R-SF24",
+      "description": "IDEC power supply - smaller brand",
+      "expect_found": false
+    },
+    "python": {
+      "source": "python",
+      "manufacturer": "IDEC",
+      "model": "PS5R-SF24",
+      "success": true,
+      "manual_url": "https://iportal2.schneider-electric.com/Contents/docs/PS5R%20SERIES%20CATALOG%20PAGE.PDF",
+      "confidence": 0.0,
+      "duration_ms": 1050,
+      "error": null,
+      "has_transparency": true,
+      "has_helpful_response": false
+    },
+    "n8n": null,
+    "expected_found": false
+  },
+  {
+    "equipment": {
+      "manufacturer": "Mean Well",
+      "model": "HDR-150-24",
+      "description": "Mean Well DIN rail power supply",
+      "expect_found": true
+    },
+    "python": {
+      "source": "python",
+      "manufacturer": "Mean Well",
+      "model": "HDR-150-24",
+      "success": true,
+      "manual_url": "https://www.emerson.com/documents/automation/product-brochure-main-valve-partner-for-nuclear-power-sempell-isolation-valves-en-7171924.pdf",
+      "confidence": 0.0,
+      "duration_ms": 1090,
+      "error": null,
+      "has_transparency": true,
+      "has_helpful_response": false
+    },
+    "n8n": null,
+    "expected_found": true
+  },
+  {
+    "equipment": {
+      "manufacturer": "Fanuc",
+      "model": "A06B-6117-H303",
+      "description": "Fanuc servo amplifier - Japanese industrial",
+      "expect_found": false
+    },
+    "python": {
+      "source": "python",
+      "manufacturer": "Fanuc",
+      "model": "A06B-6117-H303",
+      "success": false,
+      "manual_url": null,
+      "confidence": 0.0,
+      "duration_ms": 4646,
+      "error": null,
+      "has_transparency": true,
+      "has_helpful_response": true
+    },
+    "n8n": null,
+    "expected_found": false
+  },
+  {
+    "equipment": {
+      "manufacturer": "Yaskawa",
+      "model": "CIMR-AU4A0018FAA",
+      "description": "Yaskawa VFD - should find",
+      "expect_found": true
+    },
+    "python": {
+      "source": "python",
+      "manufacturer": "Yaskawa",
+      "model": "CIMR-AU4A0018FAA",
+      "success": false,
+      "manual_url": null,
+      "confidence": 0.0,
+      "duration_ms": 4798,
+      "error": null,
+      "has_transparency": true,
+      "has_helpful_response": true
+    },
+    "n8n": null,
+    "expected_found": true
+  },
+  {
+    "equipment": {
+      "manufacturer": "Mitsubishi",
+      "model": "FR-D720-0.4K",
+      "description": "Mitsubishi VFD - common",
+      "expect_found": true
+    },
+    "python": {
+      "source": "python",
+      "manufacturer": "Mitsubishi",
+      "model": "FR-D720-0.4K",
+      "success": false,
+      "manual_url": null,
+      "confidence": 0.0,
+      "duration_ms": 4791,
+      "error": null,
+      "has_transparency": true,
+      "has_helpful_response": true
+    },
+    "n8n": null,
+    "expected_found": true
+  }
+]

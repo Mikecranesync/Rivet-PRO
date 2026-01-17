@@ -1,0 +1,68 @@
+[
+  {
+    "equipment": {
+      "manufacturer": "Siemens",
+      "model": "6SL3210-1PE21-4UL0",
+      "description": "Siemens SINAMICS Power Module - should find manual",
+      "expect_found": true
+    },
+    "python": {
+      "source": "python",
+      "manufacturer": "Siemens",
+      "model": "6SL3210-1PE21-4UL0",
+      "success": true,
+      "manual_url": "https://support.industry.siemens.com/cs/attachments/109763155/PM240-2_HIM_en-US.pdf",
+      "confidence": 0.0,
+      "duration_ms": 3848,
+      "error": null,
+      "has_transparency": true,
+      "has_helpful_response": false
+    },
+    "n8n": null,
+    "expected_found": true
+  },
+  {
+    "equipment": {
+      "manufacturer": "ABB",
+      "model": "ACS580-01-12A5-4",
+      "description": "ABB VFD - popular, should find manual",
+      "expect_found": true
+    },
+    "python": {
+      "source": "python",
+      "manufacturer": "ABB",
+      "model": "ACS580-01-12A5-4",
+      "success": false,
+      "manual_url": null,
+      "confidence": 0.0,
+      "duration_ms": 3164,
+      "error": null,
+      "has_transparency": true,
+      "has_helpful_response": true
+    },
+    "n8n": null,
+    "expected_found": true
+  },
+  {
+    "equipment": {
+      "manufacturer": "Allen-Bradley",
+      "model": "1756-L72",
+      "description": "Rockwell ControlLogix PLC - should find manual",
+      "expect_found": true
+    },
+    "python": {
+      "source": "python",
+      "manufacturer": "Allen-Bradley",
+      "model": "1756-L72",
+      "success": true,
+      "manual_url": "https://literature.rockwellautomation.com/idc/groups/literature/documents/in/1756-in088_-en-p.pdf",
+      "confidence": 0.0,
+      "duration_ms": 1093,
+      "error": null,
+      "has_transparency": true,
+      "has_helpful_response": false
+    },
+    "n8n": null,
+    "expected_found": true
+  }
+]

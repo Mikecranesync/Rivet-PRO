@@ -1,0 +1,144 @@
+{
+  "project": "WhatsApp Integration",
+  "project_id": 2,
+  "branchName": "whatsapp",
+  "description": "Add WhatsApp Cloud API (Meta) support as an independent adapter. Zero changes to Telegram. WhatsApp adapter calls same core services directly.",
+  "userStories": [
+    {
+      "id": "WA-001",
+      "title": "Git Branch Setup for WhatsApp",
+      "description": "Create whatsapp branch from main for all WhatsApp integration work.",
+      "acceptanceCriteria": [
+        "git checkout main and git pull origin main",
+        "git checkout -b whatsapp",
+        "Branch created and checked out",
+        "No uncommitted changes from main"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "WA-002",
+      "title": "Update Settings with WhatsApp Field Descriptions",
+      "description": "Add proper Pydantic Field descriptions to WhatsApp config in config/settings.py.",
+      "acceptanceCriteria": [
+        "whatsapp_phone_id has Field with description",
+        "whatsapp_token has Field with description",
+        "whatsapp_verify_token has Field with description",
+        "whatsapp_app_secret has Field with description",
+        "All fields remain Optional[str] with None default"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "WA-003",
+      "title": "Update .env.example with WhatsApp Config",
+      "description": "Add WhatsApp configuration section to .env.example template.",
+      "acceptanceCriteria": [
+        "WhatsApp section header added",
+        "WHATSAPP_PHONE_ID= placeholder added",
+        "WHATSAPP_TOKEN= placeholder added",
+        "WHATSAPP_VERIFY_TOKEN=your_custom_verify_token added",
+        "WHATSAPP_APP_SECRET= placeholder added"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "WA-004",
+      "title": "Create WhatsApp Client with Stubbed Send Functions",
+      "description": "Create adapters/whatsapp/client.py with send_whatsapp_text(), send_whatsapp_image(), mark_as_read() functions. All stubbed to log instead of calling real API.",
+      "acceptanceCriteria": [
+        "client.py created in adapters/whatsapp/",
+        "send_whatsapp_text(to, text) logs request body",
+        "send_whatsapp_image(to, image_url, caption) logs request body",
+        "mark_as_read(message_id) logs message_id",
+        "All functions are async",
+        "TODO comments mark where real HTTP calls will go",
+        "Reads WHATSAPP_PHONE_ID and WHATSAPP_TOKEN from settings"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "WA-005",
+      "title": "Create WhatsApp Webhook Router",
+      "description": "Create adapters/web/routers/whatsapp.py with GET (verify) and POST (messages) endpoints.",
+      "acceptanceCriteria": [
+        "GET / returns hub.challenge if hub.verify_token matches",
+        "GET / returns 403 if verify_token does not match",
+        "POST / parses WhatsApp webhook JSON payload",
+        "POST / extracts from, text, message_type from messages array",
+        "POST / logs normalized message payload",
+        "POST / calls stubbed send_whatsapp_text() with fixed reply",
+        "POST / returns 200 OK immediately (async processing pattern)",
+        "Signature verification function included (can be disabled for testing)"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "WA-006",
+      "title": "Wire WhatsApp Router to FastAPI",
+      "description": "Include WhatsApp router in adapters/web/main.py and add architecture comment.",
+      "acceptanceCriteria": [
+        "from rivet_pro.adapters.web.routers import whatsapp added",
+        "app.include_router with prefix /whatsapp and tags WhatsApp added",
+        "Architecture comment block added documenting multi-channel pattern",
+        "FastAPI app starts without errors",
+        "/docs shows WhatsApp endpoints"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "WA-007",
+      "title": "Export Client from WhatsApp Adapter Init",
+      "description": "Update adapters/whatsapp/__init__.py to export client functions.",
+      "acceptanceCriteria": [
+        "__init__.py exports send_whatsapp_text",
+        "__init__.py exports send_whatsapp_image",
+        "__init__.py exports mark_as_read",
+        "Can import with: from rivet_pro.adapters.whatsapp import send_whatsapp_text"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "WA-008",
+      "title": "Commit WhatsApp Scaffold to Branch",
+      "description": "Create single commit with all WhatsApp scaffold changes on whatsapp branch.",
+      "acceptanceCriteria": [
+        "git status shows only WhatsApp-related changes",
+        "No changes to adapters/telegram/bot.py",
+        "Commit message: feat: scaffold WhatsApp adapter and webhook endpoints",
+        "Commit includes Co-Authored-By: Claude Opus 4.5",
+        "Branch NOT merged to main"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    }
+  ],
+  "constraints": [
+    "Zero changes to adapters/telegram/bot.py",
+    "All work on whatsapp branch only",
+    "Do NOT merge to main",
+    "WhatsApp send functions are stubbed (log only, no real API calls)",
+    "Signature verification should be included but can be disabled for local testing"
+  ],
+  "references": [
+    "Plan file: C:\\Users\\hharp\\.claude\\plans\\bubbly-enchanting-orbit.md",
+    "Database schema: users.whatsapp_id already exists",
+    "Config: settings.py already has WhatsApp fields (need descriptions)",
+    "WhatsApp Cloud API docs: https://developers.facebook.com/docs/whatsapp/cloud-api"
+  ]
+}
