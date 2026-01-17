@@ -1,6 +1,9 @@
 -- Migration 028: Photo Analysis Cache
--- PHOTO-DEEP-001: Cache for DeepSeek extraction results
+-- PHOTO-CACHE-001: Cache for photo analysis results (screening + extraction)
 -- Prevents re-processing same images within 24h window
+
+-- Drop existing table if schema changed (dev only - remove in prod)
+DROP TABLE IF EXISTS photo_analysis_cache CASCADE;
 
 -- Create photo_analysis_cache table
 CREATE TABLE IF NOT EXISTS photo_analysis_cache (
@@ -9,26 +12,18 @@ CREATE TABLE IF NOT EXISTS photo_analysis_cache (
     -- Image identification (SHA256 hash of image bytes)
     photo_hash VARCHAR(64) NOT NULL UNIQUE,
 
-    -- Extraction results
-    manufacturer VARCHAR(255),
-    model_number VARCHAR(255),
-    serial_number VARCHAR(255),
-    specs JSONB DEFAULT '{}',
-    raw_text TEXT,
-    confidence REAL NOT NULL DEFAULT 0.0,
+    -- Screening result (Groq fast-check: is_industrial, confidence, etc)
+    screening_result JSONB DEFAULT '{}',
 
-    -- Processing metadata
-    model_used VARCHAR(100) NOT NULL,
-    processing_time_ms INTEGER NOT NULL DEFAULT 0,
-    cost_usd REAL NOT NULL DEFAULT 0.0,
+    -- Extraction result (DeepSeek full extraction: manufacturer, model, specs, etc)
+    extraction_result JSONB DEFAULT '{}',
 
     -- Timestamps for TTL management
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '24 hours'),
 
     -- Track cache hits for analytics
-    hit_count INTEGER NOT NULL DEFAULT 0,
-    last_hit_at TIMESTAMPTZ
+    access_count INTEGER NOT NULL DEFAULT 0
 );
 
 -- Index for fast lookup by photo_hash (primary query pattern)
@@ -40,7 +35,7 @@ CREATE INDEX IF NOT EXISTS idx_photo_cache_expires
 ON photo_analysis_cache(expires_at);
 
 -- Function to clean up expired cache entries
-CREATE OR REPLACE FUNCTION cleanup_expired_photo_cache()
+CREATE OR REPLACE FUNCTION cleanup_expired_cache()
 RETURNS INTEGER AS $$
 DECLARE
     deleted_count INTEGER;
@@ -52,56 +47,66 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Function to get or record cache hit
-CREATE OR REPLACE FUNCTION get_photo_cache_and_hit(p_photo_hash VARCHAR(64))
+-- Upsert function for duplicate hash handling
+CREATE OR REPLACE FUNCTION upsert_photo_cache(
+    p_photo_hash VARCHAR(64),
+    p_screening_result JSONB DEFAULT '{}',
+    p_extraction_result JSONB DEFAULT '{}'
+)
+RETURNS INTEGER AS $$
+DECLARE
+    v_id INTEGER;
+BEGIN
+    INSERT INTO photo_analysis_cache (photo_hash, screening_result, extraction_result)
+    VALUES (p_photo_hash, p_screening_result, p_extraction_result)
+    ON CONFLICT (photo_hash)
+    DO UPDATE SET
+        screening_result = COALESCE(NULLIF(p_screening_result::text, '{}')::jsonb, photo_analysis_cache.screening_result),
+        extraction_result = COALESCE(NULLIF(p_extraction_result::text, '{}')::jsonb, photo_analysis_cache.extraction_result),
+        expires_at = NOW() + INTERVAL '24 hours',
+        access_count = photo_analysis_cache.access_count + 1
+    RETURNING id INTO v_id;
+
+    RETURN v_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to get cache entry and increment access count
+CREATE OR REPLACE FUNCTION get_photo_cache(p_photo_hash VARCHAR(64))
 RETURNS TABLE (
-    manufacturer VARCHAR(255),
-    model_number VARCHAR(255),
-    serial_number VARCHAR(255),
-    specs JSONB,
-    raw_text TEXT,
-    confidence REAL,
-    model_used VARCHAR(100),
+    screening_result JSONB,
+    extraction_result JSONB,
+    access_count INTEGER,
     was_cached BOOLEAN
 ) AS $$
 DECLARE
     v_record RECORD;
 BEGIN
     -- Try to find existing non-expired entry
-    SELECT pc.manufacturer, pc.model_number, pc.serial_number,
-           pc.specs, pc.raw_text, pc.confidence, pc.model_used
+    SELECT pc.screening_result, pc.extraction_result, pc.access_count
     INTO v_record
     FROM photo_analysis_cache pc
     WHERE pc.photo_hash = p_photo_hash
       AND pc.expires_at > NOW();
 
     IF FOUND THEN
-        -- Update hit count
+        -- Update access count
         UPDATE photo_analysis_cache
-        SET hit_count = hit_count + 1,
-            last_hit_at = NOW()
+        SET access_count = photo_analysis_cache.access_count + 1
         WHERE photo_hash = p_photo_hash;
 
         -- Return cached result
         RETURN QUERY SELECT
-            v_record.manufacturer,
-            v_record.model_number,
-            v_record.serial_number,
-            v_record.specs,
-            v_record.raw_text,
-            v_record.confidence,
-            v_record.model_used,
+            v_record.screening_result,
+            v_record.extraction_result,
+            v_record.access_count + 1,
             TRUE::BOOLEAN;
     ELSE
         -- Return empty with was_cached = false
         RETURN QUERY SELECT
-            NULL::VARCHAR(255),
-            NULL::VARCHAR(255),
-            NULL::VARCHAR(255),
             NULL::JSONB,
-            NULL::TEXT,
-            NULL::REAL,
-            NULL::VARCHAR(100),
+            NULL::JSONB,
+            0::INTEGER,
             FALSE::BOOLEAN;
     END IF;
 END;
