@@ -159,10 +159,72 @@ Ralph has access to these tools during execution:
 | `run_command` | Execute shell commands |
 | `complete_story` | Mark story complete with commit |
 
+## Remote Access (Other Laptops/Machines)
+
+To call Ralph from another machine on your network:
+
+### 1. Start the server (on the host machine)
+```bash
+# Start server bound to all interfaces
+./bin/ralph server --host 0.0.0.0 --port 8765
+```
+
+### 2. Find your IP address
+```bash
+# Linux/Mac
+ip addr | grep "inet " | grep -v 127.0.0.1
+
+# Windows
+ipconfig | findstr "IPv4"
+```
+
+### 3. Call from another machine
+```bash
+# Replace YOUR_IP with the host machine's IP (e.g., 192.168.1.100)
+
+# Health check
+curl http://YOUR_IP:8765/api/v1/health
+
+# List stories
+curl http://YOUR_IP:8765/api/v1/stories
+
+# Queue a story
+curl -X POST http://YOUR_IP:8765/api/v1/stories \
+  -H "Content-Type: application/json" \
+  -d '{"story_id": "TASK-001", "title": "Fix bug", "description": "Fix the login bug", "acceptance_criteria": ["test passes"], "priority": 1}'
+
+# Execute stories
+curl -X POST http://YOUR_IP:8765/api/v1/execute \
+  -H "Content-Type: application/json" \
+  -d '{"max_stories": 1, "story_id": "TASK-001"}'
+
+# Check execution status
+curl http://YOUR_IP:8765/api/v1/executions
+```
+
+### 4. Firewall (if needed)
+```bash
+# Linux - allow port 8765
+sudo ufw allow 8765/tcp
+
+# Windows - allow port in Windows Firewall
+netsh advfirewall firewall add rule name="Ralph API" dir=in action=allow protocol=tcp localport=8765
+```
+
+### 5. From Claude Code on another machine
+Add to your CLAUDE.md or prompt:
+```
+Ralph API is available at http://YOUR_IP:8765
+- Health: GET /api/v1/health
+- Stories: GET/POST /api/v1/stories
+- Execute: POST /api/v1/execute
+- Docs: http://YOUR_IP:8765/docs
+```
+
 ## API Documentation
 
 When running the server, visit:
-- Swagger UI: http://localhost:8765/docs
+- Swagger UI: http://localhost:8765/docs (or http://YOUR_IP:8765/docs)
 - ReDoc: http://localhost:8765/redoc
 
 ## Version
