@@ -71,3 +71,12 @@ nul
 
 # Archive (local only - contains historical docs with secrets)
 archive/
+
+# Deployment scripts with secrets (use templates instead)
+deploy/fly-deploy.ps1
+
+# Test artifacts
+test_script.json
+ycb/
+ycb_output/
+test_results_*.json
