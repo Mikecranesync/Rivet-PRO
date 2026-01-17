@@ -179,8 +179,8 @@ class TelegramBot:
         """
         Handle photo messages with OCR analysis and streaming responses.
         Includes end-to-end tracing for debugging and observability.
+        Wrapped with 60-second timeout protection (PHOTO-TIMEOUT-001).
         """
-        from rivet_pro.core.services import analyze_image
         from rivet_pro.infra.tracer import get_tracer
 
         user_id = str(update.effective_user.id)
@@ -199,6 +199,79 @@ class TelegramBot:
             "message_id": update.message.message_id,
             "chat_id": update.effective_chat.id
         })
+
+        llm_cost = 0.0
+        outcome = "unknown"
+
+        try:
+            # 60-second timeout protection (PHOTO-TIMEOUT-001)
+            async with asyncio.timeout(60):
+                outcome, llm_cost = await self._process_photo_internal(
+                    update, context, trace, user_id, telegram_user_id, user
+                )
+
+        except asyncio.TimeoutError:
+            # Log timeout in trace
+            trace.add_step("timeout", "error", {
+                "timeout_seconds": 60,
+                "message": "Photo processing exceeded 60 second limit"
+            })
+            outcome = "timeout"
+            logger.error(f"Photo processing timeout | user_id={user_id} | timeout=60s")
+
+            # Send friendly message to user
+            try:
+                await update.message.reply_text(
+                    "⏱️ Sorry, processing took too long. Please try again with a clearer photo."
+                )
+            except Exception as reply_error:
+                logger.error(f"Failed to send timeout message: {reply_error}")
+
+            # Alert admin via alerting_service (PHOTO-TIMEOUT-001)
+            await self.alerting_service.alert_warning(
+                message="Photo processing timeout (60s exceeded)",
+                context={
+                    "service": "TelegramBot._handle_photo",
+                    "user_id": user_id,
+                    "telegram_user_id": telegram_user_id,
+                    "username": user.username or user.first_name,
+                    "message_id": update.message.message_id,
+                    "timeout_seconds": 60
+                },
+                user_id=user_id,
+                service="TelegramBot"
+            )
+
+        except Exception as e:
+            trace.add_step("error", "error", {"error": str(e), "type": type(e).__name__})
+            outcome = "error"
+            logger.error(f"Error in photo handler: {e}", exc_info=True)
+            try:
+                await update.message.reply_text(
+                    "❌ Failed to analyze photo. Please try again with a clearer image."
+                )
+            except Exception as reply_error:
+                logger.error(f"Failed to send error message: {reply_error}")
+
+        finally:
+            # Always save trace regardless of outcome
+            trace.complete(outcome=outcome, llm_cost=llm_cost)
+            await tracer.save_trace(trace, self.db.pool)
+
+    async def _process_photo_internal(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        trace,
+        user_id: str,
+        telegram_user_id: int,
+        user
+    ) -> tuple[str, float]:
+        """
+        Internal photo processing logic extracted for timeout protection.
+        Returns (outcome, llm_cost) tuple.
+        """
+        from rivet_pro.core.services import analyze_image
 
         llm_cost = 0.0
         outcome = "unknown"
@@ -237,9 +310,7 @@ class TelegramBot:
                     disable_web_page_preview=True
                 )
                 outcome = "rate_limited"
-                trace.complete(outcome=outcome, llm_cost=llm_cost)
-                await tracer.save_trace(trace, self.db.pool)
-                return
+                return outcome, llm_cost
 
             # Send initial message with streaming
             msg = await update.message.reply_text("🔍 Analyzing nameplate...")
@@ -616,18 +687,19 @@ class TelegramBot:
                 f"confidence={result.confidence:.2%}"
             )
 
+            return outcome, llm_cost
+
         except Exception as e:
             trace.add_step("error", "error", {"error": str(e), "type": type(e).__name__})
             outcome = "error"
             logger.error(f"Error in photo handler: {e}", exc_info=True)
-            await msg.edit_text(
-                "❌ Failed to analyze photo. Please try again with a clearer image."
-            )
-
-        finally:
-            # Always save trace
-            trace.complete(outcome=outcome, llm_cost=llm_cost)
-            await tracer.save_trace(trace, self.db.pool)
+            try:
+                await msg.edit_text(
+                    "❌ Failed to analyze photo. Please try again with a clearer image."
+                )
+            except Exception:
+                pass  # Message may not exist yet if error was early
+            return outcome, llm_cost
 
     async def _handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
