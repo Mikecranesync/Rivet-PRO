@@ -496,3 +496,238 @@ def format_equipment_response(
                 response += "<i>Send a clearer photo if the ID looks wrong.</i>"
 
     return response
+
+
+# Telegram message limit
+TELEGRAM_MAX_CHARS = 4096
+
+
+def _get_confidence_emoji(confidence: float) -> str:
+    """Get emoji for confidence level."""
+    if confidence >= 0.90:
+        return "🟢"  # High
+    elif confidence >= 0.80:
+        return "✅"  # Good
+    elif confidence >= 0.70:
+        return "🟡"  # Medium
+    else:
+        return "🔴"  # Low
+
+
+def _truncate_to_limit(text: str, limit: int = TELEGRAM_MAX_CHARS) -> str:
+    """Truncate text to fit Telegram limit, adding ellipsis if needed."""
+    if len(text) <= limit:
+        return text
+    # Find last newline before limit to keep message clean
+    truncate_at = text[:limit - 50].rfind('\n')
+    if truncate_at < limit // 2:
+        truncate_at = limit - 50
+    return text[:truncate_at] + "\n\n⋯ _Response truncated_"
+
+
+def format_photo_pipeline_response(
+    screening_result: Optional[Dict[str, Any]] = None,
+    extraction_result: Optional[Dict[str, Any]] = None,
+    analysis_result: Optional[Dict[str, Any]] = None,
+    equipment_info: Optional[Dict[str, Any]] = None,
+    maintenance_history: Optional[List[Dict[str, Any]]] = None,
+    from_cache: bool = False
+) -> str:
+    """
+    Format photo pipeline response for Telegram (Markdown format).
+
+    Combines results from all pipeline stages into a user-friendly message
+    optimized for field technicians. Uses Markdown formatting.
+
+    Args:
+        screening_result: Stage 1 Groq screening result dict with keys:
+            - is_industrial: bool
+            - confidence: float (0.0-1.0)
+            - category: str (plc, vfd, motor, etc.)
+            - reason: str
+        extraction_result: Stage 2 DeepSeek extraction result dict with keys:
+            - manufacturer: str
+            - model_number: str
+            - serial_number: str (optional)
+            - specs: dict (voltage, current, hp, etc.)
+            - confidence: float
+        analysis_result: Stage 3 Claude analysis result dict with keys:
+            - analysis: str
+            - solutions: List[str]
+            - safety_warnings: List[str]
+            - kb_citations: List[Dict[str, str]]
+            - recommendations: List[str]
+            - confidence: float
+        equipment_info: Equipment matching info dict with keys:
+            - equipment_id: str
+            - equipment_number: str
+            - is_new: bool
+        maintenance_history: List of recent work orders with keys:
+            - work_order_number: str
+            - title: str
+            - status: str
+            - created_at: str
+        from_cache: Whether extraction came from cache
+
+    Returns:
+        Formatted Markdown string for Telegram (< 4096 chars)
+
+    Example:
+        >>> result = format_photo_pipeline_response(
+        ...     screening_result={"confidence": 0.92, "category": "vfd"},
+        ...     extraction_result={"manufacturer": "Siemens", "model_number": "G120"}
+        ... )
+    """
+    parts = []
+
+    # ==========================================
+    # HEADER - Screening Status
+    # ==========================================
+    screening_conf = (screening_result or {}).get('confidence', 0.0)
+    screening_emoji = _get_confidence_emoji(screening_conf)
+    category = (screening_result or {}).get('category', 'equipment')
+    category_display = category.upper() if category else 'EQUIPMENT'
+
+    parts.append(f"{screening_emoji} *{category_display} Identified* ({screening_conf:.0%})")
+    parts.append("")
+
+    # ==========================================
+    # EQUIPMENT CARD - DeepSeek Extraction
+    # ==========================================
+    if extraction_result:
+        ext_conf = extraction_result.get('confidence', 0.0)
+        ext_emoji = _get_confidence_emoji(ext_conf)
+
+        parts.append(f"📋 *Equipment Details* {ext_emoji}")
+        parts.append("```")
+
+        if extraction_result.get('manufacturer'):
+            parts.append(f"Manufacturer: {extraction_result['manufacturer']}")
+        if extraction_result.get('model_number'):
+            parts.append(f"Model:        {extraction_result['model_number']}")
+        if extraction_result.get('serial_number'):
+            parts.append(f"Serial:       {extraction_result['serial_number']}")
+
+        # Key specs in card format
+        specs = extraction_result.get('specs', {})
+        if specs:
+            parts.append("─" * 25)
+            for key in ['voltage', 'current', 'horsepower', 'hp', 'rpm', 'phase', 'frequency']:
+                if specs.get(key):
+                    label = key.upper().replace('HORSEPOWER', 'HP')[:12].ljust(12)
+                    parts.append(f"{label}: {specs[key]}")
+
+        parts.append("```")
+        parts.append(f"_Confidence: {ext_conf:.0%}_")
+
+    # ==========================================
+    # EQUIPMENT ID - Matched/Created
+    # ==========================================
+    if equipment_info:
+        eq_num = equipment_info.get('equipment_number', '')
+        is_new = equipment_info.get('is_new', False)
+        status_icon = "🆕" if is_new else "✓"
+        status_text = "Created" if is_new else "Matched"
+
+        parts.append("")
+        parts.append(f"🔧 *Equipment ID:* `{eq_num}` ({status_icon} {status_text})")
+
+    # ==========================================
+    # SAFETY WARNINGS - Always prominent (⚠️ first!)
+    # ==========================================
+    safety_warnings = (analysis_result or {}).get('safety_warnings', [])
+    if safety_warnings:
+        parts.append("")
+        parts.append("⚠️ *SAFETY WARNINGS*")
+        for warning in safety_warnings[:3]:  # Limit to top 3
+            # Add emoji based on severity keywords
+            if any(kw in warning.lower() for kw in ['danger', '480v', 'high voltage', 'lethal']):
+                parts.append(f"🔴 {warning}")
+            elif any(kw in warning.lower() for kw in ['lockout', 'tagout', 'ppe']):
+                parts.append(f"🟡 {warning}")
+            else:
+                parts.append(f"⚠️ {warning}")
+
+    # ==========================================
+    # AI ANALYSIS - Collapsible section
+    # ==========================================
+    if analysis_result and analysis_result.get('analysis'):
+        parts.append("")
+        parts.append("━━━━━━━━━━━━━━━━━━━━")
+
+        analysis_conf = analysis_result.get('confidence', 0.0)
+        analysis_emoji = _get_confidence_emoji(analysis_conf)
+        parts.append(f"🤖 *AI Analysis* {analysis_emoji}")
+        parts.append("")
+
+        # Truncate analysis text if too long
+        analysis_text = analysis_result['analysis']
+        if len(analysis_text) > 600:
+            analysis_text = analysis_text[:600] + "..."
+
+        # Use blockquote for analysis text (collapsible feel)
+        for line in analysis_text.split('\n')[:8]:  # Max 8 lines
+            if line.strip():
+                parts.append(f"> {line}")
+
+    # ==========================================
+    # SOLUTIONS - Numbered list
+    # ==========================================
+    solutions = (analysis_result or {}).get('solutions', [])
+    if solutions:
+        parts.append("")
+        parts.append("💡 *Recommended Solutions:*")
+        for i, solution in enumerate(solutions[:4], 1):  # Top 4
+            # Truncate long solutions
+            sol = solution[:100] + "..." if len(solution) > 100 else solution
+            parts.append(f"{i}. {sol}")
+
+    # ==========================================
+    # MAINTENANCE HISTORY SUMMARY
+    # ==========================================
+    if maintenance_history:
+        parts.append("")
+        parts.append("📜 *Recent History:*")
+        for record in maintenance_history[:3]:  # Last 3 work orders
+            wo_num = record.get('work_order_number', 'WO-???')
+            title = record.get('title', 'Unknown')[:40]
+            status = record.get('status', 'unknown')
+            status_icon = "✅" if status.lower() == 'completed' else "🔄"
+            parts.append(f"• `{wo_num}` {title} {status_icon}")
+
+    # ==========================================
+    # KB CITATIONS - Numbered references
+    # ==========================================
+    kb_citations = (analysis_result or {}).get('kb_citations', [])
+    if kb_citations:
+        parts.append("")
+        parts.append("📚 *Sources:*")
+        for i, citation in enumerate(kb_citations[:3], 1):  # Top 3
+            title = citation.get('title', 'Knowledge Base')[:50]
+            url = citation.get('url', '')
+            if url:
+                parts.append(f"[{i}] [{title}]({url})")
+            else:
+                parts.append(f"[{i}] {title}")
+
+    # ==========================================
+    # RECOMMENDATIONS (if space permits)
+    # ==========================================
+    recommendations = (analysis_result or {}).get('recommendations', [])
+    if recommendations and len('\n'.join(parts)) < 3000:  # Only if space
+        parts.append("")
+        parts.append("📝 *Next Steps:*")
+        for rec in recommendations[:2]:  # Top 2
+            rec_text = rec[:80] + "..." if len(rec) > 80 else rec
+            parts.append(f"☐ {rec_text}")
+
+    # ==========================================
+    # FOOTER - Cache indicator
+    # ==========================================
+    if from_cache:
+        parts.append("")
+        parts.append("_📦 From cache (instant response)_")
+
+    # Join and truncate to Telegram limit
+    response = '\n'.join(parts)
+    return _truncate_to_limit(response, TELEGRAM_MAX_CHARS)

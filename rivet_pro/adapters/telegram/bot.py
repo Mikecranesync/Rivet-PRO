@@ -26,7 +26,7 @@ from rivet.models.sme_chat import SMEVendor, ConfidenceLevel
 from rivet.atlas.database import AtlasDatabase
 from rivet_pro.config.settings import settings
 from rivet_pro.infra.observability import get_logger
-from rivet_pro.infra.database import Database
+from rivet_pro.infra.database import Database, atlas_db
 from rivet_pro.core.services.equipment_service import EquipmentService
 from rivet_pro.core.services.work_order_service import WorkOrderService
 from rivet_pro.core.services.usage_service import UsageService, FREE_TIER_LIMIT
@@ -37,6 +37,7 @@ from rivet_pro.core.services.alerting_service import AlertingService
 from rivet_pro.core.services.kb_analytics_service import KnowledgeBaseAnalytics
 from rivet_pro.core.services.enrichment_queue_service import EnrichmentQueueService
 from rivet_pro.core.services.analytics_service import AnalyticsService
+from rivet_pro.core.services.photo_pipeline_service import PhotoPipelineService, get_photo_pipeline_service
 from rivet_pro.core.utils import format_equipment_response
 
 logger = get_logger(__name__)
@@ -68,6 +69,9 @@ class TelegramBot:
         # Track pending manual validations (human-in-the-loop)
         # Maps user_id -> {url, manufacturer, model, timestamp}
         self._pending_validations: dict = {}
+
+        # Photo pipeline service (PHOTO-FLOW-001)
+        self.photo_pipeline_service = None  # Initialized after db connects
 
         # Initialize alerting service for Ralph notifications (RALPH-BOT-3)
         self.alerting_service = AlertingService(
@@ -179,8 +183,8 @@ class TelegramBot:
         """
         Handle photo messages with OCR analysis and streaming responses.
         Includes end-to-end tracing for debugging and observability.
+        Wrapped with 60-second timeout protection (PHOTO-TIMEOUT-001).
         """
-        from rivet_pro.core.services import analyze_image
         from rivet_pro.infra.tracer import get_tracer
 
         user_id = str(update.effective_user.id)
@@ -200,6 +204,82 @@ class TelegramBot:
             "chat_id": update.effective_chat.id
         })
 
+        llm_cost = 0.0
+        outcome = "unknown"
+
+        try:
+            # 60-second timeout protection (PHOTO-TIMEOUT-001)
+            async with asyncio.timeout(60):
+                outcome, llm_cost = await self._process_photo_internal(
+                    update, context, trace, user_id, telegram_user_id, user
+                )
+
+        except asyncio.TimeoutError:
+            # Log timeout in trace
+            trace.add_step("timeout", "error", {
+                "timeout_seconds": 60,
+                "message": "Photo processing exceeded 60 second limit"
+            })
+            outcome = "timeout"
+            logger.error(f"Photo processing timeout | user_id={user_id} | timeout=60s")
+
+            # Send friendly message to user
+            try:
+                await update.message.reply_text(
+                    "⏱️ Sorry, processing took too long. Please try again with a clearer photo."
+                )
+            except Exception as reply_error:
+                logger.error(f"Failed to send timeout message: {reply_error}")
+
+            # Alert admin via alerting_service (PHOTO-TIMEOUT-001)
+            await self.alerting_service.alert_warning(
+                message="Photo processing timeout (60s exceeded)",
+                context={
+                    "service": "TelegramBot._handle_photo",
+                    "user_id": user_id,
+                    "telegram_user_id": telegram_user_id,
+                    "username": user.username or user.first_name,
+                    "message_id": update.message.message_id,
+                    "timeout_seconds": 60
+                },
+                user_id=user_id,
+                service="TelegramBot"
+            )
+
+        except Exception as e:
+            trace.add_step("error", "error", {"error": str(e), "type": type(e).__name__})
+            outcome = "error"
+            logger.error(f"Error in photo handler: {e}", exc_info=True)
+            try:
+                await update.message.reply_text(
+                    "❌ Failed to analyze photo. Please try again with a clearer image."
+                )
+            except Exception as reply_error:
+                logger.error(f"Failed to send error message: {reply_error}")
+
+        finally:
+            # Always save trace regardless of outcome
+            trace.complete(outcome=outcome, llm_cost=llm_cost)
+            await tracer.save_trace(trace, self.db.pool)
+
+    async def _process_photo_internal(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        trace,
+        user_id: str,
+        telegram_user_id: int,
+        user
+    ) -> tuple[str, float]:
+        """
+        Internal photo processing logic extracted for timeout protection.
+        Returns (outcome, llm_cost) tuple.
+
+        Uses the three-stage photo pipeline (PHOTO-FLOW-001):
+        1. Groq screening (always runs)
+        2. DeepSeek extraction (if Groq >= 0.80)
+        3. Claude analysis (if equipment matched and KB context)
+        """
         llm_cost = 0.0
         outcome = "unknown"
 
@@ -237,16 +317,20 @@ class TelegramBot:
                     disable_web_page_preview=True
                 )
                 outcome = "rate_limited"
-                trace.complete(outcome=outcome, llm_cost=llm_cost)
-                await tracer.save_trace(trace, self.db.pool)
-                return
+                return outcome, llm_cost
 
             # Send initial message with streaming
-            msg = await update.message.reply_text("🔍 Analyzing nameplate...")
+            msg = await update.message.reply_text("🔍 Analyzing photo...")
 
             # Download photo (get highest resolution)
             photo = await update.message.photo[-1].get_file()
             photo_bytes = await photo.download_as_bytearray()
+
+            # Extract caption for location tagging (user can tag equipment via photo caption)
+            photo_caption = update.message.caption.strip() if update.message.caption else None
+            if photo_caption:
+                logger.info(f"Photo caption provided | user_id={user_id} | caption='{photo_caption}'")
+
             trace.add_step("photo_download", "success", {
                 "size_bytes": len(photo_bytes),
                 "size_kb": round(len(photo_bytes) / 1024, 1)
@@ -254,45 +338,69 @@ class TelegramBot:
 
             logger.info(f"Downloaded photo | user_id={user_id} | size={len(photo_bytes)} bytes")
 
-            # Update message: OCR in progress
-            await msg.edit_text("🔍 Analyzing nameplate...\n⏳ Reading text from image...")
+            # ================================================================
+            # PHOTO PIPELINE (PHOTO-FLOW-001)
+            # Stage 1: Groq screening (fast, cheap industrial detection)
+            # Stage 2: DeepSeek extraction (if Groq >= 0.80, with cache check)
+            # Stage 3: Claude analysis (if equipment matched and KB context)
+            # ================================================================
 
-            # Run OCR analysis
-            result = await analyze_image(
-                image_bytes=photo_bytes,
-                user_id=user_id
+            # Check if pipeline service is initialized (may not be during tests or fallback)
+            if not self.photo_pipeline_service:
+                # Fallback to legacy OCR-only behavior for backwards compatibility
+                return await self._process_photo_legacy(
+                    update, context, trace, user_id, telegram_user_id, user,
+                    photo_bytes, photo_caption, msg, count, reason
+                )
+
+            await msg.edit_text("🔍 Analyzing photo...\n⏳ Stage 1: Screening...")
+
+            # Run the three-stage photo pipeline
+            pipeline_result = await self.photo_pipeline_service.process_photo(
+                image_bytes=bytes(photo_bytes),
+                user_id=f"telegram_{user_id}",
+                telegram_user_id=telegram_user_id,
+                trace=trace
             )
 
-            # Track LLM cost from OCR
-            if hasattr(result, 'cost_usd') and result.cost_usd:
-                llm_cost += result.cost_usd
+            # Track LLM cost from pipeline
+            llm_cost += pipeline_result.total_cost_usd
 
-            trace.add_step("ocr_analysis", "success", {
-                "provider": getattr(result, 'provider', 'unknown'),
-                "model": getattr(result, 'model_used', 'unknown'),
-                "cost_usd": getattr(result, 'cost_usd', 0),
-                "confidence": getattr(result, 'confidence', 0),
-                "manufacturer": result.manufacturer,
-                "model_number": result.model_number,
-                "serial_number": result.serial_number,
-                "equipment_type": getattr(result, 'equipment_type', None)
-            })
+            # Add pipeline trace metadata
+            trace.add_step("photo_pipeline", "success" if not pipeline_result.error else "error",
+                pipeline_result.get_trace_metadata()
+            )
 
-            # Handle OCR errors
-            if hasattr(result, 'error') and result.error:
-                trace.add_step("ocr_error", "error", {"error": result.error})
+            # Handle rejected photos (not industrial equipment)
+            if pipeline_result.rejected:
                 await msg.edit_text(
-                    f"❌ {result.error}\n\n"
+                    pipeline_result.rejection_message or
+                    "📷 This doesn't appear to be industrial equipment.\n\n"
+                    "Please send a photo of equipment nameplates, control panels, VFDs, motors, or pumps."
+                )
+                outcome = "rejected_not_industrial"
+                return outcome, llm_cost
+
+            # Handle pipeline errors
+            if pipeline_result.error:
+                trace.add_step("pipeline_error", "error", {"error": pipeline_result.error})
+                await msg.edit_text(
+                    f"❌ {pipeline_result.error}\n\n"
                     "Try taking a clearer photo with good lighting and focus on the nameplate."
                 )
-                outcome = "ocr_error"
-                trace.complete(outcome=outcome, llm_cost=llm_cost)
-                await tracer.save_trace(trace, self.db.pool)
-                return
+                outcome = "pipeline_error"
+                return outcome, llm_cost
+
+            # Extract results from pipeline for downstream processing
+            result = pipeline_result.extraction  # ExtractionResult from DeepSeek
+            equipment_id = pipeline_result.equipment_id
+            equipment_number = pipeline_result.equipment_number
+            is_new = pipeline_result.is_new_equipment
 
             # Log interaction for EVERY equipment lookup (CRITICAL-LOGGING-001)
             interaction_id = None
             try:
+                confidence = result.confidence if result else 0.0
                 interaction_id = await self.db.fetchval(
                     """
                     INSERT INTO interactions (
@@ -302,43 +410,15 @@ class TelegramBot:
                         (SELECT id FROM users WHERE telegram_id = $1),
                         'equipment_lookup',
                         $2,
-                        'ocr_complete',
+                        'pipeline_complete',
                         NOW()
                     )
                     RETURNING id
                     """,
                     user_id,  # Pass as integer, not string
-                    result.confidence if hasattr(result, 'confidence') else None
+                    confidence
                 )
                 logger.info(f"Logged interaction | interaction_id={interaction_id} | user_id={user_id}")
-            except Exception as e:
-                logger.warning(f"Failed to log interaction: {e}")
-                # Continue anyway - don't break user experience
-
-            # Create or match equipment in CMMS
-            equipment_id = None
-            equipment_number = None
-            is_new = False
-
-            try:
-                equipment_id, equipment_number, is_new = await self.equipment_service.match_or_create_equipment(
-                    manufacturer=result.manufacturer,
-                    model_number=result.model_number,
-                    serial_number=result.serial_number,
-                    equipment_type=getattr(result, 'equipment_type', None),
-                    location=None,  # Can be added later via conversation
-                    user_id=f"telegram_{user_id}"
-                )
-                trace.add_step("equipment_match", "success", {
-                    "action": "created" if is_new else "matched",
-                    "equipment_id": str(equipment_id) if equipment_id else None,
-                    "equipment_number": equipment_number,
-                    "is_new": is_new
-                })
-                logger.info(
-                    f"Equipment {'created' if is_new else 'matched'} | "
-                    f"equipment_number={equipment_number} | user_id={user_id}"
-                )
 
                 # Update interaction with equipment_id (CRITICAL-LOGGING-001)
                 if interaction_id and equipment_id:
@@ -356,14 +436,13 @@ class TelegramBot:
                         logger.warning(f"Failed to update interaction with equipment: {e}")
 
             except Exception as e:
-                trace.add_step("equipment_match", "error", {"error": str(e)})
-                logger.error(f"Failed to create/match equipment: {e}", exc_info=True)
-                # Continue anyway - OCR succeeded even if CMMS failed
+                logger.warning(f"Failed to log interaction: {e}")
+                # Continue anyway - don't break user experience
 
             # Update message: Searching for manual
             await msg.edit_text(
-                "🔍 Analyzing nameplate...\n"
-                "⏳ Reading text from image...\n"
+                "🔍 Analyzing photo...\n"
+                "✅ Equipment identified\n"
                 "📖 Searching for manual..."
             )
 
@@ -372,13 +451,16 @@ class TelegramBot:
             kb_result = None
             search_report = None  # For search transparency
             helpful_response = None  # LLM-generated tip when not found
-            if result.manufacturer and result.model_number:
+            # Use extraction result from pipeline (ExtractionResult has manufacturer/model_number)
+            if result and result.manufacturer and result.model_number:
                 try:
                     # Step 1: Check knowledge base
+                    # Use equipment type from screening if available
+                    equipment_type = pipeline_result.screening.category if pipeline_result.screening else None
                     kb_result = await self._search_knowledge_base(
                         manufacturer=result.manufacturer,
                         model=result.model_number,
-                        equipment_type=getattr(result, 'equipment_type', None)
+                        equipment_type=equipment_type
                     )
 
                     if kb_result:
@@ -494,7 +576,7 @@ class TelegramBot:
                     # Continue without manual if search fails
 
             # Create knowledge atom if manual was found (CRITICAL-KB-001, KB-002)
-            if manual_result and result.manufacturer and result.model_number:
+            if manual_result and result and result.manufacturer and result.model_number:
                 try:
                     # Update existing interaction with manual_delivered outcome (CRITICAL-LOGGING-001)
                     if interaction_id:
@@ -512,10 +594,12 @@ class TelegramBot:
                             logger.warning(f"Failed to update interaction outcome: {e}")
 
                     # Create atom with interaction link
+                    # Use equipment type from screening if available
+                    equipment_type = pipeline_result.screening.category if pipeline_result.screening else None
                     await self._create_manual_atom(
                         manufacturer=result.manufacturer,
                         model=result.model_number,
-                        equipment_type=getattr(result, 'equipment_type', None),
+                        equipment_type=equipment_type,
                         manual_url=manual_result.get('url'),
                         confidence=min(result.confidence, 0.95),  # Cap at 0.95
                         source_id=str(user_id),
@@ -526,17 +610,27 @@ class TelegramBot:
                     # Don't fail the user interaction if atom creation fails
 
             # Format equipment response with manual link
-            equipment_data = {
-                'manufacturer': result.manufacturer,
-                'model': result.model_number or 'Unknown',
-                'serial': result.serial_number,
-                'confidence': result.confidence,
-                'image_issues': getattr(result, 'image_issues', [])
-            }
-
-            # Add error code if detected
-            if hasattr(result, 'error_code') and result.error_code:
-                equipment_data['error_code'] = result.error_code
+            # Use pipeline result for formatting (result is ExtractionResult from pipeline)
+            if result:
+                equipment_data = {
+                    'manufacturer': result.manufacturer or 'Unknown',
+                    'model': result.model_number or 'Unknown',
+                    'serial': result.serial_number,
+                    'confidence': result.confidence,
+                    'image_issues': []
+                }
+                # Add specs if available from DeepSeek extraction
+                if result.specs:
+                    equipment_data['specs'] = result.specs
+            else:
+                # Fallback if no extraction result (shouldn't happen normally)
+                equipment_data = {
+                    'manufacturer': 'Unknown',
+                    'model': 'Unknown',
+                    'serial': None,
+                    'confidence': 0.0,
+                    'image_issues': []
+                }
 
             response = format_equipment_response(
                 equipment_data,
@@ -545,19 +639,43 @@ class TelegramBot:
                 helpful_response=helpful_response
             )
 
+            # Add Claude AI analysis from pipeline (PHOTO-FLOW-001 Stage 3)
+            if pipeline_result.analysis and pipeline_result.analysis.analysis:
+                analysis = pipeline_result.analysis
+                response += "\n\n━━━━━━━━━━━━━━━━━━━━"
+                response += "\n🤖 <b>AI Analysis</b>\n"
+
+                # Truncate analysis if too long
+                analysis_text = analysis.analysis
+                if len(analysis_text) > 400:
+                    analysis_text = analysis_text[:400] + "..."
+                response += f"\n{analysis_text}"
+
+                # Solutions
+                if analysis.solutions:
+                    response += "\n\n<b>Recommended Solutions:</b>"
+                    for i, solution in enumerate(analysis.solutions[:3], 1):
+                        response += f"\n{i}. {solution}"
+
+                # Safety warnings
+                if analysis.safety_warnings:
+                    response += "\n\n⚠️ <b>Safety:</b>"
+                    for warning in analysis.safety_warnings[:2]:
+                        response += f"\n• {warning[:100]}..."
+
             # Store pending validation if showing human-in-the-loop prompt
             if search_report and search_report.best_candidate and search_report.best_candidate.confidence >= 0.5:
                 import time
                 self._pending_validations[str(user_id)] = {
                     'url': search_report.best_candidate.url,
                     'title': search_report.best_candidate.title,
-                    'manufacturer': result.manufacturer,
-                    'model': result.model_number,
+                    'manufacturer': result.manufacturer if result else 'Unknown',
+                    'model': result.model_number if result else 'Unknown',
                     'timestamp': time.time()
                 }
                 logger.info(
                     f"Stored pending validation | user_id={user_id} | "
-                    f"mfr={result.manufacturer} | model={result.model_number}"
+                    f"mfr={result.manufacturer if result else 'Unknown'} | model={result.model_number if result else 'Unknown'}"
                 )
 
             # Add equipment number if created/matched
@@ -565,9 +683,13 @@ class TelegramBot:
                 status = "🆕 Created" if is_new else "✓ Matched"
                 response += f"\n\n<b>Equipment ID:</b> {equipment_number} ({status})"
 
-            # Add component type if detected
-            if hasattr(result, 'component_type') and result.component_type:
-                response += f"\n<b>Type:</b> {result.component_type}"
+            # Add location if provided via photo caption
+            if photo_caption:
+                response += f"\n<b>Location:</b> {photo_caption}"
+
+            # Add component type if detected (from screening category)
+            if pipeline_result.screening and pipeline_result.screening.category:
+                response += f"\n<b>Type:</b> {pipeline_result.screening.category}"
 
             # Record this lookup for usage tracking
             await self.usage_service.record_lookup(
@@ -600,24 +722,177 @@ class TelegramBot:
                 outcome = "partial_success"
 
             logger.info(
-                f"OCR complete | user_id={user_id} | "
-                f"manufacturer={result.manufacturer} | "
-                f"model={result.model_number} | "
-                f"confidence={result.confidence:.2%}"
+                f"Pipeline complete | user_id={user_id} | "
+                f"manufacturer={result.manufacturer if result else 'Unknown'} | "
+                f"model={result.model_number if result else 'Unknown'} | "
+                f"confidence={result.confidence:.2% if result else 0:.2%} | "
+                f"cost=${pipeline_result.total_cost_usd:.4f}"
             )
+
+            return outcome, llm_cost
 
         except Exception as e:
             trace.add_step("error", "error", {"error": str(e), "type": type(e).__name__})
             outcome = "error"
             logger.error(f"Error in photo handler: {e}", exc_info=True)
-            await msg.edit_text(
-                "❌ Failed to analyze photo. Please try again with a clearer image."
+            try:
+                await msg.edit_text(
+                    "❌ Failed to analyze photo. Please try again with a clearer image."
+                )
+            except Exception:
+                pass  # Message may not exist yet if error was early
+            return outcome, llm_cost
+
+    async def _process_photo_legacy(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        trace,
+        user_id: str,
+        telegram_user_id: int,
+        user,
+        photo_bytes: bytearray,
+        photo_caption: str,
+        msg,
+        count: int,
+        reason: str
+    ) -> tuple[str, float]:
+        """
+        Legacy photo processing using direct OCR (fallback when pipeline not available).
+
+        This is used during tests and as a fallback when photo_pipeline_service
+        is not initialized.
+        """
+        from rivet_pro.core.services import analyze_image
+
+        llm_cost = 0.0
+        outcome = "unknown"
+
+        try:
+            # Update message: OCR in progress
+            await msg.edit_text("🔍 Analyzing nameplate...\n⏳ Reading text from image...")
+
+            # Run OCR analysis
+            result = await analyze_image(
+                image_bytes=photo_bytes,
+                user_id=user_id
             )
 
-        finally:
-            # Always save trace
-            trace.complete(outcome=outcome, llm_cost=llm_cost)
-            await tracer.save_trace(trace, self.db.pool)
+            # Track LLM cost from OCR
+            if hasattr(result, 'cost_usd') and result.cost_usd:
+                llm_cost += result.cost_usd
+
+            trace.add_step("ocr_analysis", "success", {
+                "provider": getattr(result, 'provider', 'unknown'),
+                "model": getattr(result, 'model_used', 'unknown'),
+                "cost_usd": getattr(result, 'cost_usd', 0),
+                "confidence": getattr(result, 'confidence', 0),
+                "manufacturer": result.manufacturer,
+                "model_number": result.model_number,
+                "serial_number": result.serial_number,
+                "equipment_type": getattr(result, 'equipment_type', None)
+            })
+
+            # Handle OCR errors
+            if hasattr(result, 'error') and result.error:
+                trace.add_step("ocr_error", "error", {"error": result.error})
+                await msg.edit_text(
+                    f"❌ {result.error}\n\n"
+                    "Try taking a clearer photo with good lighting and focus on the nameplate."
+                )
+                outcome = "ocr_error"
+                return outcome, llm_cost
+
+            # Create or match equipment in CMMS
+            equipment_id = None
+            equipment_number = None
+            is_new = False
+
+            try:
+                equipment_id, equipment_number, is_new = await self.equipment_service.match_or_create_equipment(
+                    manufacturer=result.manufacturer,
+                    model_number=result.model_number,
+                    serial_number=result.serial_number,
+                    equipment_type=getattr(result, 'equipment_type', None),
+                    location=photo_caption,
+                    user_id=f"telegram_{user_id}"
+                )
+                trace.add_step("equipment_match", "success", {
+                    "action": "created" if is_new else "matched",
+                    "equipment_id": str(equipment_id) if equipment_id else None,
+                    "equipment_number": equipment_number,
+                    "is_new": is_new
+                })
+                logger.info(
+                    f"Equipment {'created' if is_new else 'matched'} | "
+                    f"equipment_number={equipment_number} | user_id={user_id}"
+                )
+            except Exception as e:
+                trace.add_step("equipment_match", "error", {"error": str(e)})
+                logger.error(f"Failed to create/match equipment: {e}", exc_info=True)
+
+            # Format simple equipment response
+            equipment_data = {
+                'manufacturer': result.manufacturer,
+                'model': result.model_number or 'Unknown',
+                'serial': result.serial_number,
+                'confidence': result.confidence,
+                'image_issues': getattr(result, 'image_issues', [])
+            }
+
+            response = format_equipment_response(equipment_data, None)
+
+            # Add equipment number if created/matched
+            if equipment_number:
+                status = "🆕 Created" if is_new else "✓ Matched"
+                response += f"\n\n<b>Equipment ID:</b> {equipment_number} ({status})"
+
+            # Add location if provided via photo caption
+            if photo_caption:
+                response += f"\n<b>Location:</b> {photo_caption}"
+
+            # Record this lookup for usage tracking
+            await self.usage_service.record_lookup(
+                telegram_user_id=telegram_user_id,
+                equipment_id=equipment_id,
+                lookup_type="photo_ocr"
+            )
+
+            # Show remaining lookups for free users
+            if reason == 'under_limit':
+                remaining = FREE_TIER_LIMIT - count - 1
+                if remaining > 0:
+                    response += f"\n\n📊 <i>{remaining} free lookups remaining</i>"
+                else:
+                    response += f"\n\n📊 <i>This was your last free lookup!</i>"
+
+            await msg.edit_text(response, parse_mode="HTML")
+
+            # Determine final outcome
+            if equipment_number:
+                outcome = "success_no_manual"
+            else:
+                outcome = "partial_success"
+
+            logger.info(
+                f"Legacy OCR complete | user_id={user_id} | "
+                f"manufacturer={result.manufacturer} | "
+                f"model={result.model_number}"
+            )
+
+            return outcome, llm_cost
+
+        except Exception as e:
+            trace.add_step("error", "error", {"error": str(e), "type": type(e).__name__})
+            outcome = "error"
+            logger.error(f"Error in legacy photo handler: {e}", exc_info=True)
+            try:
+                await msg.edit_text(
+                    "❌ Failed to analyze photo. Please try again with a clearer image."
+                )
+            except Exception:
+                pass
+            return outcome, llm_cost
 
     async def _handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
@@ -2954,6 +3229,14 @@ Send a 📷 photo of any equipment nameplate and I'll identify it and find the m
 
         # Connect to database
         await self.db.connect()
+
+        # Connect to Atlas CMMS database for dual-write sync
+        try:
+            await atlas_db.connect()
+            logger.info("Atlas CMMS database connected for equipment sync")
+        except Exception as e:
+            logger.warning(f"Atlas CMMS database connection failed (non-blocking): {e}")
+
         self.equipment_service = EquipmentService(self.db)
         self.work_order_service = WorkOrderService(self.db)
         self.usage_service = UsageService(self.db)
@@ -2963,6 +3246,14 @@ Send a 📷 photo of any equipment nameplate and I'll identify it and find the m
         self.kb_analytics_service = KnowledgeBaseAnalytics(self.db.pool)
         self.enrichment_queue_service = EnrichmentQueueService(self.db.pool)  # AUTO-KB-004
         self.analytics_service = AnalyticsService(self.db)  # Phase 5 Analytics
+
+        # Initialize PhotoPipelineService (PHOTO-FLOW-001)
+        self.photo_pipeline_service = PhotoPipelineService(
+            db=self.db,
+            equipment_service=self.equipment_service,
+            work_order_service=self.work_order_service,
+            knowledge_service=None  # KB service will be initialized with atlas_db
+        )
 
         # Initialize SME Chat service (Phase 4)
         try:

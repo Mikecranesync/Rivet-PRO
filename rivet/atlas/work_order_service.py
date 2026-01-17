@@ -384,6 +384,137 @@ class WorkOrderService:
             logger.error(f"Error listing work orders for equipment: {e}")
             return []
 
+    async def get_equipment_maintenance_history(
+        self,
+        equipment_id: UUID,
+        days: int = 90
+    ) -> List[Dict]:
+        """
+        Get maintenance history for equipment within specified time period.
+
+        Used by photo pipeline to provide historical context for AI analysis.
+
+        Args:
+            equipment_id: UUID of equipment to get history for
+            days: Number of days to look back (default 90)
+
+        Returns:
+            List of work order history records with:
+            - work_order_number: WO identifier
+            - created_at: When WO was created
+            - completed_at: When WO was completed (if applicable)
+            - status: Current status
+            - title: WO title
+            - fault_codes: List of fault codes
+            - priority: Priority level
+            - resolution_time_hours: Hours from creation to completion (if completed)
+
+        Example:
+            >>> history = await service.get_equipment_maintenance_history(
+            ...     equipment_id=uuid.UUID("..."),
+            ...     days=90
+            ... )
+            >>> for wo in history:
+            ...     print(f"{wo['work_order_number']}: {wo['title']}")
+        """
+        try:
+            results = await self.db.execute("""
+                SELECT
+                    work_order_number,
+                    created_at,
+                    completed_at,
+                    status,
+                    title,
+                    fault_codes,
+                    priority,
+                    CASE
+                        WHEN completed_at IS NOT NULL THEN
+                            EXTRACT(EPOCH FROM (completed_at - created_at)) / 3600.0
+                        ELSE NULL
+                    END AS resolution_time_hours
+                FROM work_orders
+                WHERE equipment_id = $1
+                  AND created_at >= NOW() - INTERVAL '%s days'
+                ORDER BY created_at DESC
+            """ % days, str(equipment_id))
+
+            return results or []
+
+        except Exception as e:
+            logger.error(f"Error getting equipment maintenance history: {e}")
+            return []
+
+    async def get_technician_work_history(
+        self,
+        user_id: str,
+        days: int = 90,
+        status_filter: Optional[str] = None
+    ) -> List[Dict]:
+        """
+        Get work order history for a specific technician.
+
+        Used for performance tracking, workload analysis, and technician dashboards.
+
+        Args:
+            user_id: Telegram user ID or internal user ID
+            days: Number of days to look back (default 90)
+            status_filter: Optional status filter ('open', 'in_progress', 'completed', 'cancelled')
+
+        Returns:
+            List of work order records with:
+            - work_order_number: WO identifier
+            - equipment_number: Equipment reference
+            - manufacturer: Equipment manufacturer
+            - model_number: Equipment model
+            - status: Current status
+            - title: WO title
+            - fault_codes: List of fault codes
+            - resolution_time_hours: Hours from creation to completion (if completed)
+
+        Example:
+            >>> history = await service.get_technician_work_history(
+            ...     user_id="telegram_123",
+            ...     days=30,
+            ...     status_filter="completed"
+            ... )
+            >>> for wo in history:
+            ...     print(f"{wo['work_order_number']}: {wo['resolution_time_hours']}h")
+        """
+        try:
+            # Build query with optional status filter
+            base_query = """
+                SELECT
+                    work_order_number,
+                    equipment_number,
+                    manufacturer,
+                    model_number,
+                    status,
+                    title,
+                    fault_codes,
+                    CASE
+                        WHEN completed_at IS NOT NULL THEN
+                            EXTRACT(EPOCH FROM (completed_at - created_at)) / 3600.0
+                        ELSE NULL
+                    END AS resolution_time_hours
+                FROM work_orders
+                WHERE user_id = $1
+                  AND created_at >= NOW() - INTERVAL '%s days'
+            """ % days
+
+            if status_filter:
+                base_query += " AND status = $2"
+                base_query += " ORDER BY created_at DESC"
+                results = await self.db.execute(base_query, user_id, status_filter)
+            else:
+                base_query += " ORDER BY created_at DESC"
+                results = await self.db.execute(base_query, user_id)
+
+            return results or []
+
+        except Exception as e:
+            logger.error(f"Error getting technician work history: {e}")
+            return []
+
     def _calculate_priority(
         self,
         confidence_score: Optional[float],

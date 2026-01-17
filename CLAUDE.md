@@ -1,3 +1,29 @@
+# RIVET Pro - Essential Documentation
+
+## Key Reference Documents
+
+**Keep these updated as the system evolves:**
+
+| Document | Purpose | When to Update |
+|----------|---------|----------------|
+| `docs/CLAUDE_REFERENCE.md` | Technical reference for AI agents - infrastructure, connections, deployment, troubleshooting | When infrastructure, credentials, or architecture changes |
+| `docs/USER_MANUAL.md` | User-facing documentation for the Telegram bot | When features are added or modified |
+
+### Quick Start for New Sessions
+
+1. **Read `docs/CLAUDE_REFERENCE.md`** for:
+   - VPS connection (72.60.175.144)
+   - Database connection strings
+   - Deployment commands
+   - Troubleshooting guides
+
+2. **Read `docs/USER_MANUAL.md`** to understand:
+   - All bot commands and features
+   - SME Expert personalities
+   - User workflows
+
+---
+
 # RALPH WIGGUM - AUTONOMOUS DEVELOPMENT LOOP
 
 ## When to Use Ralph

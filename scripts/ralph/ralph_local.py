@@ -133,7 +133,7 @@ class RalphLocal:
             WHERE project_id = $1
               AND status = 'todo'
               AND retry_count < 3
-              AND (story_id LIKE 'KB-%' OR story_id LIKE 'CRITICAL-KB-%' OR story_id LIKE 'STABLE-%' OR story_id LIKE 'AUTO-KB-%' OR story_id LIKE 'TASK-%')
+              AND (story_id LIKE 'KB-%' OR story_id LIKE 'CRITICAL-KB-%' OR story_id LIKE 'STABLE-%' OR story_id LIKE 'AUTO-KB-%' OR story_id LIKE 'TASK-%' OR story_id LIKE 'PHOTO-%' OR story_id LIKE 'ANALYTICS-%' OR story_id LIKE 'SME-CHAT-%')
             ORDER BY priority ASC
             LIMIT 1
             """,
@@ -183,7 +183,7 @@ class RalphLocal:
                 stdin=open(temp_file, 'r', encoding='utf-8'),
                 capture_output=True,
                 text=True,
-                timeout=300,  # 5 minute timeout
+                timeout=900,  # 15 minute timeout
                 cwd=str(self.project_root)
             )
 
@@ -215,12 +215,18 @@ class RalphLocal:
             return result_json['success'], result_json
 
         except subprocess.TimeoutExpired:
-            temp_file.unlink()
+            try:
+                temp_file.unlink()
+            except:
+                pass  # Ignore file deletion errors
             return False, {'error_message': 'Implementation timed out after 5 minutes'}
 
         except Exception as e:
-            if temp_file.exists():
-                temp_file.unlink()
+            try:
+                if temp_file.exists():
+                    temp_file.unlink()
+            except:
+                pass  # Ignore file deletion errors
             return False, {'error_message': str(e)}
 
     def build_prompt(self, story_id, title, description, criteria):

@@ -227,6 +227,83 @@ class AlertingService:
             logger.error(f"Error sending alert to Ralph: {e}", exc_info=True)
             return False
 
+    async def alert_warning(
+        self,
+        message: str,
+        context: Optional[Dict[str, Any]] = None,
+        user_id: Optional[str] = None,
+        service: Optional[str] = None
+    ) -> bool:
+        """
+        Send warning alert to Ralph via Telegram.
+        Used for non-critical issues like timeouts that need attention.
+
+        Args:
+            message: Warning message
+            context: Additional context about the warning
+            user_id: User ID if applicable
+            service: Service name
+
+        Returns:
+            True if alert was sent successfully, False otherwise
+        """
+        warning_key = f"warning:{service}:{message[:50]}"
+
+        # Check deduplication
+        if not self._should_send_alert(warning_key):
+            return False
+
+        # Build context dict
+        ctx = context or {}
+        ctx["service"] = service or ctx.get("service", "Unknown")
+        ctx["user_id"] = user_id or ctx.get("user_id", "Unknown")
+
+        # Build alert message
+        alert_message = (
+            f"⚠️ <b>WARNING</b>\n\n"
+            f"<b>Service:</b> {ctx['service']}\n"
+            f"<b>Message:</b> {message}\n"
+            f"<b>User:</b> {ctx['user_id']}\n"
+            f"<b>Time:</b> {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
+        )
+
+        # Add context details if provided
+        if context:
+            context_items = [f"  • {k}: {v}" for k, v in context.items()
+                          if k not in ('service', 'user_id')]
+            if context_items:
+                alert_message += f"\n<b>Context:</b>\n" + "\n".join(context_items)
+
+        # Send via Telegram API
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(
+                    self.telegram_api_url,
+                    json={
+                        "chat_id": self.ralph_chat_id,
+                        "text": alert_message,
+                        "parse_mode": "HTML",
+                        "disable_web_page_preview": True
+                    }
+                )
+
+                if response.status_code == 200:
+                    logger.info(
+                        f"Warning alert sent to Ralph | message={message[:50]} | "
+                        f"service={ctx['service']}"
+                    )
+                    return True
+                else:
+                    logger.error(
+                        f"Failed to send warning to Ralph: {response.status_code} "
+                        f"{response.text}"
+                    )
+                    return False
+
+        except Exception as e:
+            logger.error(f"Error sending warning to Ralph: {e}", exc_info=True)
+            return False
+
     async def alert_degraded_service(
         self,
         service: str,
