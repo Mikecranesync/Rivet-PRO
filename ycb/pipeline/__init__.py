@@ -15,10 +15,13 @@ Cost: $0/month with free providers.
 
 from .video_generator import VideoGenerator, GeneratedVideo
 from .video_assembler import VideoAssembler, assemble_from_package
+from .quality_iteration import QualityIterativeGenerator, QualityIterationResult
 
 __all__ = [
     "VideoGenerator",
     "GeneratedVideo",
     "VideoAssembler",
     "assemble_from_package",
+    "QualityIterativeGenerator",
+    "QualityIterationResult",
 ]
