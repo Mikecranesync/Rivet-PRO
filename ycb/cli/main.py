@@ -223,22 +223,204 @@ def config_command(show: bool, validate: bool):
 
 
 @cli.command("status")
-def status():
+@click.option("--json", "as_json", is_flag=True, help="Output status as JSON")
+def status(as_json: bool):
     """Show YCB system status and information."""
+    import json as json_lib
+
+    status_data = {
+        "version": "0.1.0",
+        "output_dir": settings.ycb_output_dir,
+        "output_dir_exists": os.path.exists(settings.ycb_output_dir),
+        "configured": settings.validate_required_settings(),
+        "settings": {
+            "max_videos_per_day": settings.ycb_max_videos_per_day,
+            "default_privacy": settings.ycb_default_privacy,
+            "auto_publish": settings.ycb_auto_publish
+        },
+        "api_keys": {
+            "openai": bool(settings.openai_api_key),
+            "youtube": bool(settings.youtube_client_id),
+            "elevenlabs": bool(settings.elevenlabs_api_key),
+            "supabase": bool(settings.supabase_url and settings.supabase_key)
+        }
+    }
+
+    if as_json:
+        click.echo(json_lib.dumps(status_data, indent=2))
+        return
+
     click.echo("[*] YCB - YouTube Channel Builder")
-    click.echo(f"    Version: 0.1.0")
-    click.echo(f"    Output Directory: {settings.ycb_output_dir}")
-    
+    click.echo(f"    Version: {status_data['version']}")
+    click.echo(f"    Output Directory: {status_data['output_dir']}")
+
     # Check if output directory exists
-    if os.path.exists(settings.ycb_output_dir):
+    if status_data['output_dir_exists']:
         click.echo("    Output directory: [+] Exists")
     else:
         click.echo("    Output directory: [-] Not found (will be created)")
-    
+
     # Configuration status
-    is_configured = settings.validate_required_settings()
-    status_icon = "[+]" if is_configured else "[-]"
-    click.echo(f"    Configuration: {status_icon} {'Ready' if is_configured else 'Incomplete'}")
+    status_icon = "[+]" if status_data['configured'] else "[-]"
+    click.echo(f"    Configuration: {status_icon} {'Ready' if status_data['configured'] else 'Incomplete'}")
+
+    # API Keys status
+    click.echo("\n    API Keys:")
+    for key, is_set in status_data['api_keys'].items():
+        icon = "[+]" if is_set else "[-]"
+        click.echo(f"      {key}: {icon}")
+
+
+@cli.command("daemon")
+@click.option("--interval", "-i", default=60, type=int,
+              help="Check interval in seconds (default: 60)")
+@click.option("--once", is_flag=True, help="Run once and exit")
+def daemon(interval: int, once: bool):
+    """
+    Run YCB as a background daemon for 24/7 operation.
+
+    The daemon monitors the pipeline queue and processes pending jobs.
+
+    Example:
+        ycb daemon --interval 30
+    """
+    import time
+    import signal
+    import sys
+
+    running = True
+
+    def signal_handler(sig, frame):
+        nonlocal running
+        click.echo("\n[*] Shutdown signal received, stopping daemon...")
+        running = False
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    click.echo("[*] YCB Daemon Starting...")
+    click.echo(f"    Check interval: {interval}s")
+    click.echo(f"    Mode: {'single run' if once else 'continuous'}")
+    click.echo("")
+
+    # Verify configuration
+    if not settings.supabase_url or not settings.supabase_key:
+        click.echo("[-] Supabase not configured, running in local mode")
+        db_connected = False
+    else:
+        try:
+            from supabase import create_client
+            client = create_client(settings.supabase_url, settings.supabase_key)
+            # Test connection
+            client.table('ycb_agent_status').select('count').limit(1).execute()
+            click.echo("[+] Connected to Supabase")
+            db_connected = True
+        except Exception as e:
+            click.echo(f"[-] Supabase connection failed: {e}")
+            db_connected = False
+
+    iteration = 0
+    while running:
+        iteration += 1
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+
+        click.echo(f"[{timestamp}] Daemon check #{iteration}")
+
+        try:
+            # Check for pending pipeline jobs
+            if db_connected:
+                try:
+                    result = client.table('ycb_video_pipeline')\
+                        .select('*')\
+                        .eq('status', 'pending')\
+                        .limit(5)\
+                        .execute()
+
+                    pending_jobs = len(result.data) if result.data else 0
+                    click.echo(f"    Pending jobs: {pending_jobs}")
+
+                    # Process jobs (placeholder)
+                    for job in (result.data or []):
+                        click.echo(f"    [>] Would process: {job.get('topic', 'unknown')}")
+                        # TODO: Implement actual job processing
+
+                except Exception as e:
+                    click.echo(f"    [-] Error checking jobs: {e}")
+            else:
+                click.echo("    [!] Running without database (local mode)")
+
+            # Update heartbeat
+            if db_connected:
+                try:
+                    from datetime import datetime, timezone
+                    client.table('ycb_agent_status').upsert({
+                        'agent_name': 'ycb_daemon',
+                        'status': 'running',
+                        'last_heartbeat': datetime.now(timezone.utc).isoformat(),
+                        'metadata': {'iteration': iteration}
+                    }, on_conflict='agent_name').execute()
+                except Exception:
+                    pass  # Heartbeat failure is non-fatal
+
+        except Exception as e:
+            click.echo(f"    [-] Daemon error: {e}")
+
+        if once:
+            click.echo("[*] Single run complete, exiting.")
+            break
+
+        # Sleep until next check
+        click.echo(f"    Sleeping {interval}s...")
+        time.sleep(interval)
+
+    click.echo("[*] YCB Daemon stopped.")
+
+
+@cli.command("pipeline")
+@click.argument("topic", required=True)
+@click.option("--output", "-o", help="Output directory for generated content")
+@click.option("--dry-run", is_flag=True, help="Show what would be done without executing")
+def pipeline(topic: str, output: Optional[str], dry_run: bool):
+    """
+    Run the full content pipeline for a TOPIC.
+
+    This generates script, thumbnail, and prepares upload package.
+
+    Example:
+        ycb pipeline "How to Wire a Motor" --output ./my_video/
+    """
+    output_dir = output or os.path.join(settings.ycb_output_dir, topic.replace(' ', '_'))
+
+    click.echo(f"[*] YCB Pipeline: {topic}")
+    click.echo(f"    Output: {output_dir}")
+    click.echo(f"    Mode: {'DRY RUN' if dry_run else 'EXECUTE'}")
+    click.echo("")
+
+    steps = [
+        ("Generate Script", "script.json"),
+        ("Generate Thumbnail", "thumbnail.png"),
+        ("Generate Voice", "narration.mp3"),
+        ("Create Metadata", "metadata.json"),
+    ]
+
+    for i, (step_name, step_output) in enumerate(steps, 1):
+        status = "[DRY]" if dry_run else "[TODO]"
+        click.echo(f"  {i}. {step_name} -> {step_output} {status}")
+
+    if not dry_run:
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Create placeholder files
+        with open(os.path.join(output_dir, "pipeline.log"), 'w') as f:
+            f.write(f"Pipeline started for: {topic}\n")
+            f.write(f"Status: Placeholder - full implementation pending\n")
+
+        click.echo("")
+        click.echo(f"[+] Pipeline directory created: {output_dir}")
+        click.echo("[!] Full pipeline implementation pending")
+    else:
+        click.echo("")
+        click.echo("[*] Dry run complete. Use without --dry-run to execute.")
 
 
 if __name__ == "__main__":

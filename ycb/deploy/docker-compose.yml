@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  ycb-daemon:
+    build:
+      context: ../..
+      dockerfile: ycb/deploy/Dockerfile
+    container_name: ycb-daemon
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    environment:
+      - YCB_ENV=production
+      - YCB_LOG_LEVEL=INFO
+      - YCB_DAEMON_MODE=true
+    volumes:
+      - ycb_output:/app/ycb_output
+      - ycb_logs:/app/logs
+    networks:
+      - ycb-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "from ycb.config import settings; print('OK')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Optional: Redis for job queue (future use)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: ycb-redis
+  #   restart: unless-stopped
+  #   volumes:
+  #     - redis_data:/data
+  #   networks:
+  #     - ycb-network
+
+volumes:
+  ycb_output:
+  ycb_logs:
+  # redis_data:
+
+networks:
+  ycb-network:
+    driver: bridge

@@ -15,13 +15,13 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        case_sensitive=True,
+        case_sensitive=False,  # Allow UPPERCASE env vars
         extra="ignore"
     )
-    
-    # Supabase Configuration
+
+    # Supabase Configuration (matches existing .env vars)
     supabase_url: Optional[str] = Field(default=None, description="Supabase project URL")
-    supabase_key: Optional[str] = Field(default=None, description="Supabase anonymous key")
+    supabase_key: Optional[str] = Field(default=None, alias="SUPABASE_API_KEY", description="Supabase anonymous key")
     
     # YouTube API Configuration
     youtube_client_id: Optional[str] = Field(default=None, description="YouTube OAuth client ID")
