@@ -385,7 +385,7 @@ class TestExtractionService:
 
     @pytest.mark.asyncio
     @patch("rivet_pro.core.services.extraction_service.settings")
-    @patch("rivet_pro.core.services.extraction_service.OpenAI")
+    @patch("openai.OpenAI")
     async def test_successful_extraction(self, mock_openai_class, mock_settings,
                                          passing_screening, test_image_b64, mock_deepseek_response):
         """Test successful extraction with mocked API."""
@@ -414,7 +414,7 @@ class TestExtractionService:
 
     @pytest.mark.asyncio
     @patch("rivet_pro.core.services.extraction_service.settings")
-    @patch("rivet_pro.core.services.extraction_service.OpenAI")
+    @patch("openai.OpenAI")
     async def test_api_timeout_error(self, mock_openai_class, mock_settings,
                                      passing_screening, test_image_b64):
         """Test handling of API timeout."""
@@ -436,7 +436,7 @@ class TestExtractionService:
 
     @pytest.mark.asyncio
     @patch("rivet_pro.core.services.extraction_service.settings")
-    @patch("rivet_pro.core.services.extraction_service.OpenAI")
+    @patch("openai.OpenAI")
     async def test_json_parse_error(self, mock_openai_class, mock_settings,
                                     passing_screening, test_image_b64):
         """Test handling of malformed JSON response."""
@@ -469,7 +469,7 @@ class TestConfidencePenalties:
 
     @pytest.mark.asyncio
     @patch("rivet_pro.core.services.extraction_service.settings")
-    @patch("rivet_pro.core.services.extraction_service.OpenAI")
+    @patch("openai.OpenAI")
     async def test_blurry_text_penalty(self, mock_openai_class, mock_settings):
         """Test confidence reduction for blurry text."""
         mock_settings.deepseek_api_key = "test-key"
@@ -503,7 +503,7 @@ class TestConfidencePenalties:
 
     @pytest.mark.asyncio
     @patch("rivet_pro.core.services.extraction_service.settings")
-    @patch("rivet_pro.core.services.extraction_service.OpenAI")
+    @patch("openai.OpenAI")
     async def test_partial_visibility_penalty(self, mock_openai_class, mock_settings):
         """Test confidence reduction for partial text visibility."""
         mock_settings.deepseek_api_key = "test-key"
@@ -533,11 +533,11 @@ class TestConfidencePenalties:
 
         result = await extract_component_specs(image_b64, screening, db=mock_db)
 
-        assert result.confidence == 0.65  # 0.85 - 0.20
+        assert abs(result.confidence - 0.65) < 0.001  # 0.85 - 0.20 (with floating point tolerance)
 
     @pytest.mark.asyncio
     @patch("rivet_pro.core.services.extraction_service.settings")
-    @patch("rivet_pro.core.services.extraction_service.OpenAI")
+    @patch("openai.OpenAI")
     async def test_multiple_quality_issues(self, mock_openai_class, mock_settings):
         """Test confidence reduction for multiple quality issues."""
         mock_settings.deepseek_api_key = "test-key"
@@ -572,7 +572,7 @@ class TestConfidencePenalties:
 
     @pytest.mark.asyncio
     @patch("rivet_pro.core.services.extraction_service.settings")
-    @patch("rivet_pro.core.services.extraction_service.OpenAI")
+    @patch("openai.OpenAI")
     async def test_confidence_minimum_floor(self, mock_openai_class, mock_settings):
         """Test confidence doesn't go below 0.30 floor."""
         mock_settings.deepseek_api_key = "test-key"

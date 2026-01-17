@@ -422,7 +422,7 @@ class TestClaudeAnalysisMocked:
 
     @pytest.mark.asyncio
     @patch("rivet_pro.core.services.claude_analyzer.settings")
-    @patch("rivet_pro.core.services.claude_analyzer.Anthropic")
+    @patch("anthropic.Anthropic")
     async def test_successful_analysis(self, mock_anthropic_class, mock_settings,
                                        analyzer, equipment_id, mock_claude_response):
         """Test successful analysis with mocked API."""
@@ -462,7 +462,7 @@ Warning: Lock out tag out required before servicing.""",
 
     @pytest.mark.asyncio
     @patch("rivet_pro.core.services.claude_analyzer.settings")
-    @patch("rivet_pro.core.services.claude_analyzer.Anthropic")
+    @patch("anthropic.Anthropic")
     async def test_api_error_fallback(self, mock_anthropic_class, mock_settings,
                                       analyzer, equipment_id):
         """Test fallback when API call fails."""
@@ -486,7 +486,7 @@ Warning: Lock out tag out required before servicing.""",
 
     @pytest.mark.asyncio
     @patch("rivet_pro.core.services.claude_analyzer.settings")
-    @patch("rivet_pro.core.services.claude_analyzer.Anthropic")
+    @patch("anthropic.Anthropic")
     async def test_cost_calculation(self, mock_anthropic_class, mock_settings,
                                     analyzer, equipment_id, mock_claude_response):
         """Test cost calculation based on token usage."""
@@ -541,7 +541,7 @@ class TestRetryLogic:
 
     @pytest.mark.asyncio
     @patch("rivet_pro.core.services.claude_analyzer.settings")
-    @patch("rivet_pro.core.services.claude_analyzer.Anthropic")
+    @patch("anthropic.Anthropic")
     async def test_single_failure_returns_fallback(self, mock_anthropic_class, mock_settings):
         """Test that single API failure returns fallback result."""
         mock_settings.anthropic_api_key = "test-key"
@@ -567,7 +567,7 @@ class TestRetryLogic:
 
     @pytest.mark.asyncio
     @patch("rivet_pro.core.services.claude_analyzer.settings")
-    @patch("rivet_pro.core.services.claude_analyzer.Anthropic")
+    @patch("anthropic.Anthropic")
     async def test_timeout_returns_fallback(self, mock_anthropic_class, mock_settings):
         """Test that timeout returns fallback result."""
         mock_settings.anthropic_api_key = "test-key"
