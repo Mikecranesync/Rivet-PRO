@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 80" width="40" height="80">
+  <!-- PLC I/O Module -->
+  <!-- Module body -->
+  <rect x="2" y="2" width="36" height="76" fill="#2D3748" stroke="#4A5568" stroke-width="2" rx="2"/>
+  <!-- Channel LEDs (8 channels) -->
+  <g fill="#1A202C">
+    <circle cx="10" cy="12" r="3" stroke="#22C55E" stroke-width="1"/>
+    <circle cx="10" cy="22" r="3" stroke="#22C55E" stroke-width="1"/>
+    <circle cx="10" cy="32" r="3" stroke="#22C55E" stroke-width="1"/>
+    <circle cx="10" cy="42" r="3" stroke="#22C55E" stroke-width="1"/>
+    <circle cx="30" cy="12" r="3" stroke="#22C55E" stroke-width="1"/>
+    <circle cx="30" cy="22" r="3" stroke="#22C55E" stroke-width="1"/>
+    <circle cx="30" cy="32" r="3" stroke="#22C55E" stroke-width="1"/>
+    <circle cx="30" cy="42" r="3" stroke="#22C55E" stroke-width="1"/>
+  </g>
+  <!-- Channel numbers -->
+  <g font-family="Arial" font-size="5" fill="#A0AEC0">
+    <text x="10" y="14" text-anchor="middle">0</text>
+    <text x="10" y="24" text-anchor="middle">1</text>
+    <text x="10" y="34" text-anchor="middle">2</text>
+    <text x="10" y="44" text-anchor="middle">3</text>
+    <text x="30" y="14" text-anchor="middle">4</text>
+    <text x="30" y="24" text-anchor="middle">5</text>
+    <text x="30" y="34" text-anchor="middle">6</text>
+    <text x="30" y="44" text-anchor="middle">7</text>
+  </g>
+  <!-- I/O label -->
+  <rect x="6" y="52" width="28" height="12" fill="#1A202C" rx="1"/>
+  <text x="20" y="61" text-anchor="middle" font-family="Arial" font-size="8" font-weight="bold" fill="#22C55E">DI/DO</text>
+  <!-- Terminal block -->
+  <rect x="8" y="68" width="24" height="6" fill="#4A5568" rx="1"/>
+</svg>

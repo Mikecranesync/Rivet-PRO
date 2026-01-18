@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- Transformer Symbol - IEC Standard -->
+  <!-- Primary coil -->
+  <path d="M 30 20 Q 20 25 30 30 Q 40 35 30 40 Q 20 45 30 50 Q 40 55 30 60 Q 20 65 30 70 Q 40 75 30 80" fill="none" stroke="#3B82F6" stroke-width="2"/>
+  <!-- Secondary coil -->
+  <path d="M 70 20 Q 80 25 70 30 Q 60 35 70 40 Q 80 45 70 50 Q 60 55 70 60 Q 80 65 70 70 Q 60 75 70 80" fill="none" stroke="#3B82F6" stroke-width="2"/>
+  <!-- Core lines -->
+  <line x1="48" y1="15" x2="48" y2="85" stroke="#3B82F6" stroke-width="2"/>
+  <line x1="52" y1="15" x2="52" y2="85" stroke="#3B82F6" stroke-width="2"/>
+  <!-- Connection points -->
+  <line x1="30" y1="20" x2="30" y2="5" stroke="#3B82F6" stroke-width="2"/>
+  <line x1="30" y1="80" x2="30" y2="95" stroke="#3B82F6" stroke-width="2"/>
+  <line x1="70" y1="20" x2="70" y2="5" stroke="#3B82F6" stroke-width="2"/>
+  <line x1="70" y1="80" x2="70" y2="95" stroke="#3B82F6" stroke-width="2"/>
+</svg>

@@ -371,3 +371,124 @@ All 6 stories implemented and passing:
 
 Ready for commit and merge to main.
 ---
+
+=== YCB v3: Professional Video Generation ===
+Started: Fri, Jan 17, 2026
+Branch: ralph/ycb-v3-manim-blender
+Stories: YCB3-MANIM-001 through YCB3-DOCS-001 (18 stories)
+---
+
+## Codebase Patterns (YCB v3)
+- Use subprocess to run Manim CLI avoiding asyncio conflicts
+- Manim output path: media_dir/videos/<script_name>/<quality>/<scene_name>.mp4
+- Handle file rename collisions with unlink before rename
+- Scene configs use dataclasses for structured descriptions
+- Color palettes: INDUSTRIAL_COLORS for consistent theming
+---
+
+## 2026-01-17 - YCB3-MANIM-001
+- Created ycb/rendering/__init__.py with module exports
+- Created ycb/rendering/scene_types.py with Pydantic scene models
+  - SceneType enum: TITLE, TEXT, DIAGRAM, FLOWCHART, COMPARISON, LADDER_LOGIC, TIMELINE
+  - SceneConfig, TextConfig, ShapeConfig, ArrowConfig, DiagramConfig dataclasses
+  - Preset color palettes: INDUSTRIAL_COLORS, PLC_COLORS
+- Created ycb/rendering/manim_engine.py with ManimEngine class
+  - render_title(), render_diagram(), render_text(), render_test() methods
+  - Generates Manim Python code dynamically from scene configs
+  - Runs Manim as subprocess with quality presets
+  - Handles file output, renaming, and cleanup
+- All tests pass: title, diagram, and text scenes render successfully
+- Files changed: ycb/rendering/__init__.py, manim_engine.py, scene_types.py
+- Commit: c8103f0
+
+**Learnings for future iterations:**
+- Manim requires running via subprocess to avoid asyncio conflicts
+- Use f-strings carefully in generated code - escape quotes properly
+- Label newlines must be replaced before code generation
+- Output file detection requires checking multiple possible paths
+- Quality presets: -ql (low), -qm (medium), -qh (high), -qp (production)
+---
+
+## 2026-01-17 - YCB3-ASSETS-001
+- Created ycb/assets/electrical/ directory with 11 IEC-standard SVG symbols
+- Symbols created: motor, relay, contactor, overload, transformer, fuse, switch
+- PLC I/O symbols: digital_input, digital_output, analog_input, analog_output
+- Each symbol uses 100x100 viewBox with consistent sizing
+- Colors: Blue (#3B82F6) for control, Green (#22C55E) for inputs, Red (#EF4444) for protection
+- Created manifest.json with metadata: categories, colors, connection points, descriptions
+- Created test_svg_import.py to verify Manim can import and animate SVGs
+- Test renders motor, relay, and digital input with labels and scaling animations
+- All tests pass - SVGs import cleanly into Manim scenes
+- Files changed: ycb/assets/electrical/*.svg (11 files), manifest.json, test_svg_import.py
+- Commit: 1760c53
+
+**Learnings for future iterations:**
+- Manim SVGMobject requires .as_posix() for Windows path compatibility
+- Use simple SVG elements (rect, line, circle, path, polygon) for best compatibility
+- Include connection points in manifest for wiring diagrams
+- Keep consistent stroke-width (2-3px) for visual cohesion
+---
+
+## 2026-01-17 - YCB3-ASSETS-002
+- Created ycb/assets/plc/ directory with 19 SVG components
+- Hardware (4 files): plc_rack, cpu_module, io_module, power_supply
+- Ladder logic (9 files): XIC, XIO, OTE, OTL, OTU, TON, TOF, CTU, CTD
+- Communication (4 files): Ethernet, Serial, Modbus, PROFINET
+- All use industrial color scheme (grays #2D3748/#4A5568, blues, greens)
+- Created manifest.json with categories, sizes, anchor points
+- Created test_plc_import.py testing hardware rack and ladder logic rendering
+- Both tests pass: PLC hardware and ladder logic Manim imports work
+- Files: 19 SVGs + manifest.json + test script
+- Commit: 1d85798
+
+**Learnings for future iterations:**
+- Ladder logic contacts use simple lines for Manim compatibility
+- Timer/counter blocks use box style with parameters section
+- Communication icons include protocol labels for clarity
+- PLC rack designed for module overlay positioning
+---
+
+## 2026-01-17 - YCB3-MANIM-002
+- Created ycb/rendering/templates.py with 6 reusable template classes
+- TitleTemplate: Animated title cards with optional underline and subtitle
+- DiagramTemplate: Technical diagrams with elements, arrows, and callouts
+- FlowchartTemplate: Process flows with diamond/oval/rectangle shapes
+- ComparisonTemplate: Side-by-side table comparisons with highlighting
+- LadderLogicTemplate: PLC ladder diagrams with XIC/XIO contacts and OTE coils
+- TimelineTemplate: Sequential process timelines (horizontal/vertical)
+- Added TemplateFactory for easy instantiation
+- Added TransitionType enum for animation styles
+- Updated color palettes with arrow, success, rail, contact, coil, active colors
+- Created test_templates.py with comprehensive test suite
+- All 7 tests pass (each template + factory)
+- Updated __init__.py with all template exports
+- Files: templates.py (~900 lines), test_templates.py, updated __init__.py, scene_types.py
+- Commit: 7c51bd2
+
+**Learnings for future iterations:**
+- Templates generate Manim code strings that are written to temp files and run as subprocess
+- Use dataclasses for config, generate_code() method for Manim Python output
+- Pad comparison table rows to match column count to avoid missing cell errors
+- Ladder logic uses Arc for coil parentheses, Line for contacts
+---
+
+## 2026-01-17 - YCB3-STORY-001
+- Created ycb/storyboard/ module for AI-powered storyboard generation
+- models.py: Scene, Storyboard, VisualDescription, TemplateParameters, SceneType, RenderEngine
+- generator.py: StoryboardGenerator class with LLM and rule-based modes
+- LLM mode uses Groq API with detailed system prompts for scene planning
+- Rule-based fallback: paragraph splitting, keyword detection, scene type inference
+- Scene type inference: comparison (vs, compared), flowchart (step, sequence), ladder_logic, diagram
+- Template params generated per scene type (elements, arrows, steps, events, etc.)
+- Duration estimated from word count at ~2.5 words/second
+- Serialization via to_dict() methods on all models
+- Test suite: 4/4 tests pass (rule-based, serialization, params, custom config)
+- Files: __init__.py, models.py, generator.py, test_generator.py
+- Commit: 44b7692
+
+**Learnings for future iterations:**
+- Use dataclasses for models, to_dict() for JSON serialization
+- LLM prompts should request JSON output with specific structure
+- Rule-based fallback ensures functionality without API keys
+- Word count / speaking rate = duration estimate
+---

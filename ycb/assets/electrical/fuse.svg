@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- Fuse Symbol - IEC Standard -->
+  <rect x="30" y="35" width="40" height="30" fill="none" stroke="#F59E0B" stroke-width="3"/>
+  <!-- Fuse element line -->
+  <line x1="35" y1="50" x2="65" y2="50" stroke="#F59E0B" stroke-width="2"/>
+  <!-- Connection points -->
+  <line x1="50" y1="35" x2="50" y2="10" stroke="#F59E0B" stroke-width="3"/>
+  <line x1="50" y1="65" x2="50" y2="90" stroke="#F59E0B" stroke-width="3"/>
+</svg>
