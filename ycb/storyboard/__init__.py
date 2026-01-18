@@ -11,7 +11,10 @@ from .models import (
     SceneType,
     Storyboard,
     VisualDescription,
+    RenderEngine,
+    TemplateParameters,
 )
+from .router import SceneRouter, RenderResult, RouteStatus
 
 __all__ = [
     "StoryboardGenerator",
@@ -19,4 +22,9 @@ __all__ = [
     "SceneType",
     "Storyboard",
     "VisualDescription",
+    "RenderEngine",
+    "TemplateParameters",
+    "SceneRouter",
+    "RenderResult",
+    "RouteStatus",
 ]
