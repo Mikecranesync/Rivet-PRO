@@ -29,6 +29,11 @@ from rivet_pro.core.intelligence.context_retriever import (
     RetrievedContext,
     get_context_retriever,
 )
+from rivet_pro.core.intelligence.voice_normalizer import (
+    VoiceNormalizer,
+    get_voice_normalizer,
+    normalize_voice_input,
+)
 
 __all__ = [
     "IntentClassifier",
@@ -44,4 +49,7 @@ __all__ = [
     "ContextMatch",
     "RetrievedContext",
     "get_context_retriever",
+    "VoiceNormalizer",
+    "get_voice_normalizer",
+    "normalize_voice_input",
 ]
