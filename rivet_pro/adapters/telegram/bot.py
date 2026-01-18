@@ -924,25 +924,552 @@ class TelegramBot:
 
     async def _handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
-        Handle text messages with Pipeline Integration.
+        Handle text messages with Intelligent Intent Router.
 
-        Uses Phase 3 pipeline components:
-        - WorkflowStateMachine for state tracking
-        - AgentExecutor with vendor routing
-        - SME service with LLMRouter failover
+        NLP-first design for speech-to-text users:
+        1. Classify intent using fast Groq call
+        2. Route to appropriate backend service
+        3. Track usage for adaptive command learning
+        4. Fall back to slash commands if confidence is low
         """
-        from rivet_pro.core.services.pipeline_integration import get_pipeline
+        from rivet_pro.core.intelligence.intent_classifier import IntentClassifier, IntentType
+        from rivet_pro.core.intelligence.adaptive_commands import AdaptiveCommandService
 
         user_id = str(update.effective_user.id)
         user_message = update.message.text
 
+        # Skip intent classification for explicit slash commands
+        if user_message.startswith('/'):
+            # Let the command handlers deal with it
+            return
+
         # Send initial message
-        msg = await update.message.reply_text("Analyzing your question...")
+        msg = await update.message.reply_text("Understanding your request...")
 
         try:
-            # Route through pipeline (tracks state, uses AgentExecutor with failover)
-            await msg.edit_text("Analyzing your question...\nConsulting expert...")
+            # Step 1: Fast intent classification
+            classifier = IntentClassifier()
+            classification = await classifier.classify(user_message, user_id)
 
+            # Step 2: Track usage for adaptive learning
+            try:
+                adaptive = AdaptiveCommandService(self.db)
+                await adaptive.record_usage(user_id, classification.intent)
+
+                # Log classification for ML improvement
+                await adaptive.log_classification(
+                    user_id=user_id,
+                    message=user_message,
+                    intent=classification.intent,
+                    confidence=classification.confidence,
+                    entities=classification.entities,
+                    classification_time_ms=classification.classification_time_ms,
+                    model_used=classification.model_used
+                )
+            except Exception as e:
+                logger.debug(f"Adaptive tracking error (non-critical): {e}")
+
+            # Step 3: Route based on confidence
+            if classification.confidence < 0.50:
+                # Low confidence: offer clarification + slash command fallback
+                await self._handle_low_confidence(update, context, msg, classification)
+            else:
+                # High confidence: route to appropriate handler
+                await self._route_by_intent(update, context, msg, classification)
+
+            logger.info(
+                f"Intent routed | user_id={user_id} | "
+                f"intent={classification.intent.value} | "
+                f"confidence={classification.confidence:.2f} | "
+                f"time={classification.classification_time_ms}ms"
+            )
+
+        except Exception as e:
+            logger.error(f"Error in intelligent text handler: {e}", exc_info=True)
+            await msg.edit_text(
+                "I had trouble understanding. Try:\n\n"
+                "• `/equip search <name>` - Find equipment\n"
+                "• `/wo list` - View work orders\n"
+                "• `/ask <question>` - Ask about manuals\n"
+                "• `/help <problem>` - Get troubleshooting help",
+                parse_mode="Markdown"
+            )
+
+    async def _route_by_intent(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        msg,
+        classification
+    ) -> None:
+        """
+        Route to appropriate handler based on classified intent.
+        """
+        from rivet_pro.core.intelligence.intent_classifier import IntentType
+
+        intent = classification.intent
+        entities = classification.entities
+
+        # Update status message
+        status_map = {
+            IntentType.EQUIPMENT_SEARCH: "Searching equipment...",
+            IntentType.EQUIPMENT_ADD: "Processing equipment...",
+            IntentType.WORK_ORDER_CREATE: "Creating work order...",
+            IntentType.WORK_ORDER_STATUS: "Checking work orders...",
+            IntentType.MANUAL_QUESTION: "Searching manuals...",
+            IntentType.TROUBLESHOOT: "Consulting expert...",
+            IntentType.GENERAL_CHAT: "Processing...",
+        }
+        await msg.edit_text(status_map.get(intent, "Processing..."))
+
+        # Route to handler
+        handlers = {
+            IntentType.EQUIPMENT_SEARCH: self._handle_equipment_search_intent,
+            IntentType.EQUIPMENT_ADD: self._handle_equipment_add_intent,
+            IntentType.WORK_ORDER_CREATE: self._handle_wo_create_intent,
+            IntentType.WORK_ORDER_STATUS: self._handle_wo_status_intent,
+            IntentType.MANUAL_QUESTION: self._handle_manual_question_intent,
+            IntentType.TROUBLESHOOT: self._handle_troubleshoot_intent,
+            IntentType.GENERAL_CHAT: self._handle_general_chat_intent,
+        }
+
+        handler = handlers.get(intent, self._handle_general_chat_intent)
+        await handler(update, context, msg, classification)
+
+    async def _handle_low_confidence(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        msg,
+        classification
+    ) -> None:
+        """
+        Handle low-confidence classification with clarification and slash command options.
+        """
+        from rivet_pro.core.intelligence.adaptive_commands import AdaptiveCommandService
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+        user_id = str(update.effective_user.id)
+        user_message = update.message.text
+
+        # Build response with clarification
+        if classification.suggested_clarification:
+            response = f"🤔 {classification.suggested_clarification}\n\n"
+        else:
+            response = "🤔 I'm not sure what you need. Try one of these:\n\n"
+
+        # Get adaptive commands (most used first)
+        try:
+            adaptive = AdaptiveCommandService(self.db)
+            commands = await adaptive.get_user_commands(user_id, limit=5)
+
+            for cmd in commands:
+                response += f"• `{cmd.slash_command}` - {cmd.description}\n"
+        except Exception:
+            # Fallback to defaults
+            response += "• `/equip search <name>` - Find equipment\n"
+            response += "• `/wo create` - Create work order\n"
+            response += "• `/ask <question>` - Ask about manuals\n"
+            response += "• `/help <problem>` - Get troubleshooting help\n"
+
+        response += "\n_Or just rephrase your question._"
+
+        await msg.edit_text(response, parse_mode="Markdown")
+
+    # ===== Intent-specific handlers =====
+
+    async def _handle_equipment_search_intent(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        msg,
+        classification
+    ) -> None:
+        """Handle EQUIPMENT_SEARCH intent."""
+        user_id = str(update.effective_user.id)
+        telegram_id = user_id
+        user_id_prefixed = f"telegram_{telegram_id}"
+
+        # Extract search query from entities or raw message
+        query = classification.entities.get('manufacturer') or \
+                classification.entities.get('model') or \
+                classification.entities.get('equipment_type') or \
+                classification.raw_message
+
+        try:
+            results = await self.db.execute_query_async(
+                """
+                SELECT
+                    equipment_number,
+                    manufacturer,
+                    model_number,
+                    serial_number,
+                    work_order_count
+                FROM cmms_equipment
+                WHERE (owned_by_user_id IN ($1, $2) OR first_reported_by IN ($1, $2))
+                  AND (
+                      manufacturer ILIKE $3
+                      OR model_number ILIKE $3
+                      OR serial_number ILIKE $3
+                      OR equipment_type ILIKE $3
+                  )
+                ORDER BY work_order_count DESC, created_at DESC
+                LIMIT 10
+                """,
+                (user_id_prefixed, telegram_id, f"%{query}%")
+            )
+
+            if not results:
+                # Try listing all equipment if search failed
+                results = await self.db.execute_query_async(
+                    """
+                    SELECT
+                        equipment_number,
+                        manufacturer,
+                        model_number,
+                        work_order_count
+                    FROM cmms_equipment
+                    WHERE owned_by_user_id IN ($1, $2)
+                       OR first_reported_by IN ($1, $2)
+                    ORDER BY created_at DESC
+                    LIMIT 10
+                    """,
+                    (user_id_prefixed, telegram_id)
+                )
+
+            if not results:
+                await msg.edit_text(
+                    f"🔍 No equipment found matching: {query}\n\n"
+                    "📸 Send me a photo of a nameplate to add equipment!"
+                )
+                return
+
+            response = "🔍 Equipment Results\n\n"
+            for eq in results:
+                wo_count = eq.get('work_order_count', 0)
+                equip_num = eq.get('equipment_number', 'N/A')
+                mfr = eq.get('manufacturer', '')
+                model = eq.get('model_number', '')
+                response += f"• {equip_num} - {mfr} {model}\n"
+                if wo_count:
+                    response += f"  └─ {wo_count} work order{'s' if wo_count != 1 else ''}\n"
+
+            response += "\n💡 Say 'create work order for...' to add a WO"
+            await msg.edit_text(response)
+
+        except Exception as e:
+            logger.error(f"Equipment search error: {e}")
+            await msg.edit_text(
+                "❌ Error searching equipment. Try /equip search <name>"
+            )
+
+    async def _handle_equipment_add_intent(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        msg,
+        classification
+    ) -> None:
+        """Handle EQUIPMENT_ADD intent."""
+        await msg.edit_text(
+            "📸 To add equipment, send me a photo of the nameplate.\n\n"
+            "I'll automatically extract:\n"
+            "• Manufacturer\n"
+            "• Model number\n"
+            "• Serial number\n"
+            "• Specifications",
+            parse_mode="Markdown"
+        )
+
+    async def _handle_wo_create_intent(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        msg,
+        classification
+    ) -> None:
+        """Handle WORK_ORDER_CREATE intent."""
+        user_id = str(update.effective_user.id)
+        description = classification.raw_message
+
+        # Try to find equipment mentioned
+        equipment_query = classification.entities.get('equipment_number') or \
+                         classification.entities.get('model') or \
+                         classification.entities.get('manufacturer')
+
+        if equipment_query:
+            # Search for equipment
+            equipment = await self.db.fetchrow(
+                """
+                SELECT id, equipment_number, manufacturer, model_number
+                FROM cmms_equipment
+                WHERE (equipment_number ILIKE $1 OR manufacturer ILIKE $1 OR model_number ILIKE $1)
+                  AND (owned_by_user_id = $2 OR first_reported_by = $2)
+                LIMIT 1
+                """,
+                f"%{equipment_query}%",
+                f"telegram_{user_id}"
+            )
+
+            if equipment:
+                # Create work order
+                try:
+                    result = await self.work_order_service.create_work_order(
+                        equipment_id=equipment['id'],
+                        user_id=user_id,
+                        description=description,
+                        priority="medium"
+                    )
+
+                    await msg.edit_text(
+                        f"✅ *Work Order Created*\n\n"
+                        f"WO #: `{result.work_order_number}`\n"
+                        f"Equipment: {equipment['manufacturer']} {equipment.get('model_number', '')}\n"
+                        f"Description: {description[:100]}...\n\n"
+                        "📋 Say 'check my work orders' to view status",
+                        parse_mode="Markdown"
+                    )
+                    return
+                except Exception as e:
+                    logger.error(f"WO create error: {e}")
+
+        # No equipment found - ask for clarification
+        await msg.edit_text(
+            "📋 To create a work order, I need to know which equipment.\n\n"
+            "Try:\n"
+            "• 'create work order for pump 3'\n"
+            "• 'WO for siemens motor - overheating'\n\n"
+            "Or use `/wo create <equipment> <description>`",
+            parse_mode="Markdown"
+        )
+
+    async def _handle_wo_status_intent(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        msg,
+        classification
+    ) -> None:
+        """Handle WORK_ORDER_STATUS intent."""
+        user_id = str(update.effective_user.id)
+
+        try:
+            work_orders = await self.db.execute_query_async(
+                """
+                SELECT
+                    wo.work_order_number,
+                    wo.title,
+                    wo.status,
+                    wo.priority,
+                    wo.created_at,
+                    e.manufacturer,
+                    e.model_number
+                FROM work_orders wo
+                LEFT JOIN cmms_equipment e ON wo.equipment_id = e.id
+                WHERE wo.created_by_user_id = $1
+                ORDER BY wo.created_at DESC
+                LIMIT 10
+                """,
+                (f"telegram_{user_id}",)
+            )
+
+            if not work_orders:
+                await msg.edit_text(
+                    "📋 *Your Work Orders*\n\n"
+                    "No work orders found.\n\n"
+                    "Say 'create work order for...' to create one!",
+                    parse_mode="Markdown"
+                )
+                return
+
+            response = "📋 *Your Work Orders* (recent 10)\n\n"
+            for wo in work_orders:
+                status_emoji = {"open": "🔵", "in_progress": "🟡", "completed": "✅"}.get(wo['status'], "⚪")
+                equip_info = f"{wo.get('manufacturer', '')} {wo.get('model_number', '')}".strip() or "N/A"
+                response += f"{status_emoji} `{wo['work_order_number']}`\n"
+                response += f"   {wo.get('title', 'No title')[:40]}\n"
+                response += f"   Equipment: {equip_info}\n\n"
+
+            await msg.edit_text(response, parse_mode="Markdown")
+
+        except Exception as e:
+            logger.error(f"WO status error: {e}")
+            await msg.edit_text(
+                "❌ Error fetching work orders. Try `/wo list`",
+                parse_mode="Markdown"
+            )
+
+    async def _handle_manual_question_intent(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        msg,
+        classification
+    ) -> None:
+        """Handle MANUAL_QUESTION intent - route to Manual QA service."""
+        from rivet_pro.core.services.manual_qa_service import ManualQAService
+
+        user_id = str(update.effective_user.id)
+        query = classification.raw_message
+
+        try:
+            # Initialize Manual QA service
+            qa_service = ManualQAService(self.db.pool)
+
+            # Get manufacturer hint from entities
+            manufacturer = classification.entities.get('manufacturer')
+
+            # Ask the question
+            response = await qa_service.ask(
+                query=query,
+                user_id=int(user_id) if user_id.isdigit() else None
+            )
+
+            # Format response
+            answer_text = response.answer
+
+            # Add citations if available
+            if response.citations:
+                answer_text += "\n\n📖 *Sources:*\n"
+                for cite in response.citations[:3]:
+                    if cite.page:
+                        answer_text += f"• Page {cite.page}"
+                        if cite.section:
+                            answer_text += f" - {cite.section}"
+                        answer_text += "\n"
+
+            # Add confidence indicator
+            if response.confidence < 0.6:
+                answer_text += "\n\n⚠️ _Low confidence - consider checking the manual directly_"
+
+            # Truncate if too long for Telegram
+            if len(answer_text) > 4000:
+                answer_text = answer_text[:3900] + "...\n\n_Response truncated_"
+
+            await msg.edit_text(answer_text, parse_mode="Markdown")
+
+        except Exception as e:
+            logger.error(f"Manual QA error: {e}", exc_info=True)
+            # Fallback to SME troubleshooting
+            await self._handle_troubleshoot_intent(update, context, msg, classification)
+
+    async def _handle_troubleshoot_intent(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        msg,
+        classification
+    ) -> None:
+        """
+        Handle TROUBLESHOOT intent with streaming responses.
+
+        EXPERT-004: Stream tokens word-by-word for perceived <200ms latency.
+        Falls back to non-streaming pipeline if streaming fails.
+        """
+        user_id = str(update.effective_user.id)
+        user_message = classification.raw_message
+
+        try:
+            # Try streaming first (EXPERT-004)
+            await self._stream_troubleshoot_response(update, msg, classification)
+
+        except Exception as e:
+            logger.warning(f"Streaming fallback triggered: {e}")
+            # Fallback to non-streaming pipeline
+            await self._fallback_troubleshoot(update, msg, classification)
+
+    async def _stream_troubleshoot_response(
+        self,
+        update: Update,
+        msg,
+        classification
+    ) -> None:
+        """
+        Stream troubleshooting response using LLM router.
+
+        Updates Telegram message every ~500ms with accumulated tokens.
+        """
+        from rivet_pro.adapters.llm.router import get_llm_router, ModelCapability
+
+        user_message = classification.raw_message
+        entities = classification.entities
+
+        # Build expert-level system prompt (EXPERT-008 preview)
+        system_prompt = """You are an experienced industrial maintenance technician with 20+ years in the field.
+
+RESPONSE STYLE:
+- Be direct and technical. The user knows their equipment.
+- Jump straight to diagnosis and solutions. Skip basics.
+- Use industry terminology naturally (FLA, megger, phase imbalance, etc.)
+- No condescending phrases like "As you may know..." or "For safety..."
+- If you need more info, ask ONE specific question.
+
+FORMAT:
+- Lead with the most likely cause
+- Give practical diagnostic steps
+- Mention common fixes that worked for similar issues
+- Keep it concise - technicians are busy"""
+
+        # Get LLM router for streaming
+        router = get_llm_router()
+
+        # Accumulate response for message editing
+        full_response = ""
+        last_update_time = asyncio.get_event_loop().time()
+        update_interval = 0.5  # Update every 500ms
+
+        try:
+            # Stream tokens from LLM
+            async for token in router.generate_stream(
+                prompt=user_message,
+                capability=ModelCapability.MODERATE,
+                max_tokens=1000,
+                temperature=0.7,
+                system_prompt=system_prompt,
+            ):
+                full_response += token
+
+                # Update message every ~500ms (avoid Telegram API spam)
+                current_time = asyncio.get_event_loop().time()
+                if current_time - last_update_time >= update_interval:
+                    try:
+                        # Show streaming indicator
+                        display_text = full_response + " ▌"
+                        await msg.edit_text(display_text, parse_mode="Markdown")
+                        last_update_time = current_time
+                    except Exception as edit_error:
+                        # Message edit can fail if content unchanged, ignore
+                        logger.debug(f"Message edit skipped: {edit_error}")
+
+            # Final update with complete response (no cursor)
+            if full_response.strip():
+                # Add vendor signature if detected
+                vendor = entities.get('manufacturer')
+                if vendor:
+                    full_response += f"\n\n_SME: {vendor.title()} Expert_"
+
+                await msg.edit_text(full_response, parse_mode="Markdown")
+            else:
+                raise Exception("Empty response from streaming")
+
+        except Exception as e:
+            logger.error(f"Streaming error: {e}")
+            raise  # Let caller handle fallback
+
+    async def _fallback_troubleshoot(
+        self,
+        update: Update,
+        msg,
+        classification
+    ) -> None:
+        """Fallback to non-streaming pipeline for troubleshooting."""
+        from rivet_pro.core.services.pipeline_integration import get_pipeline
+
+        user_id = str(update.effective_user.id)
+        user_message = classification.raw_message
+
+        try:
+            # Use existing pipeline for troubleshooting
             pipeline = get_pipeline()
             result = await pipeline.process_text_message(
                 user_id=user_id,
@@ -952,24 +1479,65 @@ class TelegramBot:
             # Format response with metadata
             response_text = result.answer
             if result.confidence < 0.5:
-                response_text += "\n\n_Note: Low confidence response. Consider asking a more specific question._"
+                response_text += "\n\n_⚠️ Low confidence - consider consulting the manual or a specialist_"
+
+            # Add vendor info if detected
+            if result.vendor and result.vendor != "unknown":
+                response_text += f"\n\n_SME: {result.vendor.title()} Expert_"
 
             await msg.edit_text(response_text, parse_mode="Markdown")
 
-            logger.info(
-                f"Pipeline complete | user_id={user_id} | "
-                f"pipeline_id={result.pipeline_id} | "
-                f"vendor={result.vendor} | "
-                f"confidence={result.confidence:.2f} | "
-                f"time={result.execution_time_ms:.0f}ms"
+        except Exception as e:
+            logger.error(f"Troubleshoot error: {e}", exc_info=True)
+            await msg.edit_text(
+                "I had trouble with that question. Try:\n\n"
+                "• Being more specific about the equipment\n"
+                "• Including error codes if any\n"
+                "• Describing symptoms in detail\n\n"
+                "Or use `/help <your problem>` for direct troubleshooting",
+                parse_mode="Markdown"
             )
 
-        except Exception as e:
-            logger.error(f"Error in text handler: {e}", exc_info=True)
-            await msg.edit_text(
-                "I had trouble understanding your question. "
-                "Try asking about a specific equipment model or issue."
-            )
+    async def _handle_general_chat_intent(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        msg,
+        classification
+    ) -> None:
+        """Handle GENERAL_CHAT intent - greetings, help, etc."""
+        from rivet_pro.core.intelligence.adaptive_commands import AdaptiveCommandService
+
+        user_id = str(update.effective_user.id)
+        user_message = classification.raw_message.lower()
+
+        # Check for greetings
+        greetings = ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening']
+        if any(g in user_message for g in greetings):
+            user_name = update.effective_user.first_name or "there"
+            response = f"👋 Hey {user_name}! I'm your equipment assistant.\n\n"
+        else:
+            response = "🔧 *RIVET Equipment Assistant*\n\n"
+
+        response += "I can help you with:\n\n"
+
+        # Get personalized commands
+        try:
+            adaptive = AdaptiveCommandService(self.db)
+            commands = await adaptive.get_user_commands(user_id, limit=5)
+
+            for cmd in commands:
+                response += f"• *{cmd.display_name}* - {cmd.description}\n"
+                response += f"  `{cmd.slash_command}` or just ask naturally\n\n"
+        except Exception:
+            response += "• 📦 Find equipment - 'find siemens motors'\n"
+            response += "• 📋 Work orders - 'create work order for pump'\n"
+            response += "• 📖 Manual help - 'how do I calibrate'\n"
+            response += "• 🔧 Troubleshoot - 'motor overheating'\n\n"
+
+        response += "\n📸 Or send a nameplate photo to add equipment!"
+
+        await msg.edit_text(response, parse_mode="Markdown")
 
     async def equip_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
@@ -2735,21 +3303,41 @@ Send a 📷 photo of any equipment nameplate and I'll identify it and find the m
     async def reset_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
         Handle /reset command.
-        Clear current session/context.
+        Clear current session/context and optionally reset adaptive command preferences.
+
+        Usage:
+            /reset - Clear session context
+            /reset all - Clear session AND adaptive command preferences
         """
+        from rivet_pro.core.intelligence.adaptive_commands import AdaptiveCommandService
+
         user_id = str(update.effective_user.id)
+        args = context.args or []
 
         # Clear any user data stored in context
         context.user_data.clear()
 
-        await update.message.reply_text(
-            "🔄 *Session Reset*\n\n"
-            "Your session has been cleared. Ready for a fresh start!\n\n"
-            "Send a photo or type a question to begin.",
-            parse_mode="Markdown"
-        )
+        reset_preferences = 'all' in args or 'preferences' in args
 
-        logger.info(f"Session reset | user_id={user_id}")
+        response = "🔄 *Session Reset*\n\n"
+        response += "✅ Session context cleared\n"
+
+        if reset_preferences:
+            # Also reset adaptive command preferences
+            try:
+                adaptive = AdaptiveCommandService(self.db)
+                await adaptive.reset_to_default(user_id)
+                response += "✅ Command preferences reset to default\n"
+                logger.info(f"Adaptive preferences reset | user_id={user_id}")
+            except Exception as e:
+                logger.error(f"Failed to reset preferences: {e}")
+                response += "⚠️ Could not reset command preferences\n"
+
+        response += "\nReady for a fresh start! Just type naturally or send a photo."
+
+        await update.message.reply_text(response, parse_mode="Markdown")
+
+        logger.info(f"Session reset | user_id={user_id} | reset_preferences={reset_preferences}")
 
     async def done_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
@@ -2771,6 +3359,69 @@ Send a 📷 photo of any equipment nameplate and I'll identify it and find the m
         )
 
         logger.info(f"Exited troubleshooting | user_id={user_id}")
+
+    async def ask_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Handle /ask command - Direct manual/documentation questions.
+
+        Usage:
+            /ask <question> - Ask a question about equipment manuals
+        """
+        from rivet_pro.core.services.manual_qa_service import ManualQAService
+
+        user_id = str(update.effective_user.id)
+        args = context.args or []
+
+        if not args:
+            await update.message.reply_text(
+                "📖 *Ask about Manuals*\n\n"
+                "Usage: `/ask <your question>`\n\n"
+                "Examples:\n"
+                "• `/ask how do I reset to factory settings`\n"
+                "• `/ask what does error F0002 mean`\n"
+                "• `/ask calibration procedure for pressure sensor`",
+                parse_mode="Markdown"
+            )
+            return
+
+        query = " ".join(args)
+        msg = await update.message.reply_text("Searching manuals...")
+
+        try:
+            qa_service = ManualQAService(self.db.pool)
+            response = await qa_service.ask(
+                query=query,
+                user_id=int(user_id) if user_id.isdigit() else None
+            )
+
+            # Format response
+            answer_text = response.answer
+
+            if response.citations:
+                answer_text += "\n\n📖 *Sources:*\n"
+                for cite in response.citations[:3]:
+                    if cite.page:
+                        answer_text += f"• Page {cite.page}"
+                        if cite.section:
+                            answer_text += f" - {cite.section}"
+                        answer_text += "\n"
+
+            if response.confidence < 0.6:
+                answer_text += "\n\n⚠️ _Low confidence - consider checking the manual directly_"
+
+            if len(answer_text) > 4000:
+                answer_text = answer_text[:3900] + "...\n\n_Response truncated_"
+
+            await msg.edit_text(answer_text, parse_mode="Markdown")
+
+            logger.info(f"/ask command | user={user_id} | confidence={response.confidence:.2f}")
+
+        except Exception as e:
+            logger.error(f"Error in /ask command: {e}", exc_info=True)
+            await msg.edit_text(
+                "❌ Error searching manuals. Try rephrasing your question.",
+                parse_mode="Markdown"
+            )
 
     # ==================== SME CHAT COMMANDS (Phase 4) ====================
 
@@ -3185,6 +3836,7 @@ Send a 📷 photo of any equipment nameplate and I'll identify it and find the m
         self.application.add_handler(CommandHandler("upgrade", self.upgrade_command))
         self.application.add_handler(CommandHandler("reset", self.reset_command))
         self.application.add_handler(CommandHandler("done", self.done_command))
+        self.application.add_handler(CommandHandler("ask", self.ask_command))  # NLP fallback for manual questions
 
         # SME Chat commands (Phase 4)
         self.application.add_handler(CommandHandler("chat", self.chat_command))

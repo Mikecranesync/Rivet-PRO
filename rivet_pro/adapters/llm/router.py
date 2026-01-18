@@ -12,10 +12,11 @@ import base64
 import json
 import logging
 from enum import Enum
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List, Tuple, AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
 from contextlib import contextmanager
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -522,6 +523,133 @@ class LLMRouter:
     def is_provider_available(self, provider_name: str) -> bool:
         """Check if a provider is configured."""
         return provider_name in self.get_available_providers()
+
+    async def generate_stream(
+        self,
+        prompt: str,
+        capability: ModelCapability = ModelCapability.MODERATE,
+        max_tokens: int = 1500,
+        temperature: float = 0.7,
+        system_prompt: Optional[str] = None,
+    ) -> AsyncIterator[str]:
+        """
+        Generate text-only response with streaming.
+
+        Yields tokens as they arrive for real-time response feel.
+        Falls back through model chain if primary fails.
+
+        Args:
+            prompt: User prompt
+            capability: Required capability tier
+            max_tokens: Maximum tokens to generate
+            temperature: Sampling temperature (0.0-1.0)
+            system_prompt: Optional system prompt for response style
+
+        Yields:
+            str: Individual tokens or chunks as they arrive
+
+        Raises:
+            Exception: If all models in capability tier fail
+
+        Example:
+            >>> router = LLMRouter()
+            >>> async for token in router.generate_stream(
+            ...     "Explain F0002 fault on Siemens S7-1200",
+            ...     capability=ModelCapability.MODERATE
+            ... ):
+            ...     print(token, end="", flush=True)
+        """
+        # Get models for this capability tier
+        models = TEXT_GENERATION_MODELS.get(capability, [])
+
+        if not models:
+            raise ValueError(f"No models configured for capability {capability}")
+
+        # Build messages
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        # Try each model in order (cheapest first)
+        last_error = None
+
+        for provider, model, cost_in, cost_out in models:
+            try:
+                logger.info(f"[LLM Router] Streaming from {provider}/{model} for {capability.value}")
+
+                if provider == "groq":
+                    client = self._get_groq_client()
+                    if not client:
+                        logger.warning(f"[LLM Router] Groq client not available")
+                        continue
+
+                    # Groq streaming
+                    stream = client.chat.completions.create(
+                        model=model,
+                        messages=messages,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        stream=True,
+                    )
+
+                    for chunk in stream:
+                        if chunk.choices and chunk.choices[0].delta.content:
+                            yield chunk.choices[0].delta.content
+
+                    logger.info(f"[LLM Router] Stream complete: {provider}/{model}")
+                    return
+
+                elif provider == "openai":
+                    client = self._get_openai_client()
+                    if not client:
+                        logger.warning(f"[LLM Router] OpenAI client not available")
+                        continue
+
+                    # OpenAI streaming
+                    stream = client.chat.completions.create(
+                        model=model,
+                        messages=messages,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        stream=True,
+                    )
+
+                    for chunk in stream:
+                        if chunk.choices and chunk.choices[0].delta.content:
+                            yield chunk.choices[0].delta.content
+
+                    logger.info(f"[LLM Router] Stream complete: {provider}/{model}")
+                    return
+
+                elif provider == "claude":
+                    client = self._get_anthropic_client()
+                    if not client:
+                        logger.warning(f"[LLM Router] Anthropic client not available")
+                        continue
+
+                    # Anthropic streaming
+                    with client.messages.stream(
+                        model=model,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        messages=messages,
+                    ) as stream:
+                        for text in stream.text_stream:
+                            yield text
+
+                    logger.info(f"[LLM Router] Stream complete: {provider}/{model}")
+                    return
+
+            except Exception as e:
+                logger.warning(f"[LLM Router] {provider}/{model} streaming failed: {e}")
+                last_error = e
+                continue  # Try next model
+
+        # All models failed
+        raise Exception(
+            f"All models failed for capability {capability} streaming. Last error: {last_error}"
+        )
 
 
 # Module-level singleton

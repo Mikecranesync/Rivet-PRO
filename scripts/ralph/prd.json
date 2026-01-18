@@ -1,108 +1,202 @@
 {
-  "project": "RIVET Pro",
-  "branchName": "ralph/whatsapp-adapter",
-  "description": "WhatsApp Cloud API Adapter - Add WhatsApp support as a completely separate adapter. Uses Meta Cloud API webhooks. Does NOT touch existing Telegram code. Uses existing database whatsapp_id field.",
-  "userStories": [
+  "project": {
+    "name": "Shop Floor Expert",
+    "description": "Production-Grade NLP Assistant for Industrial Maintenance",
+    "version": "1.0.0",
+    "target": "Pass 97%+ of expert-level queries with <200ms perceived latency"
+  },
+  "current_state": {
+    "basic_test_pass_rate": "100% (26/26)",
+    "expert_test_pass_rate": "87.9% (29/33)",
+    "response_latency": "500-800ms (wait for full)",
+    "llm_calls": "100% of queries",
+    "context_awareness": "None"
+  },
+  "target_state": {
+    "basic_test_pass_rate": "100% (26/26)",
+    "expert_test_pass_rate": "97%+ (32/33)",
+    "response_latency": "<200ms (streaming)",
+    "llm_calls": "~15% (fallback only)",
+    "context_awareness": "Equipment history injected"
+  },
+  "phases": [
     {
-      "id": "WHATSAPP-001",
-      "title": "Update Config Settings",
-      "description": "Update the WhatsApp configuration fields in Settings class with proper descriptions. Add 5 WhatsApp config fields: whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_access_token, whatsapp_verify_token, whatsapp_app_secret. All fields should be Optional with clear descriptions.",
-      "acceptanceCriteria": [
-        "All 5 WhatsApp config fields have clear descriptions",
-        "Fields are Optional (adapter disabled if not set)",
-        "Existing settings unchanged"
-      ],
-      "priority": 1,
-      "passes": false,
-      "notes": "File: rivet_pro/config/settings.py"
+      "phase": 1,
+      "name": "Intent Fixes",
+      "stories": ["EXPERT-001", "EXPERT-002", "EXPERT-003"],
+      "verification": "python scripts/test_bot_direct.py && python scripts/test_expert_queries.py"
     },
     {
-      "id": "WHATSAPP-002",
-      "title": "Update .env.example",
-      "description": "Add a commented WhatsApp section to .env.example with all required env vars: WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_BUSINESS_ACCOUNT_ID, WHATSAPP_ACCESS_TOKEN, WHATSAPP_VERIFY_TOKEN, WHATSAPP_APP_SECRET. Include helpful comments explaining where to get these values from Meta Developer Portal.",
-      "acceptanceCriteria": [
-        "WhatsApp section clearly commented",
-        "All 5 env vars listed",
-        "Noted as optional (adapter disabled if not set)"
-      ],
-      "priority": 2,
-      "passes": false,
-      "notes": "File: .env.example or rivet_pro/.env.example"
+      "phase": 2,
+      "name": "Streaming",
+      "stories": ["EXPERT-004"],
+      "verification": "Send 'motor is overheating' via Telegram, verify first words appear within 200ms"
     },
     {
-      "id": "WHATSAPP-003",
-      "title": "Create WhatsApp Client Module",
-      "description": "Create rivet_pro/adapters/whatsapp/client.py with stubbed functions for sending messages via WhatsApp Cloud API. Include: send_whatsapp_text(to_whatsapp_id, body), send_whatsapp_image(to_whatsapp_id, image_url, caption), mark_as_read(message_id). All functions async with proper type hints and docstrings. Log what would be sent without exposing secrets.",
-      "acceptanceCriteria": [
-        "Three functions defined: send_whatsapp_text, send_whatsapp_image, mark_as_read",
-        "All functions are async",
-        "Proper type hints and docstrings",
-        "Logging shows what would be sent (no secrets in logs)",
-        "Uses settings for config access"
-      ],
-      "priority": 3,
-      "passes": false,
-      "notes": "File: rivet_pro/adapters/whatsapp/client.py (CREATE)"
+      "phase": 3,
+      "name": "Multi-Signal Router",
+      "stories": ["EXPERT-005"],
+      "verification": "python scripts/test_expert_queries.py - check logs for LLM call reduction"
     },
     {
-      "id": "WHATSAPP-004",
-      "title": "Create WhatsApp Webhook Router",
-      "description": "Create rivet_pro/adapters/web/routers/whatsapp.py with FastAPI router. Include GET endpoint for Meta webhook verification (hub.mode, hub.verify_token, hub.challenge) and POST endpoint for receiving messages. Implement HMAC-SHA256 signature verification. Handle text and image message types. Return 403 for invalid token, 401 for invalid signature.",
-      "acceptanceCriteria": [
-        "GET /whatsapp handles webhook verification",
-        "POST /whatsapp receives and validates messages",
-        "Signature verification using HMAC-SHA256",
-        "Returns 403 for invalid verify token",
-        "Returns 401 for invalid signature",
-        "Handles text and image message types",
-        "No secrets logged",
-        "Pure function for signature verification (testable)"
-      ],
-      "priority": 4,
-      "passes": false,
-      "notes": "File: rivet_pro/adapters/web/routers/whatsapp.py (CREATE)"
-    },
-    {
-      "id": "WHATSAPP-005",
-      "title": "Update WhatsApp __init__.py",
-      "description": "Update rivet_pro/adapters/whatsapp/__init__.py to export the WhatsApp adapter entry points. Include module docstring explaining purpose and listing required config vars. Export send_whatsapp_text, send_whatsapp_image, mark_as_read from client module.",
-      "acceptanceCriteria": [
-        "Module docstring explains purpose",
-        "Exports all client functions",
-        "Lists required config vars in docstring"
-      ],
-      "priority": 5,
-      "passes": false,
-      "notes": "File: rivet_pro/adapters/whatsapp/__init__.py (MODIFY)"
-    },
-    {
-      "id": "WHATSAPP-006",
-      "title": "Wire Router into FastAPI App",
-      "description": "Modify rivet_pro/adapters/web/main.py to include the WhatsApp router. Import whatsapp router from routers module. Register with /whatsapp prefix and WhatsApp tag. Add comment explaining adapter isolation. Ensure app still starts without WhatsApp config.",
-      "acceptanceCriteria": [
-        "WhatsApp router imported",
-        "Router registered with /whatsapp prefix",
-        "Comment explains adapter isolation",
-        "Import does not pull in Telegram code",
-        "FastAPI app still starts without WhatsApp config"
-      ],
-      "priority": 6,
-      "passes": false,
-      "notes": "File: rivet_pro/adapters/web/main.py (MODIFY)"
-    },
-    {
-      "id": "WHATSAPP-007",
-      "title": "Add WhatsApp Setup Documentation",
-      "description": "Create docs/WHATSAPP_SETUP.md with setup instructions. Include: Prerequisites (Meta Business Account, WhatsApp Business API), Configuration steps with Meta Developer Portal, .env setup, Webhook setup with ngrok for local testing, curl examples for testing both endpoints, Security notes about secrets.",
-      "acceptanceCriteria": [
-        "Clear step-by-step setup instructions",
-        "ngrok local testing guide",
-        "curl examples for both endpoints",
-        "Security warnings about secrets"
-      ],
-      "priority": 7,
-      "passes": false,
-      "notes": "File: docs/WHATSAPP_SETUP.md (CREATE)"
+      "phase": 4,
+      "name": "Context & Polish",
+      "stories": ["EXPERT-006", "EXPERT-007", "EXPERT-008"],
+      "verification": "Live test with expert queries in Telegram"
     }
-  ]
+  ],
+  "stories": [
+    {
+      "id": "EXPERT-001",
+      "title": "Intent Fix: Symptom Questions",
+      "description": "Add symptom word override to quick classifier so questions like 'what does a bad motor smell like?' route to TROUBLESHOOT",
+      "priority": 1,
+      "points": 2,
+      "acceptance_criteria": [
+        "'what does a bad motor smell like?' → TROUBLESHOOT (0.85+)",
+        "'what does a failing bearing sound like?' → TROUBLESHOOT (0.85+)",
+        "Symptom words (smell, sound, feel, look) + bad/failing → TROUBLESHOOT override",
+        "Basic tests still pass 100%"
+      ],
+      "files_to_modify": [
+        "rivet_pro/core/intelligence/intent_classifier.py"
+      ],
+      "technical_notes": "Add symptom override BEFORE manual pattern check in _quick_classify() method, lines 195-280"
+    },
+    {
+      "id": "EXPERT-002",
+      "title": "Intent Fix: Logging Patterns",
+      "description": "Add logging patterns (log this, log it, document this, record this) to quick classifier for WORK_ORDER_CREATE",
+      "priority": 2,
+      "points": 2,
+      "acceptance_criteria": [
+        "'log this: changed belts on AHU-5' → WORK_ORDER_CREATE (0.90+)",
+        "'log it: replaced filter' → WORK_ORDER_CREATE (0.90+)",
+        "'document this: compressor startup' → WORK_ORDER_CREATE (0.90+)",
+        "'record this: cleaned contacts' → WORK_ORDER_CREATE (0.90+)",
+        "Basic tests still pass 100%"
+      ],
+      "files_to_modify": [
+        "rivet_pro/core/intelligence/intent_classifier.py"
+      ],
+      "technical_notes": "Add logging patterns to WO section in _quick_classify()"
+    },
+    {
+      "id": "EXPERT-003",
+      "title": "Intent Fix: History Lookup",
+      "description": "Add history patterns (fault history, history on, records for) to quick classifier for EQUIPMENT_SEARCH",
+      "priority": 3,
+      "points": 2,
+      "acceptance_criteria": [
+        "'VFD fault history' → EQUIPMENT_SEARCH (0.85+)",
+        "'history on motor 7' → EQUIPMENT_SEARCH (0.85+)",
+        "'fault records for compressor' → EQUIPMENT_SEARCH (0.85+)",
+        "Basic tests still pass 100%"
+      ],
+      "files_to_modify": [
+        "rivet_pro/core/intelligence/intent_classifier.py"
+      ],
+      "technical_notes": "Add history patterns to equipment search section in _quick_classify()"
+    },
+    {
+      "id": "EXPERT-004",
+      "title": "Streaming Responses",
+      "description": "Implement streaming responses so text appears word-by-word in Telegram instead of waiting for full response",
+      "priority": 4,
+      "points": 5,
+      "acceptance_criteria": [
+        "First token appears within 200ms of sending message",
+        "Response streams into Telegram chat progressively",
+        "Edit message every ~500ms with accumulated tokens (avoid API spam)",
+        "Final message shows complete response",
+        "Works for TROUBLESHOOT, MANUAL_QUESTION, GENERAL_CHAT intents",
+        "Graceful fallback if streaming fails"
+      ],
+      "files_to_modify": [
+        "rivet_pro/adapters/telegram/bot.py"
+      ],
+      "technical_notes": "Use stream=True in Groq/OpenAI calls, accumulate tokens, edit Telegram message periodically"
+    },
+    {
+      "id": "EXPERT-005",
+      "title": "Multi-Signal Router",
+      "description": "Replace single classifier with 3-signal voting: keyword (40%) + semantic (35%) + LLM fallback (25%)",
+      "priority": 5,
+      "points": 8,
+      "acceptance_criteria": [
+        "Keyword signal: pattern matching (0ms, 85% accuracy)",
+        "Semantic signal: embedding similarity (10ms, 88% accuracy)",
+        "LLM signal: only called when confidence < 0.75 (50ms, 95% accuracy)",
+        "Weighted voting: keyword 40%, semantic 35%, LLM 25%",
+        "Final confidence = weighted average of signals",
+        "LLM called for only ~15% of queries (high-confidence skip)",
+        "Expert test pass rate >= 95%"
+      ],
+      "files_to_create": [
+        "rivet_pro/core/intelligence/multi_signal_router.py"
+      ],
+      "technical_notes": "Cache intent embeddings at startup, use cosine similarity for semantic matching"
+    },
+    {
+      "id": "EXPERT-006",
+      "title": "Context Retrieval",
+      "description": "Search equipment history before generating responses, inject relevant past cases into prompt",
+      "priority": 6,
+      "points": 5,
+      "acceptance_criteria": [
+        "Before generating response, search equipment history for similar issues",
+        "Inject top 3 relevant past cases into system prompt",
+        "Response naturally references relevant history when applicable",
+        "If no relevant history, respond normally (no awkward 'no history found')",
+        "Works for TROUBLESHOOT and EQUIPMENT_SEARCH intents"
+      ],
+      "files_to_create": [
+        "rivet_pro/core/intelligence/context_retriever.py"
+      ],
+      "technical_notes": "Search equipment table and work order history, limit to 500 tokens of context"
+    },
+    {
+      "id": "EXPERT-007",
+      "title": "Voice-First Optimization",
+      "description": "Clean up speech-to-text artifacts: filler words, abbreviation normalization, incomplete sentences",
+      "priority": 7,
+      "points": 3,
+      "acceptance_criteria": [
+        "Strip filler words: 'uh', 'um', 'like', 'you know', 'basically'",
+        "Normalize industry abbreviations: 'vee eff dee' → 'VFD', 'ay ach you' → 'AHU'",
+        "Handle incomplete sentences: 'motor... pump 3... not working' → coherent query",
+        "Preserve technical terms: 'megger', 'FLA', 'phase imbalance'",
+        "Add common speech-to-text errors to pattern matching"
+      ],
+      "files_to_create": [
+        "rivet_pro/core/intelligence/voice_normalizer.py"
+      ],
+      "technical_notes": "Run normalization BEFORE intent classification, build abbreviation dictionary"
+    },
+    {
+      "id": "EXPERT-008",
+      "title": "Expert Response Templates",
+      "description": "Update system prompts to respect technician expertise - direct answers, no condescending explanations",
+      "priority": 8,
+      "points": 3,
+      "acceptance_criteria": [
+        "Troubleshoot responses: Jump to diagnosis, not basics",
+        "Manual responses: Give specs/procedures directly, skip preamble",
+        "Work order responses: Confirm and move on, don't over-explain",
+        "Detect technical terminology in query → assume expert level",
+        "No condescending phrases: 'As you may know...', 'For safety...'"
+      ],
+      "files_to_create": [
+        "rivet_pro/core/intelligence/response_templates.py"
+      ],
+      "technical_notes": "Add technical term detection to set 'expert mode'"
+    }
+  ],
+  "success_metrics": {
+    "expert_test_pass_rate": ">=97% (32/33)",
+    "basic_test_pass_rate": "100% (26/26)",
+    "first_token_latency": "<200ms",
+    "llm_call_reduction": ">=80% (fallback only)",
+    "user_satisfaction": "'This actually helps' from 20-year tech"
+  }
 }
