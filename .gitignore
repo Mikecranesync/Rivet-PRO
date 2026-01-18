@@ -79,4 +79,29 @@ deploy/fly-deploy.ps1
 test_script.json
 # ycb/  # Now tracked - v1.0 video generator
 ycb_output/  # Generated output - keep ignored
+ycb_metrics/  # YCB metrics - generated
 test_results_*.json
+
+# Temporary audio files
+temp-audio.*
+*.m4a
+
+# Scratch/temp markdown files (not docs)
+Network Troubleshooting.md
+llm-routing-2026.md
+integration-guide.md
+pdf_manual_qa_system.md
+intent-classifier-fixes.py
+
+# Ralph state files (local session state)
+scripts/ralph-claude-code/.call_count
+scripts/ralph-claude-code/.circuit_breaker_state
+scripts/ralph-claude-code/.exit_signals
+scripts/ralph-claude-code/.last_reset
+scripts/ralph-claude-code/.ralph_session
+scripts/ralph-claude-code/.ralph_session_history
+scripts/ralph-claude-code/.response_analysis
+scripts/ralph-claude-code/.last_output_length
+scripts/ralph-claude-code/progress.json
+scripts/ralph-claude-code/status.json
+scripts/ralph-claude-code/${CLAUDE_ENV_FILE}
