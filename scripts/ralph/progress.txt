@@ -471,3 +471,24 @@ Stories: YCB3-MANIM-001 through YCB3-DOCS-001 (18 stories)
 - Pad comparison table rows to match column count to avoid missing cell errors
 - Ladder logic uses Arc for coil parentheses, Line for contacts
 ---
+
+## 2026-01-17 - YCB3-STORY-001
+- Created ycb/storyboard/ module for AI-powered storyboard generation
+- models.py: Scene, Storyboard, VisualDescription, TemplateParameters, SceneType, RenderEngine
+- generator.py: StoryboardGenerator class with LLM and rule-based modes
+- LLM mode uses Groq API with detailed system prompts for scene planning
+- Rule-based fallback: paragraph splitting, keyword detection, scene type inference
+- Scene type inference: comparison (vs, compared), flowchart (step, sequence), ladder_logic, diagram
+- Template params generated per scene type (elements, arrows, steps, events, etc.)
+- Duration estimated from word count at ~2.5 words/second
+- Serialization via to_dict() methods on all models
+- Test suite: 4/4 tests pass (rule-based, serialization, params, custom config)
+- Files: __init__.py, models.py, generator.py, test_generator.py
+- Commit: 44b7692
+
+**Learnings for future iterations:**
+- Use dataclasses for models, to_dict() for JSON serialization
+- LLM prompts should request JSON output with specific structure
+- Rule-based fallback ensures functionality without API keys
+- Word count / speaking rate = duration estimate
+---
