@@ -9,6 +9,7 @@ from .compositor import (
     CompositionResult,
     TransitionType,
     OverlayConfig,
+    ClipConfig,
 )
 from .post_processing import (
     PostProcessor,
@@ -25,6 +26,7 @@ __all__ = [
     "CompositionResult",
     "TransitionType",
     "OverlayConfig",
+    "ClipConfig",
     "PostProcessor",
     "PostProcessConfig",
     "PostProcessResult",
