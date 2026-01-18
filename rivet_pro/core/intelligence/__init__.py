@@ -34,6 +34,16 @@ from rivet_pro.core.intelligence.voice_normalizer import (
     get_voice_normalizer,
     normalize_voice_input,
 )
+from rivet_pro.core.intelligence.response_templates import (
+    ExpertiseDetector,
+    ExpertiseLevel,
+    ExpertiseSignals,
+    ResponseTemplateManager,
+    get_expertise_detector,
+    get_template_manager,
+    detect_expertise,
+    get_expert_prompt,
+)
 
 __all__ = [
     "IntentClassifier",
@@ -52,4 +62,12 @@ __all__ = [
     "VoiceNormalizer",
     "get_voice_normalizer",
     "normalize_voice_input",
+    "ExpertiseDetector",
+    "ExpertiseLevel",
+    "ExpertiseSignals",
+    "ResponseTemplateManager",
+    "get_expertise_detector",
+    "get_template_manager",
+    "detect_expertise",
+    "get_expert_prompt",
 ]
