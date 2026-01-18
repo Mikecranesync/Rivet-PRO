@@ -159,8 +159,10 @@ INDUSTRIAL_COLORS = {
     "accent": "#F59E0B",       # Amber
     "danger": "#EF4444",       # Red
     "neutral": "#6B7280",      # Gray
-    "background": "#1E1E1E",   # Dark
+    "background": "#1a1a2e",   # Dark (Manim default dark)
     "text": "#FFFFFF",         # White
+    "arrow": "#10B981",        # Green - for flow arrows
+    "success": "#22C55E",      # Bright green - success/highlight
 }
 
 PLC_COLORS = {
@@ -170,4 +172,8 @@ PLC_COLORS = {
     "timer": "#F59E0B",        # Amber - timers
     "counter": "#8B5CF6",      # Purple - counters
     "rung": "#9CA3AF",         # Gray - rungs
+    "rail": "#4A5568",         # Dark gray - power rails
+    "contact": "#3B82F6",      # Blue - contacts
+    "coil": "#22C55E",         # Green - output coils
+    "active": "#10B981",       # Bright green - active/energized
 }
