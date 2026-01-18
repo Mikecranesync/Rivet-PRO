@@ -1,0 +1,188 @@
+name: KB Maintenance
+
+on:
+  schedule:
+    # Daily KB Builder - 2:00 AM UTC
+    - cron: '0 2 * * *'
+    # Weekly Maintenance - Sundays at 12:00 AM UTC
+    - cron: '0 0 * * 0'
+    # URL Scheduler - Every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'Which task to run'
+        required: true
+        type: choice
+        options:
+          - daily_kb_builder
+          - weekly_maintenance
+          - url_scheduler
+          - all
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  determine-task:
+    runs-on: ubuntu-latest
+    outputs:
+      run_daily: ${{ steps.check.outputs.run_daily }}
+      run_weekly: ${{ steps.check.outputs.run_weekly }}
+      run_scheduler: ${{ steps.check.outputs.run_scheduler }}
+    steps:
+      - name: Determine which tasks to run
+        id: check
+        run: |
+          # Manual trigger
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            case "${{ inputs.task }}" in
+              daily_kb_builder)
+                echo "run_daily=true" >> $GITHUB_OUTPUT
+                echo "run_weekly=false" >> $GITHUB_OUTPUT
+                echo "run_scheduler=false" >> $GITHUB_OUTPUT
+                ;;
+              weekly_maintenance)
+                echo "run_daily=false" >> $GITHUB_OUTPUT
+                echo "run_weekly=true" >> $GITHUB_OUTPUT
+                echo "run_scheduler=false" >> $GITHUB_OUTPUT
+                ;;
+              url_scheduler)
+                echo "run_daily=false" >> $GITHUB_OUTPUT
+                echo "run_weekly=false" >> $GITHUB_OUTPUT
+                echo "run_scheduler=true" >> $GITHUB_OUTPUT
+                ;;
+              all)
+                echo "run_daily=true" >> $GITHUB_OUTPUT
+                echo "run_weekly=true" >> $GITHUB_OUTPUT
+                echo "run_scheduler=true" >> $GITHUB_OUTPUT
+                ;;
+            esac
+          # Scheduled trigger - check which cron fired
+          else
+            HOUR=$(date -u +%H)
+            DAY=$(date -u +%u)  # 1=Monday, 7=Sunday
+
+            # Daily at 2 AM UTC
+            if [ "$HOUR" = "02" ]; then
+              echo "run_daily=true" >> $GITHUB_OUTPUT
+            else
+              echo "run_daily=false" >> $GITHUB_OUTPUT
+            fi
+
+            # Weekly on Sunday at midnight UTC
+            if [ "$HOUR" = "00" ] && [ "$DAY" = "7" ]; then
+              echo "run_weekly=true" >> $GITHUB_OUTPUT
+            else
+              echo "run_weekly=false" >> $GITHUB_OUTPUT
+            fi
+
+            # URL Scheduler every 6 hours (0, 6, 12, 18)
+            if [ "$((HOUR % 6))" = "0" ] && [ "$HOUR" != "02" ]; then
+              echo "run_scheduler=true" >> $GITHUB_OUTPUT
+            else
+              echo "run_scheduler=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+  daily-kb-builder:
+    needs: determine-task
+    if: needs.determine-task.outputs.run_daily == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install asyncpg httpx python-dotenv
+
+      - name: Run Daily KB Builder
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          python -m rivet_pro.workers.daily_kb_builder
+
+      - name: Notify on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+            --data '{"text":"GitHub Actions: Daily KB Builder FAILED\n\nSee: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}' \
+            $SLACK_WEBHOOK_URL || true
+
+  weekly-maintenance:
+    needs: determine-task
+    if: needs.determine-task.outputs.run_weekly == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install asyncpg httpx python-dotenv numpy
+
+      - name: Run Weekly Maintenance
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          python -m rivet_pro.workers.weekly_kb_maintenance
+
+      - name: Notify on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+            --data '{"text":"GitHub Actions: Weekly KB Maintenance FAILED\n\nSee: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}' \
+            $SLACK_WEBHOOK_URL || true
+
+  url-scheduler:
+    needs: determine-task
+    if: needs.determine-task.outputs.run_scheduler == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install redis httpx python-dotenv
+
+      - name: Run URL Scheduler
+        env:
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          python -m rivet_pro.workers.url_scheduler --once
+
+      - name: Notify on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+            --data '{"text":"GitHub Actions: URL Scheduler FAILED\n\nSee: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}' \
+            $SLACK_WEBHOOK_URL || true

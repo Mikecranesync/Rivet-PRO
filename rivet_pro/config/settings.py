@@ -91,8 +91,11 @@ class Settings(BaseSettings):
     database_pool_min_size: int = Field(2, description="Min connections in pool")
     database_pool_max_size: int = Field(10, description="Max connections in pool")
 
-    # Redis Configuration
-    redis_url: Optional[str] = Field(None, description="Redis connection URL for caching")
+    # Redis Configuration (Upstash for KB job queue)
+    redis_url: Optional[str] = Field(None, description="Redis connection URL (Upstash) for KB job queue")
+
+    # Slack Configuration (for 24/7 worker notifications)
+    slack_webhook_url: Optional[str] = Field(None, description="Slack webhook URL for worker status notifications")
 
     # AI Provider API Keys
     groq_api_key: Optional[str] = Field(None, description="Groq API key for OCR")
