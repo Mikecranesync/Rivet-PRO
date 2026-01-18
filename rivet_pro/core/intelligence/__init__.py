@@ -23,6 +23,12 @@ from rivet_pro.core.intelligence.multi_signal_router import (
     Signal,
     get_multi_signal_router,
 )
+from rivet_pro.core.intelligence.context_retriever import (
+    ContextRetriever,
+    ContextMatch,
+    RetrievedContext,
+    get_context_retriever,
+)
 
 __all__ = [
     "IntentClassifier",
@@ -34,4 +40,8 @@ __all__ = [
     "MultiSignalResult",
     "Signal",
     "get_multi_signal_router",
+    "ContextRetriever",
+    "ContextMatch",
+    "RetrievedContext",
+    "get_context_retriever",
 ]
