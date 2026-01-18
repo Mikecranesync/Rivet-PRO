@@ -371,3 +371,60 @@ All 6 stories implemented and passing:
 
 Ready for commit and merge to main.
 ---
+
+=== YCB v3: Professional Video Generation ===
+Started: Fri, Jan 17, 2026
+Branch: ralph/ycb-v3-manim-blender
+Stories: YCB3-MANIM-001 through YCB3-DOCS-001 (18 stories)
+---
+
+## Codebase Patterns (YCB v3)
+- Use subprocess to run Manim CLI avoiding asyncio conflicts
+- Manim output path: media_dir/videos/<script_name>/<quality>/<scene_name>.mp4
+- Handle file rename collisions with unlink before rename
+- Scene configs use dataclasses for structured descriptions
+- Color palettes: INDUSTRIAL_COLORS for consistent theming
+---
+
+## 2026-01-17 - YCB3-MANIM-001
+- Created ycb/rendering/__init__.py with module exports
+- Created ycb/rendering/scene_types.py with Pydantic scene models
+  - SceneType enum: TITLE, TEXT, DIAGRAM, FLOWCHART, COMPARISON, LADDER_LOGIC, TIMELINE
+  - SceneConfig, TextConfig, ShapeConfig, ArrowConfig, DiagramConfig dataclasses
+  - Preset color palettes: INDUSTRIAL_COLORS, PLC_COLORS
+- Created ycb/rendering/manim_engine.py with ManimEngine class
+  - render_title(), render_diagram(), render_text(), render_test() methods
+  - Generates Manim Python code dynamically from scene configs
+  - Runs Manim as subprocess with quality presets
+  - Handles file output, renaming, and cleanup
+- All tests pass: title, diagram, and text scenes render successfully
+- Files changed: ycb/rendering/__init__.py, manim_engine.py, scene_types.py
+- Commit: c8103f0
+
+**Learnings for future iterations:**
+- Manim requires running via subprocess to avoid asyncio conflicts
+- Use f-strings carefully in generated code - escape quotes properly
+- Label newlines must be replaced before code generation
+- Output file detection requires checking multiple possible paths
+- Quality presets: -ql (low), -qm (medium), -qh (high), -qp (production)
+---
+
+## 2026-01-17 - YCB3-ASSETS-001
+- Created ycb/assets/electrical/ directory with 11 IEC-standard SVG symbols
+- Symbols created: motor, relay, contactor, overload, transformer, fuse, switch
+- PLC I/O symbols: digital_input, digital_output, analog_input, analog_output
+- Each symbol uses 100x100 viewBox with consistent sizing
+- Colors: Blue (#3B82F6) for control, Green (#22C55E) for inputs, Red (#EF4444) for protection
+- Created manifest.json with metadata: categories, colors, connection points, descriptions
+- Created test_svg_import.py to verify Manim can import and animate SVGs
+- Test renders motor, relay, and digital input with labels and scaling animations
+- All tests pass - SVGs import cleanly into Manim scenes
+- Files changed: ycb/assets/electrical/*.svg (11 files), manifest.json, test_svg_import.py
+- Commit: 1760c53
+
+**Learnings for future iterations:**
+- Manim SVGMobject requires .as_posix() for Windows path compatibility
+- Use simple SVG elements (rect, line, circle, path, polygon) for best compatibility
+- Include connection points in manifest for wiring diagrams
+- Keep consistent stroke-width (2-3px) for visual cohesion
+---
