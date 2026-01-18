@@ -3,6 +3,7 @@ Intelligence Module for Rivet Pro
 
 Provides NLP-first intelligent routing for the always-on assistant:
 - Intent classification from natural language
+- Multi-signal routing (keyword + semantic + LLM fallback)
 - Adaptive command learning per user
 - Entity extraction (manufacturers, models, fault codes)
 """
@@ -16,6 +17,12 @@ from rivet_pro.core.intelligence.adaptive_commands import (
     AdaptiveCommandService,
     UserCommand,
 )
+from rivet_pro.core.intelligence.multi_signal_router import (
+    MultiSignalRouter,
+    MultiSignalResult,
+    Signal,
+    get_multi_signal_router,
+)
 
 __all__ = [
     "IntentClassifier",
@@ -23,4 +30,8 @@ __all__ = [
     "IntentType",
     "AdaptiveCommandService",
     "UserCommand",
+    "MultiSignalRouter",
+    "MultiSignalResult",
+    "Signal",
+    "get_multi_signal_router",
 ]
