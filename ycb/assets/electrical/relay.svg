@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- Relay Coil Symbol - IEC Standard -->
+  <rect x="25" y="30" width="50" height="40" fill="none" stroke="#3B82F6" stroke-width="3"/>
+  <!-- Coil indication -->
+  <line x1="35" y1="40" x2="35" y2="60" stroke="#3B82F6" stroke-width="2"/>
+  <line x1="45" y1="40" x2="45" y2="60" stroke="#3B82F6" stroke-width="2"/>
+  <line x1="55" y1="40" x2="55" y2="60" stroke="#3B82F6" stroke-width="2"/>
+  <line x1="65" y1="40" x2="65" y2="60" stroke="#3B82F6" stroke-width="2"/>
+  <!-- Connection points -->
+  <line x1="50" y1="30" x2="50" y2="10" stroke="#3B82F6" stroke-width="3"/>
+  <line x1="50" y1="70" x2="50" y2="90" stroke="#3B82F6" stroke-width="3"/>
+</svg>

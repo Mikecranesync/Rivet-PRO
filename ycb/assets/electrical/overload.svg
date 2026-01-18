@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- Thermal Overload Relay Symbol - IEC Standard -->
+  <rect x="25" y="25" width="50" height="50" fill="none" stroke="#EF4444" stroke-width="3"/>
+  <!-- Bimetallic element representation -->
+  <path d="M 35 40 Q 50 35 65 40 Q 50 45 35 40" fill="none" stroke="#EF4444" stroke-width="2"/>
+  <path d="M 35 55 Q 50 50 65 55 Q 50 60 35 55" fill="none" stroke="#EF4444" stroke-width="2"/>
+  <!-- OL label -->
+  <text x="50" y="72" text-anchor="middle" font-family="Arial" font-size="10" fill="#EF4444">OL</text>
+  <!-- Connection points -->
+  <line x1="50" y1="25" x2="50" y2="5" stroke="#EF4444" stroke-width="3"/>
+  <line x1="50" y1="75" x2="50" y2="95" stroke="#EF4444" stroke-width="3"/>
+</svg>
