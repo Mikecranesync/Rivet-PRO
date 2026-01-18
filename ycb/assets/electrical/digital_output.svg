@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- PLC Digital Output Symbol -->
+  <rect x="20" y="20" width="60" height="60" fill="none" stroke="#3B82F6" stroke-width="3"/>
+  <!-- Output arrow pointing out -->
+  <polygon points="90,50 70,40 70,60" fill="#3B82F6"/>
+  <!-- DO label -->
+  <text x="50" y="55" text-anchor="middle" font-family="Arial" font-size="18" font-weight="bold" fill="#3B82F6">DO</text>
+  <!-- Connection point -->
+  <line x1="5" y1="50" x2="20" stroke="#3B82F6" stroke-width="3"/>
+</svg>

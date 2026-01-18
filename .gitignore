@@ -77,6 +77,6 @@ deploy/fly-deploy.ps1
 
 # Test artifacts
 test_script.json
-ycb/
-ycb_output/
+# ycb/  # Now tracked - v1.0 video generator
+ycb_output/  # Generated output - keep ignored
 test_results_*.json

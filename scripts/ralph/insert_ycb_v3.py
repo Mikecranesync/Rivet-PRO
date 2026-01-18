@@ -1,0 +1,292 @@
+#!/usr/bin/env python3
+"""Insert YCB v3 stories into ralph_stories database table."""
+
+import psycopg2
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+DATABASE_URL = os.getenv('DATABASE_URL')
+
+STORIES = [
+    {
+        "story_id": "YCB3-MANIM-001",
+        "title": "Create Manim rendering engine integration",
+        "description": "Create a Python module that generates Manim scenes from structured scene descriptions.",
+        "acceptance_criteria": [
+            "ycb/rendering/manim_engine.py exists with ManimEngine class",
+            "Can render basic scenes: text, shapes, arrows, diagrams",
+            "Outputs MP4 clips to specified directory",
+            "Includes error handling and logging",
+            "Test: Generate a simple PLC diagram animation"
+        ],
+        "priority": 1
+    },
+    {
+        "story_id": "YCB3-ASSETS-001",
+        "title": "Create SVG asset library for electrical symbols",
+        "description": "Create reusable SVG assets for common industrial electrical symbols.",
+        "acceptance_criteria": [
+            "ycb/assets/electrical/ directory with SVG files",
+            "Symbols: motor, relay, contactor, overload, transformer, fuse, switch",
+            "PLC I/O symbols: digital input, digital output, analog input",
+            "Each symbol has consistent sizing and anchor points",
+            "Manim can import and animate these symbols"
+        ],
+        "priority": 2
+    },
+    {
+        "story_id": "YCB3-ASSETS-002",
+        "title": "Create SVG/PNG assets for PLC components",
+        "description": "Create visual assets for PLC hardware and software components.",
+        "acceptance_criteria": [
+            "ycb/assets/plc/ directory with assets",
+            "Hardware: PLC rack, CPU, I/O cards, power supply",
+            "Software: ladder logic symbols (XIC, XIO, OTE, TON, CTU)",
+            "Communication: Ethernet, serial, Modbus icons",
+            "Consistent visual style across all assets"
+        ],
+        "priority": 3
+    },
+    {
+        "story_id": "YCB3-MANIM-002",
+        "title": "Create reusable Manim scene templates",
+        "description": "Create template classes for common video scene types.",
+        "acceptance_criteria": [
+            "TitleScene - Animated title cards",
+            "DiagramScene - Technical diagram with callouts",
+            "FlowchartScene - Process flow with animated arrows",
+            "ComparisonScene - Side-by-side comparison",
+            "LadderLogicScene - PLC ladder diagram animation",
+            "TimelineScene - Sequential process steps"
+        ],
+        "priority": 4
+    },
+    {
+        "story_id": "YCB3-BLENDER-001",
+        "title": "Create Blender headless rendering engine",
+        "description": "Create a module that generates 3D animations using Blender Python API in headless mode.",
+        "acceptance_criteria": [
+            "ycb/rendering/blender_engine.py with BlenderEngine class",
+            "Can run Blender in background (no GUI)",
+            "Renders to MP4 with configurable resolution/fps",
+            "Includes basic scene setup (camera, lighting)",
+            "Error handling for Blender subprocess failures",
+            "Test: Render a spinning motor animation"
+        ],
+        "priority": 5
+    },
+    {
+        "story_id": "YCB3-ASSETS-003",
+        "title": "Create/source 3D models for industrial equipment",
+        "description": "Build a library of 3D models (.blend files) for common industrial equipment.",
+        "acceptance_criteria": [
+            "ycb/assets/3d/ directory with .blend files",
+            "Models: motor, VFD, PLC cabinet, conveyor section, pump",
+            "Each model has proper materials and textures",
+            "Models are optimized for rendering",
+            "Include animation rigs where relevant"
+        ],
+        "priority": 6
+    },
+    {
+        "story_id": "YCB3-BLENDER-002",
+        "title": "Create reusable Blender scene templates",
+        "description": "Create parameterized Blender scene templates for common industrial animations.",
+        "acceptance_criteria": [
+            "MotorRotationScene - Motor spinning with speed control",
+            "SignalFlowScene - Animated signal path through components",
+            "ExplodedViewScene - Component assembly/disassembly",
+            "ControlPanelScene - Panel with animated indicators",
+            "Templates render in <60 seconds each"
+        ],
+        "priority": 7
+    },
+    {
+        "story_id": "YCB3-STORY-001",
+        "title": "Create AI-powered storyboard generator",
+        "description": "Create a module that converts scripts into structured storyboards with scene definitions.",
+        "acceptance_criteria": [
+            "ycb/storyboard/generator.py with StoryboardGenerator class",
+            "Takes script text as input",
+            "Outputs list of Scene objects with scene type, duration, visual description, narration text",
+            "Uses LLM (Groq/Claude) for intelligent scene planning",
+            "Respects timing constraints"
+        ],
+        "priority": 8
+    },
+    {
+        "story_id": "YCB3-STORY-002",
+        "title": "Create scene-to-renderer routing system",
+        "description": "Create a router that dispatches scenes to the appropriate rendering engine.",
+        "acceptance_criteria": [
+            "ycb/storyboard/router.py with SceneRouter class",
+            "Routes diagram/flowchart/ladder_logic -> Manim",
+            "Routes 3d_animation/exploded_view/motor -> Blender",
+            "Routes b_roll/stock -> Placeholder/external",
+            "Supports fallback if Blender unavailable"
+        ],
+        "priority": 9
+    },
+    {
+        "story_id": "YCB3-AUDIO-001",
+        "title": "Create narration-to-scene timing synchronization",
+        "description": "Ensure narration audio syncs properly with visual scenes.",
+        "acceptance_criteria": [
+            "ycb/audio/timing.py with TimingSync class",
+            "Analyzes narration audio to get word-level timestamps",
+            "Matches timestamps to scene boundaries",
+            "Adjusts scene durations or adds pauses as needed",
+            "Outputs timing map for final composition"
+        ],
+        "priority": 10
+    },
+    {
+        "story_id": "YCB3-COMPOSE-001",
+        "title": "Create multi-scene video compositor",
+        "description": "Create a compositor that combines rendered scenes into final video with transitions.",
+        "acceptance_criteria": [
+            "ycb/composition/compositor.py with VideoCompositor class",
+            "Accepts list of rendered scene clips + audio",
+            "Supports transitions (fade, dissolve, cut)",
+            "Adds lower-third text overlays for key points",
+            "Adds intro/outro bumpers",
+            "Outputs final MP4 with proper encoding"
+        ],
+        "priority": 11
+    },
+    {
+        "story_id": "YCB3-COMPOSE-002",
+        "title": "Add post-processing effects pipeline",
+        "description": "Add polish effects to final video output.",
+        "acceptance_criteria": [
+            "Color grading presets (industrial, clean, warm)",
+            "Audio normalization",
+            "Watermark/logo overlay option",
+            "Subtitle track generation from script",
+            "Configurable output quality presets (720p, 1080p, 4K)"
+        ],
+        "priority": 12
+    },
+    {
+        "story_id": "YCB3-PIPE-001",
+        "title": "Create unified v3 video generation pipeline",
+        "description": "Create the main v3 pipeline that orchestrates all components.",
+        "acceptance_criteria": [
+            "ycb/pipeline/video_generator_v3.py with VideoGeneratorV3 class",
+            "Full pipeline: script -> storyboard -> render -> compose -> output",
+            "Parallel rendering of independent scenes",
+            "Progress tracking and logging",
+            "Graceful degradation if Blender unavailable",
+            "Quality metrics output"
+        ],
+        "priority": 13
+    },
+    {
+        "story_id": "YCB3-JUDGE-001",
+        "title": "Update quality judge for v3 visual standards",
+        "description": "Update the LLM judge rubric to evaluate v3 quality standards.",
+        "acceptance_criteria": [
+            "Updated rubric includes visual quality assessment",
+            "Evaluates: animation smoothness, diagram clarity, 3D quality",
+            "Higher pass threshold (8.5/10 for v3)",
+            "Specific feedback for visual improvements"
+        ],
+        "priority": 14
+    },
+    {
+        "story_id": "YCB3-AUTO-001",
+        "title": "Update autonomous loop for v3 pipeline",
+        "description": "Update the autonomous loop to use the v3 pipeline.",
+        "acceptance_criteria": [
+            "--v3 flag to use new pipeline",
+            "Tracks v3-specific metrics (render time, scene count)",
+            "Fallback to v2 if v3 dependencies unavailable"
+        ],
+        "priority": 15
+    },
+    {
+        "story_id": "YCB3-TEST-001",
+        "title": "Create comprehensive integration tests",
+        "description": "Create tests for the full v3 pipeline.",
+        "acceptance_criteria": [
+            "Test Manim engine independently",
+            "Test Blender engine independently",
+            "Test storyboard generation",
+            "Test full pipeline end-to-end",
+            "Test fallback behaviors"
+        ],
+        "priority": 16
+    },
+    {
+        "story_id": "YCB3-CLI-001",
+        "title": "Create CLI tools for asset management",
+        "description": "Create CLI commands for managing and previewing assets.",
+        "acceptance_criteria": [
+            "ycb assets list - List all assets",
+            "ycb assets preview <asset> - Preview an asset",
+            "ycb assets render <template> - Test render a template",
+            "ycb assets validate - Validate asset library"
+        ],
+        "priority": 17
+    },
+    {
+        "story_id": "YCB3-DOCS-001",
+        "title": "Create v3 documentation",
+        "description": "Document the v3 system for future development.",
+        "acceptance_criteria": [
+            "docs/YCB_V3_ARCHITECTURE.md - System overview",
+            "docs/ASSET_CREATION_GUIDE.md - How to add new assets",
+            "docs/TEMPLATE_DEVELOPMENT.md - Creating new templates",
+            "Updated README with v3 features"
+        ],
+        "priority": 18
+    }
+]
+
+
+def main():
+    import json
+
+    print(f"Connecting to database...")
+    conn = psycopg2.connect(DATABASE_URL)
+    cur = conn.cursor()
+
+    # Delete existing YCB3 stories
+    cur.execute("DELETE FROM ralph_stories WHERE story_id LIKE 'YCB3-%'")
+    deleted = cur.rowcount
+    print(f"Deleted {deleted} existing YCB3 stories")
+
+    # Insert all stories
+    for story in STORIES:
+        cur.execute("""
+            INSERT INTO ralph_stories (project_id, story_id, title, description, acceptance_criteria, priority, status)
+            VALUES (1, %s, %s, %s, %s::jsonb, %s, 'todo')
+        """, (
+            story["story_id"],
+            story["title"],
+            story["description"],
+            json.dumps(story["acceptance_criteria"]),
+            story["priority"]
+        ))
+
+    conn.commit()
+
+    # Verify
+    cur.execute("SELECT story_id, title, status FROM ralph_stories WHERE story_id LIKE 'YCB3-%' ORDER BY priority")
+    rows = cur.fetchall()
+
+    print(f"\n{'='*60}")
+    print(f"Inserted {len(rows)} YCB v3 stories:")
+    print(f"{'='*60}")
+    for row in rows:
+        print(f"  [{row[2]:4}] {row[0]}: {row[1]}")
+
+    cur.close()
+    conn.close()
+
+    print(f"\nDone! Run Ralph to start implementing stories.")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,190 @@
+{
+  "name": "PLC Components Asset Library",
+  "version": "1.0.0",
+  "description": "SVG assets for PLC hardware and software components for industrial automation videos",
+  "author": "YCB Video Generator",
+  "categories": {
+    "hardware": {
+      "description": "Physical PLC components",
+      "color": "#2D3748"
+    },
+    "ladder_logic": {
+      "description": "Ladder logic programming symbols",
+      "color": "#3B82F6"
+    },
+    "communication": {
+      "description": "Industrial communication protocols",
+      "color": "#22C55E"
+    }
+  },
+  "symbols": {
+    "plc_rack": {
+      "file": "plc_rack.svg",
+      "category": "hardware",
+      "description": "PLC backplane/rack with 6 slots",
+      "size": {"width": 300, "height": 100},
+      "anchor": {"x": 150, "y": 50}
+    },
+    "cpu_module": {
+      "file": "cpu_module.svg",
+      "category": "hardware",
+      "description": "PLC CPU module with status LEDs",
+      "size": {"width": 40, "height": 80},
+      "anchor": {"x": 20, "y": 40}
+    },
+    "io_module": {
+      "file": "io_module.svg",
+      "category": "hardware",
+      "description": "8-channel digital I/O module",
+      "size": {"width": 40, "height": 80},
+      "anchor": {"x": 20, "y": 40}
+    },
+    "power_supply": {
+      "file": "power_supply.svg",
+      "category": "hardware",
+      "description": "24VDC power supply module",
+      "size": {"width": 50, "height": 80},
+      "anchor": {"x": 25, "y": 40}
+    },
+    "ladder_xic": {
+      "file": "ladder_xic.svg",
+      "category": "ladder_logic",
+      "description": "XIC - Examine If Closed (Normally Open Contact)",
+      "color": "#3B82F6",
+      "size": {"width": 60, "height": 40},
+      "anchor": {"x": 30, "y": 20},
+      "connections": [
+        {"name": "left", "x": 0, "y": 20},
+        {"name": "right", "x": 60, "y": 20}
+      ]
+    },
+    "ladder_xio": {
+      "file": "ladder_xio.svg",
+      "category": "ladder_logic",
+      "description": "XIO - Examine If Open (Normally Closed Contact)",
+      "color": "#3B82F6",
+      "size": {"width": 60, "height": 40},
+      "anchor": {"x": 30, "y": 20},
+      "connections": [
+        {"name": "left", "x": 0, "y": 20},
+        {"name": "right", "x": 60, "y": 20}
+      ]
+    },
+    "ladder_ote": {
+      "file": "ladder_ote.svg",
+      "category": "ladder_logic",
+      "description": "OTE - Output Energize (Coil)",
+      "color": "#22C55E",
+      "size": {"width": 60, "height": 40},
+      "anchor": {"x": 30, "y": 20},
+      "connections": [
+        {"name": "left", "x": 0, "y": 20},
+        {"name": "right", "x": 60, "y": 20}
+      ]
+    },
+    "ladder_otl": {
+      "file": "ladder_otl.svg",
+      "category": "ladder_logic",
+      "description": "OTL - Output Latch",
+      "color": "#22C55E",
+      "size": {"width": 60, "height": 40},
+      "anchor": {"x": 30, "y": 20},
+      "connections": [
+        {"name": "left", "x": 0, "y": 20},
+        {"name": "right", "x": 60, "y": 20}
+      ]
+    },
+    "ladder_otu": {
+      "file": "ladder_otu.svg",
+      "category": "ladder_logic",
+      "description": "OTU - Output Unlatch",
+      "color": "#EF4444",
+      "size": {"width": 60, "height": 40},
+      "anchor": {"x": 30, "y": 20},
+      "connections": [
+        {"name": "left", "x": 0, "y": 20},
+        {"name": "right", "x": 60, "y": 20}
+      ]
+    },
+    "ladder_ton": {
+      "file": "ladder_ton.svg",
+      "category": "ladder_logic",
+      "description": "TON - Timer On Delay",
+      "color": "#F59E0B",
+      "size": {"width": 80, "height": 60},
+      "anchor": {"x": 40, "y": 30},
+      "connections": [
+        {"name": "left", "x": 0, "y": 30},
+        {"name": "right", "x": 80, "y": 30}
+      ]
+    },
+    "ladder_tof": {
+      "file": "ladder_tof.svg",
+      "category": "ladder_logic",
+      "description": "TOF - Timer Off Delay",
+      "color": "#F59E0B",
+      "size": {"width": 80, "height": 60},
+      "anchor": {"x": 40, "y": 30},
+      "connections": [
+        {"name": "left", "x": 0, "y": 30},
+        {"name": "right", "x": 80, "y": 30}
+      ]
+    },
+    "ladder_ctu": {
+      "file": "ladder_ctu.svg",
+      "category": "ladder_logic",
+      "description": "CTU - Count Up",
+      "color": "#8B5CF6",
+      "size": {"width": 80, "height": 60},
+      "anchor": {"x": 40, "y": 30},
+      "connections": [
+        {"name": "left", "x": 0, "y": 30},
+        {"name": "right", "x": 80, "y": 30}
+      ]
+    },
+    "ladder_ctd": {
+      "file": "ladder_ctd.svg",
+      "category": "ladder_logic",
+      "description": "CTD - Count Down",
+      "color": "#8B5CF6",
+      "size": {"width": 80, "height": 60},
+      "anchor": {"x": 40, "y": 30},
+      "connections": [
+        {"name": "left", "x": 0, "y": 30},
+        {"name": "right", "x": 80, "y": 30}
+      ]
+    },
+    "comm_ethernet": {
+      "file": "comm_ethernet.svg",
+      "category": "communication",
+      "description": "Ethernet/RJ45 connector",
+      "color": "#3B82F6",
+      "size": {"width": 60, "height": 40},
+      "anchor": {"x": 30, "y": 20}
+    },
+    "comm_serial": {
+      "file": "comm_serial.svg",
+      "category": "communication",
+      "description": "Serial DB9 connector (RS-232/485)",
+      "color": "#4A5568",
+      "size": {"width": 60, "height": 40},
+      "anchor": {"x": 30, "y": 20}
+    },
+    "comm_modbus": {
+      "file": "comm_modbus.svg",
+      "category": "communication",
+      "description": "Modbus protocol icon",
+      "color": "#22C55E",
+      "size": {"width": 80, "height": 50},
+      "anchor": {"x": 40, "y": 25}
+    },
+    "comm_profinet": {
+      "file": "comm_profinet.svg",
+      "category": "communication",
+      "description": "PROFINET protocol icon",
+      "color": "#3B82F6",
+      "size": {"width": 80, "height": 50},
+      "anchor": {"x": 40, "y": 25}
+    }
+  }
+}

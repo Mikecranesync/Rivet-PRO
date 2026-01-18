@@ -1,0 +1,163 @@
+{
+  "name": "IEC Electrical Symbols Library",
+  "version": "1.0.0",
+  "description": "SVG electrical symbols following IEC standards for industrial automation videos",
+  "author": "YCB Video Generator",
+  "symbols": {
+    "motor": {
+      "file": "motor.svg",
+      "category": "actuators",
+      "description": "3-phase AC motor symbol (IEC)",
+      "color": "#3B82F6",
+      "size": {"width": 100, "height": 100},
+      "anchor": {"x": 50, "y": 50},
+      "connections": [
+        {"name": "power", "x": 50, "y": 5}
+      ]
+    },
+    "relay": {
+      "file": "relay.svg",
+      "category": "control",
+      "description": "Relay coil symbol (IEC)",
+      "color": "#3B82F6",
+      "size": {"width": 100, "height": 100},
+      "anchor": {"x": 50, "y": 50},
+      "connections": [
+        {"name": "top", "x": 50, "y": 5},
+        {"name": "bottom", "x": 50, "y": 95}
+      ]
+    },
+    "contactor": {
+      "file": "contactor.svg",
+      "category": "control",
+      "description": "Motor contactor symbol (IEC)",
+      "color": "#3B82F6",
+      "size": {"width": 100, "height": 100},
+      "anchor": {"x": 50, "y": 50},
+      "connections": [
+        {"name": "top", "x": 50, "y": 5},
+        {"name": "bottom", "x": 50, "y": 95}
+      ]
+    },
+    "overload": {
+      "file": "overload.svg",
+      "category": "protection",
+      "description": "Thermal overload relay symbol (IEC)",
+      "color": "#EF4444",
+      "size": {"width": 100, "height": 100},
+      "anchor": {"x": 50, "y": 50},
+      "connections": [
+        {"name": "top", "x": 50, "y": 5},
+        {"name": "bottom", "x": 50, "y": 95}
+      ]
+    },
+    "transformer": {
+      "file": "transformer.svg",
+      "category": "power",
+      "description": "Single-phase transformer symbol (IEC)",
+      "color": "#3B82F6",
+      "size": {"width": 100, "height": 100},
+      "anchor": {"x": 50, "y": 50},
+      "connections": [
+        {"name": "primary_top", "x": 30, "y": 5},
+        {"name": "primary_bottom", "x": 30, "y": 95},
+        {"name": "secondary_top", "x": 70, "y": 5},
+        {"name": "secondary_bottom", "x": 70, "y": 95}
+      ]
+    },
+    "fuse": {
+      "file": "fuse.svg",
+      "category": "protection",
+      "description": "Fuse symbol (IEC)",
+      "color": "#F59E0B",
+      "size": {"width": 100, "height": 100},
+      "anchor": {"x": 50, "y": 50},
+      "connections": [
+        {"name": "top", "x": 50, "y": 10},
+        {"name": "bottom", "x": 50, "y": 90}
+      ]
+    },
+    "switch": {
+      "file": "switch.svg",
+      "category": "control",
+      "description": "Manual switch symbol - normally open (IEC)",
+      "color": "#3B82F6",
+      "size": {"width": 100, "height": 100},
+      "anchor": {"x": 50, "y": 50},
+      "connections": [
+        {"name": "top", "x": 35, "y": 5},
+        {"name": "bottom", "x": 50, "y": 95}
+      ]
+    },
+    "digital_input": {
+      "file": "digital_input.svg",
+      "category": "plc_io",
+      "description": "PLC digital input module",
+      "color": "#22C55E",
+      "size": {"width": 100, "height": 100},
+      "anchor": {"x": 50, "y": 50},
+      "connections": [
+        {"name": "input", "x": 10, "y": 50},
+        {"name": "output", "x": 95, "y": 50}
+      ]
+    },
+    "digital_output": {
+      "file": "digital_output.svg",
+      "category": "plc_io",
+      "description": "PLC digital output module",
+      "color": "#3B82F6",
+      "size": {"width": 100, "height": 100},
+      "anchor": {"x": 50, "y": 50},
+      "connections": [
+        {"name": "input", "x": 5, "y": 50},
+        {"name": "output", "x": 90, "y": 50}
+      ]
+    },
+    "analog_input": {
+      "file": "analog_input.svg",
+      "category": "plc_io",
+      "description": "PLC analog input module (4-20mA, 0-10V)",
+      "color": "#8B5CF6",
+      "size": {"width": 100, "height": 100},
+      "anchor": {"x": 50, "y": 50},
+      "connections": [
+        {"name": "input", "x": 10, "y": 50},
+        {"name": "output", "x": 95, "y": 50}
+      ]
+    },
+    "analog_output": {
+      "file": "analog_output.svg",
+      "category": "plc_io",
+      "description": "PLC analog output module (4-20mA, 0-10V)",
+      "color": "#EC4899",
+      "size": {"width": 100, "height": 100},
+      "anchor": {"x": 50, "y": 50},
+      "connections": [
+        {"name": "input", "x": 5, "y": 50},
+        {"name": "output", "x": 90, "y": 50}
+      ]
+    }
+  },
+  "categories": {
+    "actuators": {
+      "description": "Motors and actuating devices",
+      "color": "#3B82F6"
+    },
+    "control": {
+      "description": "Relays, contactors, and switching devices",
+      "color": "#3B82F6"
+    },
+    "protection": {
+      "description": "Fuses, overloads, and protective devices",
+      "color": "#EF4444"
+    },
+    "power": {
+      "description": "Transformers and power distribution",
+      "color": "#3B82F6"
+    },
+    "plc_io": {
+      "description": "PLC input/output modules",
+      "color": "#22C55E"
+    }
+  }
+}

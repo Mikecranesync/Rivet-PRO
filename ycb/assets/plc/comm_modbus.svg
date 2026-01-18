@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 50" width="80" height="50">
+  <!-- Modbus Communication Icon -->
+  <!-- Main icon box -->
+  <rect x="5" y="5" width="70" height="40" fill="#2D3748" stroke="#22C55E" stroke-width="2" rx="3"/>
+  <!-- Modbus label -->
+  <text x="40" y="22" text-anchor="middle" font-family="Arial" font-size="12" font-weight="bold" fill="#22C55E">MODBUS</text>
+  <!-- Signal lines -->
+  <g stroke="#22C55E" stroke-width="1.5">
+    <line x1="15" y1="32" x2="25" y2="32"/>
+    <line x1="25" y1="32" x2="25" y2="38"/>
+    <line x1="25" y1="38" x2="35" y2="38"/>
+    <line x1="35" y1="38" x2="35" y2="32"/>
+    <line x1="35" y1="32" x2="45" y2="32"/>
+    <line x1="45" y1="32" x2="45" y2="38"/>
+    <line x1="45" y1="38" x2="55" y2="38"/>
+    <line x1="55" y1="38" x2="55" y2="32"/>
+    <line x1="55" y1="32" x2="65" y2="32"/>
+  </g>
+</svg>

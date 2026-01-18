@@ -1,240 +1,108 @@
 {
   "project": "RIVET Pro",
-  "branchName": "ralph/photo-pipeline-phase6",
-  "description": "Phase 6: Photo Intelligence Pipeline - Implement multi-LLM photo analysis with Groq screening, DeepSeek extraction, Claude synthesis. Includes security fixes, retry logic, and documentation.",
+  "branchName": "ralph/whatsapp-adapter",
+  "description": "WhatsApp Cloud API Adapter - Add WhatsApp support as a completely separate adapter. Uses Meta Cloud API webhooks. Does NOT touch existing Telegram code. Uses existing database whatsapp_id field.",
   "userStories": [
     {
-      "id": "PHOTO-SEC-001",
-      "title": "Secrets Rotation and Fly.io Migration",
-      "description": "Rotate all exposed secrets from .env and migrate to Fly.io secrets management.",
+      "id": "WHATSAPP-001",
+      "title": "Update Config Settings",
+      "description": "Update the WhatsApp configuration fields in Settings class with proper descriptions. Add 5 WhatsApp config fields: whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_access_token, whatsapp_verify_token, whatsapp_app_secret. All fields should be Optional with clear descriptions.",
       "acceptanceCriteria": [
-        "All API keys rotated (Anthropic, OpenAI, Groq, Google, DeepSeek)",
-        "Database passwords changed",
-        "Telegram bot tokens rotated",
-        ".env removed from git history",
-        "Fly.io secrets set and verified"
+        "All 5 WhatsApp config fields have clear descriptions",
+        "Fields are Optional (adapter disabled if not set)",
+        "Existing settings unchanged"
       ],
       "priority": 1,
       "passes": false,
-      "notes": ""
+      "notes": "File: rivet_pro/config/settings.py"
     },
     {
-      "id": "PHOTO-ORCH-001",
-      "title": "Ralph Wiggum Orchestrator Base Class",
-      "description": "Create base orchestration framework for multi-LLM photo pipeline.",
+      "id": "WHATSAPP-002",
+      "title": "Update .env.example",
+      "description": "Add a commented WhatsApp section to .env.example with all required env vars: WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_BUSINESS_ACCOUNT_ID, WHATSAPP_ACCESS_TOKEN, WHATSAPP_VERIFY_TOKEN, WHATSAPP_APP_SECRET. Include helpful comments explaining where to get these values from Meta Developer Portal.",
       "acceptanceCriteria": [
-        "RalphOrchestrator class with retry helper",
-        "Cost tracking property",
-        "Photo hash computation for caching",
-        "Export from rivet_pro/core/llm/"
+        "WhatsApp section clearly commented",
+        "All 5 env vars listed",
+        "Noted as optional (adapter disabled if not set)"
       ],
       "priority": 2,
       "passes": false,
-      "notes": ""
+      "notes": "File: .env.example or rivet_pro/.env.example"
     },
     {
-      "id": "PHOTO-GROQ-001",
-      "title": "Groq Vision Industrial Screening Service",
-      "description": "Implement Groq first-pass screening for industrial equipment detection.",
+      "id": "WHATSAPP-003",
+      "title": "Create WhatsApp Client Module",
+      "description": "Create rivet_pro/adapters/whatsapp/client.py with stubbed functions for sending messages via WhatsApp Cloud API. Include: send_whatsapp_text(to_whatsapp_id, body), send_whatsapp_image(to_whatsapp_id, image_url, caption), mark_as_read(message_id). All functions async with proper type hints and docstrings. Log what would be sent without exposing secrets.",
       "acceptanceCriteria": [
-        "screen_industrial_photo() returns ScreeningResult",
-        "Confidence threshold >= 0.80 to proceed",
-        "Category detection (plc, vfd, motor, etc.)",
-        "Response time < 2 seconds",
-        "Cost ~$0.001 per image"
+        "Three functions defined: send_whatsapp_text, send_whatsapp_image, mark_as_read",
+        "All functions are async",
+        "Proper type hints and docstrings",
+        "Logging shows what would be sent (no secrets in logs)",
+        "Uses settings for config access"
       ],
       "priority": 3,
       "passes": false,
-      "notes": ""
+      "notes": "File: rivet_pro/adapters/whatsapp/client.py (CREATE)"
     },
     {
-      "id": "PHOTO-DEEP-001",
-      "title": "DeepSeek Component Specification Extraction",
-      "description": "Implement DeepSeek second-pass for spec extraction with caching.",
+      "id": "WHATSAPP-004",
+      "title": "Create WhatsApp Webhook Router",
+      "description": "Create rivet_pro/adapters/web/routers/whatsapp.py with FastAPI router. Include GET endpoint for Meta webhook verification (hub.mode, hub.verify_token, hub.challenge) and POST endpoint for receiving messages. Implement HMAC-SHA256 signature verification. Handle text and image message types. Return 403 for invalid token, 401 for invalid signature.",
       "acceptanceCriteria": [
-        "extract_component_specs() returns ExtractionResult",
-        "Photo hash caching (24h TTL)",
-        "Response time < 3 seconds",
-        "Cost ~$0.002 per image"
+        "GET /whatsapp handles webhook verification",
+        "POST /whatsapp receives and validates messages",
+        "Signature verification using HMAC-SHA256",
+        "Returns 403 for invalid verify token",
+        "Returns 401 for invalid signature",
+        "Handles text and image message types",
+        "No secrets logged",
+        "Pure function for signature verification (testable)"
       ],
       "priority": 4,
       "passes": false,
-      "notes": ""
+      "notes": "File: rivet_pro/adapters/web/routers/whatsapp.py (CREATE)"
     },
     {
-      "id": "PHOTO-CACHE-001",
-      "title": "Photo Analysis Cache Table Migration",
-      "description": "Create database migration for caching photo analysis by hash.",
+      "id": "WHATSAPP-005",
+      "title": "Update WhatsApp __init__.py",
+      "description": "Update rivet_pro/adapters/whatsapp/__init__.py to export the WhatsApp adapter entry points. Include module docstring explaining purpose and listing required config vars. Export send_whatsapp_text, send_whatsapp_image, mark_as_read from client module.",
       "acceptanceCriteria": [
-        "Migration 028_photo_analysis_cache.sql created",
-        "photo_analysis_cache table with hash, results, expiry",
-        "Cleanup function for expired entries"
+        "Module docstring explains purpose",
+        "Exports all client functions",
+        "Lists required config vars in docstring"
       ],
       "priority": 5,
       "passes": false,
-      "notes": ""
+      "notes": "File: rivet_pro/adapters/whatsapp/__init__.py (MODIFY)"
     },
     {
-      "id": "PHOTO-TIMEOUT-001",
-      "title": "Photo Handler 60-Second Timeout Protection",
-      "description": "Add asyncio.timeout wrapper to prevent indefinite photo handler hangs.",
+      "id": "WHATSAPP-006",
+      "title": "Wire Router into FastAPI App",
+      "description": "Modify rivet_pro/adapters/web/main.py to include the WhatsApp router. Import whatsapp router from routers module. Register with /whatsapp prefix and WhatsApp tag. Add comment explaining adapter isolation. Ensure app still starts without WhatsApp config.",
       "acceptanceCriteria": [
-        "asyncio.timeout(60) wrapper in _handle_photo",
-        "TimeoutError caught with user-friendly message",
-        "Alert sent to admin on timeout",
-        "Trace saved in finally block"
+        "WhatsApp router imported",
+        "Router registered with /whatsapp prefix",
+        "Comment explains adapter isolation",
+        "Import does not pull in Telegram code",
+        "FastAPI app still starts without WhatsApp config"
       ],
       "priority": 6,
       "passes": false,
-      "notes": ""
+      "notes": "File: rivet_pro/adapters/web/main.py (MODIFY)"
     },
     {
-      "id": "PHOTO-HIST-001",
-      "title": "Equipment Maintenance History Retrieval",
-      "description": "Add method to retrieve work order history for equipment.",
+      "id": "WHATSAPP-007",
+      "title": "Add WhatsApp Setup Documentation",
+      "description": "Create docs/WHATSAPP_SETUP.md with setup instructions. Include: Prerequisites (Meta Business Account, WhatsApp Business API), Configuration steps with Meta Developer Portal, .env setup, Webhook setup with ngrok for local testing, curl examples for testing both endpoints, Security notes about secrets.",
       "acceptanceCriteria": [
-        "get_equipment_maintenance_history() method added",
-        "Returns last 90 days by default",
-        "Includes resolution time calculation"
+        "Clear step-by-step setup instructions",
+        "ngrok local testing guide",
+        "curl examples for both endpoints",
+        "Security warnings about secrets"
       ],
       "priority": 7,
       "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "PHOTO-HIST-002",
-      "title": "Technician Work History Retrieval",
-      "description": "Add method to retrieve technician work history.",
-      "acceptanceCriteria": [
-        "get_technician_work_history() method added",
-        "Optional status filter parameter",
-        "Includes equipment details"
-      ],
-      "priority": 8,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "PHOTO-CLAUDE-001",
-      "title": "Claude AI Analysis and KB Synthesis",
-      "description": "Implement Claude third-pass for troubleshooting with KB integration.",
-      "acceptanceCriteria": [
-        "analyze_with_kb() returns AnalysisResult",
-        "Combines specs + history + KB context",
-        "Includes citations and safety warnings",
-        "Fallback if Claude fails"
-      ],
-      "priority": 9,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "PHOTO-RETRY-001",
-      "title": "Database Retry Logic with Exponential Backoff",
-      "description": "Add retry mechanism to Database class for transient errors.",
-      "acceptanceCriteria": [
-        "_execute_with_retry helper added",
-        "Max 3 retries with exponential backoff",
-        "Only retries connection errors, not query errors"
-      ],
-      "priority": 10,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "PHOTO-FLOW-001",
-      "title": "Telegram Photo Upload Pipeline Integration",
-      "description": "Wire complete Groq -> DeepSeek -> Claude pipeline into handler.",
-      "acceptanceCriteria": [
-        "PhotoPipelineService created",
-        "All three stages orchestrated",
-        "Cache check before DeepSeek",
-        "Cost tracking at each stage"
-      ],
-      "priority": 11,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "PHOTO-RESP-001",
-      "title": "Photo Response Formatting for Telegram",
-      "description": "Create Telegram-optimized response formatting function.",
-      "acceptanceCriteria": [
-        "format_photo_pipeline_response() function created",
-        "Includes all pipeline results",
-        "Under 4096 char limit",
-        "Markdown formatting"
-      ],
-      "priority": 12,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "PHOTO-TEST-001",
-      "title": "Unit Tests for Photo Pipeline Services",
-      "description": "Create unit tests for Groq, DeepSeek, Claude services.",
-      "acceptanceCriteria": [
-        "test_groq_screening.py with mocked API",
-        "test_deepseek_extraction.py",
-        "test_claude_analysis.py",
-        "test_photo_cache.py",
-        "All tests pass"
-      ],
-      "priority": 13,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "PHOTO-TEST-002",
-      "title": "Integration Tests for Full Pipeline",
-      "description": "Create integration tests for end-to-end pipeline.",
-      "acceptanceCriteria": [
-        "test_photo_pipeline.py with real DB",
-        "Tests all success and failure paths",
-        "Tests cache hit/miss scenarios"
-      ],
-      "priority": 14,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "PHOTO-DOC-001",
-      "title": "PRD Document Creation",
-      "description": "Create complete PRD document for photo pipeline.",
-      "acceptanceCriteria": [
-        "PRD_PHOTO_PIPELINE.md created",
-        "Vision, features, metrics, acceptance criteria",
-        "Architecture diagram included"
-      ],
-      "priority": 15,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "PHOTO-DOC-002",
-      "title": "Technical Manual Creation",
-      "description": "Create technical documentation for operators.",
-      "acceptanceCriteria": [
-        "TECHNICAL_MANUAL.md created",
-        "API docs, schema, deployment checklist",
-        "Troubleshooting guide"
-      ],
-      "priority": 16,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "PHOTO-DOC-003",
-      "title": "User Manual Creation",
-      "description": "Create user documentation for field technicians.",
-      "acceptanceCriteria": [
-        "USER_MANUAL.md created",
-        "Getting started, photo tips, FAQ",
-        "Screenshots of actual bot responses"
-      ],
-      "priority": 17,
-      "passes": false,
-      "notes": ""
+      "notes": "File: docs/WHATSAPP_SETUP.md (CREATE)"
     }
   ]
 }
