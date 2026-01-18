@@ -10,10 +10,26 @@ from .compositor import (
     TransitionType,
     OverlayConfig,
 )
+from .post_processing import (
+    PostProcessor,
+    PostProcessConfig,
+    PostProcessResult,
+    ColorGradePreset,
+    OutputQuality,
+    WatermarkConfig,
+    SubtitleEntry,
+)
 
 __all__ = [
     "VideoCompositor",
     "CompositionResult",
     "TransitionType",
     "OverlayConfig",
+    "PostProcessor",
+    "PostProcessConfig",
+    "PostProcessResult",
+    "ColorGradePreset",
+    "OutputQuality",
+    "WatermarkConfig",
+    "SubtitleEntry",
 ]
