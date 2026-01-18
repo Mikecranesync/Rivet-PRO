@@ -447,3 +447,27 @@ Stories: YCB3-MANIM-001 through YCB3-DOCS-001 (18 stories)
 - Communication icons include protocol labels for clarity
 - PLC rack designed for module overlay positioning
 ---
+
+## 2026-01-17 - YCB3-MANIM-002
+- Created ycb/rendering/templates.py with 6 reusable template classes
+- TitleTemplate: Animated title cards with optional underline and subtitle
+- DiagramTemplate: Technical diagrams with elements, arrows, and callouts
+- FlowchartTemplate: Process flows with diamond/oval/rectangle shapes
+- ComparisonTemplate: Side-by-side table comparisons with highlighting
+- LadderLogicTemplate: PLC ladder diagrams with XIC/XIO contacts and OTE coils
+- TimelineTemplate: Sequential process timelines (horizontal/vertical)
+- Added TemplateFactory for easy instantiation
+- Added TransitionType enum for animation styles
+- Updated color palettes with arrow, success, rail, contact, coil, active colors
+- Created test_templates.py with comprehensive test suite
+- All 7 tests pass (each template + factory)
+- Updated __init__.py with all template exports
+- Files: templates.py (~900 lines), test_templates.py, updated __init__.py, scene_types.py
+- Commit: 7c51bd2
+
+**Learnings for future iterations:**
+- Templates generate Manim code strings that are written to temp files and run as subprocess
+- Use dataclasses for config, generate_code() method for Manim Python output
+- Pad comparison table rows to match column count to avoid missing cell errors
+- Ladder logic uses Arc for coil parentheses, Line for contacts
+---
