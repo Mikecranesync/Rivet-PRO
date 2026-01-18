@@ -62,11 +62,29 @@ class Settings(BaseSettings):
         description="Hours before pending approvals expire"
     )
 
-    # WhatsApp Configuration (Future)
-    whatsapp_phone_id: Optional[str] = None
-    whatsapp_token: Optional[str] = None
-    whatsapp_verify_token: Optional[str] = None
-    whatsapp_app_secret: Optional[str] = None
+    # WhatsApp Cloud API Configuration
+    # Set these to enable WhatsApp adapter. All are optional - adapter disabled if not set.
+    # Get credentials from Meta Developer Portal: https://developers.facebook.com/
+    whatsapp_phone_number_id: Optional[str] = Field(
+        None,
+        description="WhatsApp Phone Number ID from Meta Developer Portal"
+    )
+    whatsapp_business_account_id: Optional[str] = Field(
+        None,
+        description="WhatsApp Business Account ID from Meta Developer Portal"
+    )
+    whatsapp_access_token: Optional[str] = Field(
+        None,
+        description="WhatsApp Cloud API access token (System User token recommended)"
+    )
+    whatsapp_verify_token: Optional[str] = Field(
+        None,
+        description="Custom token for webhook URL verification (you create this)"
+    )
+    whatsapp_app_secret: Optional[str] = Field(
+        None,
+        description="App Secret for webhook signature verification (from App Settings > Basic)"
+    )
 
     # Database Configuration
     database_url: str = Field(..., description="PostgreSQL connection URL (Neon)")

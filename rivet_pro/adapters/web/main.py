@@ -74,6 +74,13 @@ app.include_router(stripe.router, prefix="/api/stripe", tags=["Payments"])
 app.include_router(version.router, prefix="/api", tags=["System"])
 app.include_router(enrichment.router, prefix="/api/admin/enrichment", tags=["Enrichment Admin"])  # AUTO-KB-013
 
+# WhatsApp Cloud API Adapter
+# This adapter is completely separate from Telegram - uses Meta's Cloud API for webhooks.
+# Endpoints: GET /whatsapp (webhook verification), POST /whatsapp (receive messages)
+# Adapter is disabled if WhatsApp config is not set - app starts normally without it.
+from rivet_pro.adapters.web.routers import whatsapp
+app.include_router(whatsapp.router, prefix="/whatsapp", tags=["WhatsApp"])
+
 
 @app.get("/health")
 async def health_check():

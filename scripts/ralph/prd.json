@@ -1,279 +1,108 @@
 {
-  "project": "YCB v3 - Professional Video Generation",
-  "branchName": "ralph/ycb-v3-manim-blender",
-  "description": "YCB v3: Professional-grade video generation using Manim + Blender. Target quality: 8.5-9/10. 18 stories covering rendering engines, asset libraries, storyboard generation, video composition, and pipeline integration.",
+  "project": "RIVET Pro",
+  "branchName": "ralph/whatsapp-adapter",
+  "description": "WhatsApp Cloud API Adapter - Add WhatsApp support as a completely separate adapter. Uses Meta Cloud API webhooks. Does NOT touch existing Telegram code. Uses existing database whatsapp_id field.",
   "userStories": [
     {
-      "id": "YCB3-MANIM-001",
-      "title": "Create Manim rendering engine integration",
-      "description": "Create a Python module that generates Manim scenes from structured scene descriptions. This is the core rendering engine for technical diagrams and animations.",
+      "id": "WHATSAPP-001",
+      "title": "Update Config Settings",
+      "description": "Update the WhatsApp configuration fields in Settings class with proper descriptions. Add 5 WhatsApp config fields: whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_access_token, whatsapp_verify_token, whatsapp_app_secret. All fields should be Optional with clear descriptions.",
       "acceptanceCriteria": [
-        "ycb/rendering/manim_engine.py exists with ManimEngine class",
-        "Can render basic scenes: text, shapes, arrows, diagrams",
-        "Outputs MP4 clips to specified directory",
-        "Includes error handling and logging",
-        "Test: Generate a simple PLC diagram animation"
+        "All 5 WhatsApp config fields have clear descriptions",
+        "Fields are Optional (adapter disabled if not set)",
+        "Existing settings unchanged"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Completed 2026-01-17. Commit c8103f0. All tests pass."
+      "passes": false,
+      "notes": "File: rivet_pro/config/settings.py"
     },
     {
-      "id": "YCB3-ASSETS-001",
-      "title": "Create SVG asset library for electrical symbols",
-      "description": "Create reusable SVG assets for common industrial electrical symbols that can be animated in Manim.",
+      "id": "WHATSAPP-002",
+      "title": "Update .env.example",
+      "description": "Add a commented WhatsApp section to .env.example with all required env vars: WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_BUSINESS_ACCOUNT_ID, WHATSAPP_ACCESS_TOKEN, WHATSAPP_VERIFY_TOKEN, WHATSAPP_APP_SECRET. Include helpful comments explaining where to get these values from Meta Developer Portal.",
       "acceptanceCriteria": [
-        "ycb/assets/electrical/ directory with SVG files",
-        "Symbols: motor, relay, contactor, overload, transformer, fuse, switch",
-        "PLC I/O symbols: digital input, digital output, analog input",
-        "Each symbol has consistent sizing and anchor points",
-        "Manim can import and animate these symbols"
+        "WhatsApp section clearly commented",
+        "All 5 env vars listed",
+        "Noted as optional (adapter disabled if not set)"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Completed 2026-01-17. Commit 1760c53. 11 SVG symbols + manifest.json + test script. Manim import test passes."
+      "passes": false,
+      "notes": "File: .env.example or rivet_pro/.env.example"
     },
     {
-      "id": "YCB3-ASSETS-002",
-      "title": "Create SVG/PNG assets for PLC components",
-      "description": "Create visual assets for PLC hardware and software components.",
+      "id": "WHATSAPP-003",
+      "title": "Create WhatsApp Client Module",
+      "description": "Create rivet_pro/adapters/whatsapp/client.py with stubbed functions for sending messages via WhatsApp Cloud API. Include: send_whatsapp_text(to_whatsapp_id, body), send_whatsapp_image(to_whatsapp_id, image_url, caption), mark_as_read(message_id). All functions async with proper type hints and docstrings. Log what would be sent without exposing secrets.",
       "acceptanceCriteria": [
-        "ycb/assets/plc/ directory with assets",
-        "Hardware: PLC rack, CPU, I/O cards, power supply",
-        "Software: ladder logic symbols (XIC, XIO, OTE, TON, CTU)",
-        "Communication: Ethernet, serial, Modbus icons",
-        "Consistent visual style across all assets"
+        "Three functions defined: send_whatsapp_text, send_whatsapp_image, mark_as_read",
+        "All functions are async",
+        "Proper type hints and docstrings",
+        "Logging shows what would be sent (no secrets in logs)",
+        "Uses settings for config access"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Completed 2026-01-17. Commit 1d85798. 19 SVG files: 4 hardware, 9 ladder logic, 4 communication. Tests pass."
+      "passes": false,
+      "notes": "File: rivet_pro/adapters/whatsapp/client.py (CREATE)"
     },
     {
-      "id": "YCB3-MANIM-002",
-      "title": "Create reusable Manim scene templates",
-      "description": "Create template classes for common video scene types that can be parameterized and reused.",
+      "id": "WHATSAPP-004",
+      "title": "Create WhatsApp Webhook Router",
+      "description": "Create rivet_pro/adapters/web/routers/whatsapp.py with FastAPI router. Include GET endpoint for Meta webhook verification (hub.mode, hub.verify_token, hub.challenge) and POST endpoint for receiving messages. Implement HMAC-SHA256 signature verification. Handle text and image message types. Return 403 for invalid token, 401 for invalid signature.",
       "acceptanceCriteria": [
-        "TitleScene - Animated title cards with topic name",
-        "DiagramScene - Technical diagram with callouts",
-        "FlowchartScene - Process flow with animated arrows",
-        "ComparisonScene - Side-by-side comparison",
-        "LadderLogicScene - PLC ladder diagram animation",
-        "TimelineScene - Sequential process steps",
-        "Each template is parameterized and reusable"
+        "GET /whatsapp handles webhook verification",
+        "POST /whatsapp receives and validates messages",
+        "Signature verification using HMAC-SHA256",
+        "Returns 403 for invalid verify token",
+        "Returns 401 for invalid signature",
+        "Handles text and image message types",
+        "No secrets logged",
+        "Pure function for signature verification (testable)"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Completed 2026-01-17. Commit 7c51bd2. All 6 templates + factory + 7/7 tests pass."
+      "passes": false,
+      "notes": "File: rivet_pro/adapters/web/routers/whatsapp.py (CREATE)"
     },
     {
-      "id": "YCB3-BLENDER-001",
-      "title": "Create Blender headless rendering engine",
-      "description": "Create a module that generates 3D animations using Blender Python API in headless mode for professional 3D equipment animations.",
+      "id": "WHATSAPP-005",
+      "title": "Update WhatsApp __init__.py",
+      "description": "Update rivet_pro/adapters/whatsapp/__init__.py to export the WhatsApp adapter entry points. Include module docstring explaining purpose and listing required config vars. Export send_whatsapp_text, send_whatsapp_image, mark_as_read from client module.",
       "acceptanceCriteria": [
-        "ycb/rendering/blender_engine.py with BlenderEngine class",
-        "Can run Blender in background (no GUI)",
-        "Renders to MP4 with configurable resolution/fps",
-        "Includes basic scene setup (camera, lighting)",
-        "Error handling for Blender subprocess failures",
-        "Test: Render a spinning motor animation"
+        "Module docstring explains purpose",
+        "Exports all client functions",
+        "Lists required config vars in docstring"
       ],
       "priority": 5,
       "passes": false,
-      "notes": ""
+      "notes": "File: rivet_pro/adapters/whatsapp/__init__.py (MODIFY)"
     },
     {
-      "id": "YCB3-ASSETS-003",
-      "title": "Create/source 3D models for industrial equipment",
-      "description": "Build a library of 3D models (.blend files) for common industrial equipment.",
+      "id": "WHATSAPP-006",
+      "title": "Wire Router into FastAPI App",
+      "description": "Modify rivet_pro/adapters/web/main.py to include the WhatsApp router. Import whatsapp router from routers module. Register with /whatsapp prefix and WhatsApp tag. Add comment explaining adapter isolation. Ensure app still starts without WhatsApp config.",
       "acceptanceCriteria": [
-        "ycb/assets/3d/ directory with .blend files",
-        "Models: motor, VFD, PLC cabinet, conveyor section, pump",
-        "Each model has proper materials and textures",
-        "Models are optimized for rendering (low poly where appropriate)",
-        "Include animation rigs where relevant (motor rotation)"
+        "WhatsApp router imported",
+        "Router registered with /whatsapp prefix",
+        "Comment explains adapter isolation",
+        "Import does not pull in Telegram code",
+        "FastAPI app still starts without WhatsApp config"
       ],
       "priority": 6,
       "passes": false,
-      "notes": ""
+      "notes": "File: rivet_pro/adapters/web/main.py (MODIFY)"
     },
     {
-      "id": "YCB3-BLENDER-002",
-      "title": "Create reusable Blender scene templates",
-      "description": "Create parameterized Blender scene templates for common industrial animations.",
+      "id": "WHATSAPP-007",
+      "title": "Add WhatsApp Setup Documentation",
+      "description": "Create docs/WHATSAPP_SETUP.md with setup instructions. Include: Prerequisites (Meta Business Account, WhatsApp Business API), Configuration steps with Meta Developer Portal, .env setup, Webhook setup with ngrok for local testing, curl examples for testing both endpoints, Security notes about secrets.",
       "acceptanceCriteria": [
-        "MotorRotationScene - Motor spinning with speed control",
-        "SignalFlowScene - Animated signal path through components",
-        "ExplodedViewScene - Component assembly/disassembly",
-        "ControlPanelScene - Panel with animated indicators",
-        "Each template accepts parameters (speed, colors, labels)",
-        "Templates render in <60 seconds each"
+        "Clear step-by-step setup instructions",
+        "ngrok local testing guide",
+        "curl examples for both endpoints",
+        "Security warnings about secrets"
       ],
       "priority": 7,
       "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "YCB3-STORY-001",
-      "title": "Create AI-powered storyboard generator",
-      "description": "Create a module that converts scripts into structured storyboards with scene definitions using LLM intelligence.",
-      "acceptanceCriteria": [
-        "ycb/storyboard/generator.py with StoryboardGenerator class",
-        "Takes script text as input",
-        "Outputs list of Scene objects with: scene type, duration, visual description, narration text, suggested template + parameters",
-        "Uses LLM (Groq/Claude) for intelligent scene planning",
-        "Respects timing constraints (total video duration)"
-      ],
-      "priority": 8,
-      "passes": true,
-      "notes": "Completed 2026-01-17. Commit 44b7692. LLM + rule-based fallback. 4/4 tests pass."
-    },
-    {
-      "id": "YCB3-STORY-002",
-      "title": "Create scene-to-renderer routing system",
-      "description": "Create a router that dispatches scenes to the appropriate rendering engine based on scene type.",
-      "acceptanceCriteria": [
-        "ycb/storyboard/router.py with SceneRouter class",
-        "Routes: diagram/flowchart/ladder_logic -> Manim",
-        "Routes: 3d_animation/exploded_view/motor -> Blender",
-        "Routes: b_roll/stock -> Placeholder/external",
-        "Supports fallback (if Blender unavailable -> Manim)",
-        "Returns rendered clip paths for composition"
-      ],
-      "priority": 9,
-      "passes": true,
-      "notes": "Completed 2026-01-17. SceneRouter with routing table, engine detection, fallback support. 7/7 tests pass."
-    },
-    {
-      "id": "YCB3-AUDIO-001",
-      "title": "Create narration-to-scene timing synchronization",
-      "description": "Ensure narration audio syncs properly with visual scenes through word-level timing analysis.",
-      "acceptanceCriteria": [
-        "ycb/audio/timing.py with TimingSync class",
-        "Analyzes narration audio to get word-level timestamps",
-        "Matches timestamps to scene boundaries",
-        "Adjusts scene durations or adds pauses as needed",
-        "Outputs timing map for final composition"
-      ],
-      "priority": 10,
-      "passes": true,
-      "notes": "Completed 2026-01-17. TimingSync with Whisper support, text-based fallback, pause adjustment, gap detection. 9/9 tests pass."
-    },
-    {
-      "id": "YCB3-COMPOSE-001",
-      "title": "Create multi-scene video compositor",
-      "description": "Create a compositor that combines rendered scenes into final video with professional transitions.",
-      "acceptanceCriteria": [
-        "ycb/composition/compositor.py with VideoCompositor class",
-        "Accepts list of rendered scene clips + audio",
-        "Supports transitions (fade, dissolve, cut)",
-        "Adds lower-third text overlays for key points",
-        "Adds intro/outro bumpers",
-        "Outputs final MP4 with proper encoding"
-      ],
-      "priority": 11,
-      "passes": true,
-      "notes": "Completed 2026-01-17. VideoCompositor with FFmpeg concat, xfade transitions, lower thirds, audio mixing. 11/11 tests pass."
-    },
-    {
-      "id": "YCB3-COMPOSE-002",
-      "title": "Add post-processing effects pipeline",
-      "description": "Add polish effects to final video output for professional quality.",
-      "acceptanceCriteria": [
-        "Color grading presets (industrial, clean, warm)",
-        "Audio normalization",
-        "Watermark/logo overlay option",
-        "Subtitle track generation from script",
-        "Configurable output quality presets (720p, 1080p, 4K)"
-      ],
-      "priority": 12,
-      "passes": true,
-      "notes": "Completed 2026-01-17. PostProcessor with 6 color grades, 6 quality presets, subtitle generation, watermark, audio normalization. 16/16 tests pass."
-    },
-    {
-      "id": "YCB3-PIPE-001",
-      "title": "Create unified v3 video generation pipeline",
-      "description": "Create the main v3 pipeline that orchestrates all components from script to final video.",
-      "acceptanceCriteria": [
-        "ycb/pipeline/video_generator_v3.py with VideoGeneratorV3 class",
-        "Full pipeline: script -> storyboard -> render -> compose -> output",
-        "Parallel rendering of independent scenes",
-        "Progress tracking and logging",
-        "Graceful degradation (Blender unavailable -> Manim only)",
-        "Quality metrics output"
-      ],
-      "priority": 13,
-      "passes": true,
-      "notes": "Completed 2026-01-17. VideoGeneratorV3 orchestrating full pipeline with parallel rendering, progress callbacks, metrics. 11/11 tests pass."
-    },
-    {
-      "id": "YCB3-JUDGE-001",
-      "title": "Update quality judge for v3 visual standards",
-      "description": "Update the LLM judge rubric to evaluate v3 quality standards including visual quality.",
-      "acceptanceCriteria": [
-        "Updated rubric includes visual quality assessment",
-        "Evaluates: animation smoothness, diagram clarity, 3D quality",
-        "Higher pass threshold (8.5/10 for v3)",
-        "Specific feedback for visual improvements"
-      ],
-      "priority": 14,
-      "passes": true,
-      "notes": "Completed 2026-01-17. VideoQualityJudgeV3 with weighted scoring (visual/diagram 25% each), 8.5 threshold, v3 rubric. 11/11 tests pass."
-    },
-    {
-      "id": "YCB3-AUTO-001",
-      "title": "Update autonomous loop for v3 pipeline",
-      "description": "Update the autonomous loop to use the v3 pipeline with appropriate flags and metrics.",
-      "acceptanceCriteria": [
-        "--v3 flag to use new pipeline",
-        "Tracks v3-specific metrics (render time, scene count)",
-        "Fallback to v2 if v3 dependencies unavailable"
-      ],
-      "priority": 15,
-      "passes": true,
-      "notes": "Completed 2026-01-17. --v3 flag, V3IterationResult with render_time/scene_count, auto fallback to v1, --check-engines command. 12/12 tests pass."
-    },
-    {
-      "id": "YCB3-TEST-001",
-      "title": "Create comprehensive integration tests",
-      "description": "Create tests for the full v3 pipeline and all rendering engines.",
-      "acceptanceCriteria": [
-        "Test Manim engine independently",
-        "Test Blender engine independently",
-        "Test storyboard generation",
-        "Test full pipeline end-to-end",
-        "Test fallback behaviors"
-      ],
-      "priority": 16,
-      "passes": true,
-      "notes": "Completed 2026-01-17. test_integration_v3.py with 12 E2E tests. run_all_tests.py runner for 93 total tests across 12 files. All unit tests pass; Manim template test slow (render time)."
-    },
-    {
-      "id": "YCB3-CLI-001",
-      "title": "Create CLI tools for asset management",
-      "description": "Create CLI commands for managing and previewing assets.",
-      "acceptanceCriteria": [
-        "ycb assets list - List all assets",
-        "ycb assets preview <asset> - Preview an asset",
-        "ycb assets render <template> - Test render a template",
-        "ycb assets validate - Validate asset library"
-      ],
-      "priority": 17,
-      "passes": true,
-      "notes": "Completed 2026-01-17. ycb/cli/assets.py with list, preview, render, validate commands. Lists 28 SVG assets and 6 Manim templates. All commands tested."
-    },
-    {
-      "id": "YCB3-DOCS-001",
-      "title": "Create v3 documentation",
-      "description": "Document the v3 system for future development and maintenance.",
-      "acceptanceCriteria": [
-        "docs/YCB_V3_ARCHITECTURE.md - System overview",
-        "docs/ASSET_CREATION_GUIDE.md - How to add new assets",
-        "docs/TEMPLATE_DEVELOPMENT.md - Creating new templates",
-        "Updated README with v3 features"
-      ],
-      "priority": 18,
-      "passes": true,
-      "notes": "Completed 2026-01-17. Created YCB_V3_ARCHITECTURE.md (system overview), ASSET_CREATION_GUIDE.md (SVG creation), TEMPLATE_DEVELOPMENT.md (Manim templates), and ycb/README.md (quick start)."
+      "notes": "File: docs/WHATSAPP_SETUP.md (CREATE)"
     }
   ]
 }
