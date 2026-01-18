@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 80" width="40" height="80">
+  <!-- PLC CPU Module -->
+  <!-- Module body -->
+  <rect x="2" y="2" width="36" height="76" fill="#2D3748" stroke="#4A5568" stroke-width="2" rx="2"/>
+  <!-- Status LEDs -->
+  <g>
+    <circle cx="10" cy="12" r="3" fill="#22C55E"/>
+    <text x="16" y="14" font-family="Arial" font-size="6" fill="#A0AEC0">RUN</text>
+    <circle cx="10" cy="22" r="3" fill="#F59E0B"/>
+    <text x="16" y="24" font-family="Arial" font-size="6" fill="#A0AEC0">ERR</text>
+    <circle cx="10" cy="32" r="3" fill="#3B82F6"/>
+    <text x="16" y="34" font-family="Arial" font-size="6" fill="#A0AEC0">COM</text>
+  </g>
+  <!-- CPU label -->
+  <rect x="6" y="42" width="28" height="12" fill="#1A202C" rx="1"/>
+  <text x="20" y="51" text-anchor="middle" font-family="Arial" font-size="8" font-weight="bold" fill="#E2E8F0">CPU</text>
+  <!-- Communication port -->
+  <rect x="10" y="60" width="20" height="8" fill="#1A202C" stroke="#4A5568" stroke-width="1" rx="1"/>
+  <!-- Module latch -->
+  <rect x="16" y="72" width="8" height="4" fill="#4A5568" rx="1"/>
+</svg>
